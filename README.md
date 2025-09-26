@@ -145,6 +145,13 @@ Validação hierárquica com critérios ponderados:
 - **Custo por documento**: <$0.01
 - **Precisão**: 100% (zero falsos positivos)
 
+### Deploy em Produção ✅
+- **VPS**: srv987902.hstgr.cloud (Hostinger)
+- **Status**: 100% funcional em produção
+- **Uptime**: Contínuo desde 26/09/2025
+- **Health Check**: ✅ Passando
+- **URLs**: http://srv987902.hstgr.cloud:8000
+
 ### Escalabilidade
 - **Suporte**: Múltiplos ofícios por processo
 - **Volume**: Testado com 40+ páginas por PDF
@@ -170,9 +177,11 @@ labels:
 ## 📚 Documentação
 
 - **[Deploy Guide](deploy/README.md)**: Guia completo de instalação
+- **[Deploy History](HISTORICO_DEPLOY.md)**: Cronologia do deploy bem-sucedido
 - **[API Documentation](api.py)**: Endpoints e funcionalidades
 - **[Architecture](DOCUMENTACAO_PROJETO.md)**: Detalhes técnicos
 - **[Analysis Report](RELATORIO_FINAL_REFINAMENTO.md)**: Relatório de implementação
+- **[VPS Commands](vps_commands.md)**: Comandos úteis para VPS
 
 ## 🤝 Suporte
 
