@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # 🏛️ Sistema OCR - Ofícios Requisitórios TJSP
 
 Sistema automatizado de extração de dados de Ofícios Requisitórios do TJSP a partir de PDFs nativos para banco PostgreSQL, com interface web e compatibilidade com Traefik.
@@ -202,7 +201,3 @@ Sistema desenvolvido para processamento de documentos oficiais do TJSP.
 ---
 
 **🎉 Sistema pronto para produção com Traefik na VPS!**
-=======
-# ocr-oficios-tjsp
-Serviço de OCR que extrai os dados do oficio para calculo
->>>>>>> 8664aeb66d8ff71d7a57f51a526697f54d58f1b2
