@@ -1,0 +1,43 @@
+# Docker Compose para Produção com Traefik
+# Para usar na VPS Hostinger
+
+version: '3.8'
+
+services:
+  ocr-app:
+    build: .
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-5-nano-2025-08-07}
+      - POSTGRES_HOST=${POSTGRES_HOST}
+      - POSTGRES_PORT=${POSTGRES_PORT:-5432}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - BASE_DIR=/app/Processos
+    volumes:
+      - ./Processos:/app/Processos
+      - ./logs:/app/logs
+    networks:
+      - traefik
+    restart: unless-stopped
+    labels:
+      # Traefik configuration
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik"
+      
+      # HTTP Router
+      - "traefik.http.routers.ocr-oficios.rule=Host(`ocr.${DOMAIN}`)"
+      - "traefik.http.routers.ocr-oficios.entrypoints=websecure"
+      - "traefik.http.routers.ocr-oficios.tls.certresolver=letsencrypt"
+      
+      # Service
+      - "traefik.http.services.ocr-oficios.loadbalancer.server.port=8000"
+      
+      # Health check
+      - "traefik.http.services.ocr-oficios.loadbalancer.healthcheck.path=/health"
+      - "traefik.http.services.ocr-oficios.loadbalancer.healthcheck.interval=30s"
+
+networks:
+  traefik:
+    external: true

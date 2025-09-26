@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Sistema OCR - Ofícios TJSP</title>
+    <meta charset="utf-8">
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; background: #f5f5f5; }
+        .container { max-width: 800px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; }
+        .status { color: green; font-weight: bold; }
+        .info { background: #e8f4f8; padding: 20px; border-radius: 8px; margin: 20px 0; }
+        .endpoint { background: #f0f0f0; padding: 10px; margin: 5px 0; border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🏛️ Sistema OCR - Ofícios Requisitórios TJSP</h1>
+        <div class="info">
+            <p><strong>Status:</strong> <span class="status">✅ Sistema Ativo</span></p>
+            <p><strong>Versão:</strong> 1.0.0</p>
+            <p><strong>Ambiente:</strong> Produção VPS</p>
+            <p><strong>Proxy:</strong> Traefik com HTTPS</p>
+        </div>
+        
+        <h2>📋 Endpoints da API</h2>
+        <div class="endpoint"><a href="/health">🔍 Health Check</a> - Verificação de saúde</div>
+        <div class="endpoint"><a href="/status">📊 Status Sistema</a> - Status detalhado</div>
+        <div class="endpoint"><a href="/logs">📝 Logs</a> - Logs do sistema</div>
+        <div class="endpoint"><a href="/docs">📚 Documentação API</a> - Swagger UI</div>
+        
+        <h2>🚀 Processamento</h2>
+        <p>Para processar PDFs, use o endpoint <code>POST /process</code> ou execute diretamente no container.</p>
+        
+        <div class="info">
+            <p><strong>ℹ️ Informação:</strong> Este sistema processa automaticamente ofícios requisitórios do TJSP usando IA avançada.</p>
+        </div>
+    </div>
+</body>
+</html>

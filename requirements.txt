@@ -1,0 +1,27 @@
+# Sistema OCR - Ofícios Requisitórios TJSP
+# Dependências Python para extração e processamento de dados
+
+# Extração de texto de PDFs
+pymupdf>=1.23.0               # PyMuPDF para PDFs nativos
+
+# LLM para extração estruturada  
+openai>=1.109.0              # API GPT-5 Nano para extração estruturada
+
+# Validação e schemas de dados
+pydantic>=2.5.0              # Validação e schemas de dados
+
+# Database
+psycopg2-binary>=2.9.0       # PostgreSQL adapter
+
+# Configuração
+python-dotenv>=1.0.0         # Variáveis de ambiente
+
+# API Web (para compatibilidade com Traefik)
+fastapi>=0.104.0             # Framework web moderno
+uvicorn>=0.24.0              # ASGI server
+python-multipart>=0.0.6     # Upload de arquivos
+
+# Development and testing
+pytest>=8.0.0                # Framework de testes
+pytest-mock>=3.10.0          # Mocking para testes
+pytest-asyncio>=0.21.0       # Testes assíncronos
