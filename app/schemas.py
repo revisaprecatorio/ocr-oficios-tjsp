@@ -71,33 +71,58 @@ class OficioRequisitorio(BaseModel):
     
     # ===== CAMPOS OPCIONAIS - PARTES =====
     advogado_nome: Optional[str] = Field(
-        None, 
+        None,
         description="Nome do advogado",
         max_length=200
     )
-    
+
     advogado_oab: Optional[str] = Field(
-        None, 
+        None,
         description="Número da OAB do advogado (formato: OAB/UF 000.000)",
         max_length=20
     )
-    
+
     credor_nome: Optional[str] = Field(
-        None, 
+        None,
         description="Nome do credor",
         max_length=200
     )
-    
+
     credor_cpf_cnpj: Optional[str] = Field(
-        None, 
+        None,
         description="CPF ou CNPJ do credor",
         max_length=18
     )
-    
+
     devedor_ente: Optional[str] = Field(
-        None, 
+        None,
         description="Ente devedor (município, estado, etc.)",
         max_length=200
+    )
+
+    # ===== CAMPOS OPCIONAIS - DADOS BANCÁRIOS (ANEXO II) =====
+    banco: Optional[str] = Field(
+        None,
+        description="Código do banco (ex: 001, 341)",
+        max_length=10
+    )
+
+    agencia: Optional[str] = Field(
+        None,
+        description="Número da agência bancária",
+        max_length=20
+    )
+
+    conta: Optional[str] = Field(
+        None,
+        description="Número da conta bancária (com dígito)",
+        max_length=30
+    )
+
+    conta_tipo: Optional[str] = Field(
+        None,
+        description="Tipo de conta (corrente, poupança, etc.)",
+        max_length=20
     )
     
     # ===== CAMPOS OPCIONAIS - FINANCEIRO =====

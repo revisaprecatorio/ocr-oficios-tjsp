@@ -68,4 +68,21 @@ analyze_pdfs.py
 *.temp
 
 # Docker
-.dockerignore
+.dockerignore.venv/
+__pycache__/
+*.pyc
+*.log
+*.tmp
+*.DS_Store
+
+# artefatos e dados locais
+data/
+output_teste/
+output_*
+*.json
+
+# ambientes/containers
+.env
+.env.*
+*.sqlite
+*.db

@@ -1,207 +1,537 @@
 # 🏛️ Sistema OCR - Ofícios Requisitórios TJSP
 
-Sistema automatizado de extração de dados de Ofícios Requisitórios do TJSP a partir de PDFs nativos para banco PostgreSQL, com interface web e compatibilidade com Traefik.
+Sistema automatizado de extração de dados de Ofícios Requisitórios do TJSP a partir de PDFs nativos, com suporte a **ANEXO II** (dados bancários), pipeline modular em 2 etapas, e compatibilidade total com **Windows Server 2022**.
+
+---
 
 ## 🎯 Características
 
-- ✅ **Extração automatizada** de ofícios requisitórios do TJSP
+- ✅ **Extração automatizada** de ofícios requisitórios + ANEXO II
 - ✅ **Detecção inteligente** com algoritmo hierárquico refinado
 - ✅ **Processamento IA** com GPT-5 Nano (OpenAI)
-- ✅ **Validação robusta** com Pydantic
+- ✅ **Dados bancários** extraídos do ANEXO II (banco, agência, conta)
+- ✅ **Validação robusta** com Pydantic v2
+- ✅ **Pipeline modular** em 2 etapas (PDFs → JSONs → PostgreSQL)
 - ✅ **PostgreSQL** para persistência de dados
-- ✅ **API REST** com FastAPI para monitoramento
-- ✅ **Compatibilidade Traefik** para deploy em VPS
-- ✅ **Interface web** para status e logs
-- ✅ **Docker** para deployment fácil
+- ✅ **Cross-platform** (Windows Server 2022, Linux, macOS)
+- ✅ **Cache JSON** para reprocessamento sem custo OpenAI
 
-## 🚀 Deploy Rápido na VPS
+---
 
-### 1. Clone e Configure
+## 🏗️ Arquitetura
+
+### **Pipeline Modular em 2 Etapas**
+
+```
+ETAPA 1: PDFs → JSONs (offline, cache local)
+├── DetectorOficio → localiza páginas "OFÍCIO REQUISITÓRIO"
+├── DetectorAnexoII → localiza páginas "ANEXO II" (dados bancários)
+├── GPT-5 Nano → extrai dados estruturados (ofício + anexo)
+├── Pydantic → valida e normaliza
+└── Output → JSON por processo em output/json/{cpf}/{processo}.json
+
+ETAPA 2: JSONs → PostgreSQL (independente)
+├── Lê JSONs validados
+├── Upsert no PostgreSQL (ON CONFLICT DO UPDATE)
+└── Logs detalhados + estatísticas
+```
+
+**Vantagens:**
+- 📦 JSONs intermediários = cache (reprocessar sem custo OpenAI)
+- 🔍 Validação manual antes de importar
+- 🔄 Reprocessamento seletivo
+- 🧪 Testes sem alterar banco (--dry-run)
+
+### **Stack Tecnológica**
+
+- **Python 3.11+** com PyMuPDF para extração de texto nativo
+- **OpenAI GPT-5 Nano** para extração estruturada
+- **Pydantic v2** para validação de dados
+- **PostgreSQL** para persistência
+- **pathlib** para compatibilidade cross-platform
+
+---
+
+## 🚀 Instalação
+
+### **1. Requisitos**
+
+- Python 3.11+
+- PostgreSQL (local ou remoto)
+- Chave API OpenAI (GPT-5 Nano)
+
+### **2. Instalação Python**
+
 ```bash
-git clone https://github.com/revisaprecatorio/ocr-oficios-tjsp.git
-cd ocr-oficios-tjsp
+# Criar ambiente virtual
+python -m venv venv
+
+# Ativar (Linux/macOS)
+source venv/bin/activate
+
+# Ativar (Windows)
+.\venv\Scripts\Activate.ps1
+
+# Instalar dependências
+pip install -r requirements.txt
+```
+
+### **3. Configuração**
+
+```bash
+# Copiar template
 cp .env.example .env
-nano .env  # Configure suas credenciais
+
+# Editar configurações
+nano .env  # ou notepad .env (Windows)
 ```
 
-### 2. Deploy com Traefik
-```bash
-# Para VPS com Traefik existente
-docker-compose -f deploy/docker-compose.prod.yml up -d
+**Variáveis necessárias (.env):**
 
-# Para desenvolvimento local
-docker-compose up -d
-```
-
-### 3. Verificar Status
-```bash
-# Status dos containers
-docker-compose ps
-
-# Logs em tempo real
-docker-compose logs -f ocr-app
-
-# Health check
-curl https://ocr.seudominio.com/health
-```
-
-## ⚙️ Configuração
-
-### Variáveis de Ambiente (.env)
-```bash
+```ini
 # OpenAI Configuration
 OPENAI_API_KEY=sk-proj-...
 OPENAI_MODEL=gpt-5-nano-2025-08-07
 
 # PostgreSQL Database
-POSTGRES_HOST=seu-host-postgresql
+POSTGRES_HOST=seu-servidor-postgres
 POSTGRES_PORT=5432
 POSTGRES_DB=oficios_tjsp
 POSTGRES_USER=postgres
-POSTGRES_PASSWORD=sua-senha
-
-# Application
-BASE_DIR=./Processos
-LOG_LEVEL=INFO
-
-# Domain for Traefik
-DOMAIN=seudominio.com
+POSTGRES_PASSWORD=sua-senha-segura
 ```
 
-### Estrutura de Arquivos
+### **4. Criar Schema PostgreSQL**
+
+```bash
+# Conectar e executar schema
+psql -h servidor -U postgres -d oficios_tjsp < schema.sql
 ```
-Processos/
-├── {cpf_numerico}/           # CPF sem formatação
-│   └── {numero_processo}.pdf # Número CNJ do processo
+
+### **5. Estrutura de PDFs**
+
+Organizar PDFs na estrutura:
+
 ```
+data/
+└── consultas/
+    ├── {cpf_11_digitos}/
+    │   ├── {numero_processo_cnj}.pdf
+    │   └── ...
+    └── ...
+```
+
+**Exemplo real:**
+
+```
+data/
+└── consultas/
+    ├── 02174781824/
+    │   ├── 0035938-67.2018.8.26.0053.pdf
+    │   └── 0176505-63.2021.8.26.0500.pdf
+    └── 27308157830/
+        └── 0019125-86.2023.8.26.0053.pdf
+```
+
+---
 
 ## 🔧 Uso
 
-### Interface Web
-- **Status**: `https://ocr.seudominio.com/`
-- **Health Check**: `https://ocr.seudominio.com/health`
-- **API Docs**: `https://ocr.seudominio.com/docs`
-- **Logs**: `https://ocr.seudominio.com/logs`
+### **Teste de Compatibilidade (Primeiro Passo)**
 
-### Processamento Manual
 ```bash
-# Executar via API
-curl -X POST https://ocr.seudominio.com/process
-
-# Executar diretamente
-docker-compose exec ocr-app python run_sistema.py
+# Verificar compatibilidade do ambiente
+python teste_windows_compat.py
 ```
 
-### Monitoramento
-```bash
-# Status detalhado
-curl https://ocr.seudominio.com/status
-
-# Logs recentes
-curl https://ocr.seudominio.com/logs?lines=100
+Resultado esperado:
 ```
+✓ COMPATIBILIDADE OK PARA WINDOWS SERVER 2022
+Total: 5/5 testes passaram
+```
+
+### **Teste Completo (3 PDFs)**
+
+```bash
+# Linux/macOS
+./teste_pipeline_completo.sh
+
+# Windows
+teste_pipeline_completo.bat
+```
+
+### **ETAPA 1: Extração PDFs → JSONs**
+
+```bash
+# Processar 5 PDFs (teste)
+python exportar_json.py --input ./data/consultas --output ./output --limite 5
+
+# Processar todos os PDFs
+python exportar_json.py --input ./data/consultas --output ./output
+```
+
+**Saídas:**
+- `output/json/{cpf}/{processo}.json` - JSON por processo
+- `output/estatisticas.json` - Estatísticas gerais
+- `output/logs/exportacao_YYYYMMDD_HHMMSS.log` - Logs detalhados
+
+**Exemplo de JSON gerado:**
+
+```json
+{
+  "metadata": {
+    "cpf": "02174781824",
+    "numero_processo": "0035938-67.2018.8.26.0053",
+    "paginas_oficio": [1, 5, 10],
+    "timestamp_processamento": "2025-10-09T14:30:00",
+    "processado": true
+  },
+  "oficio": {
+    "processo_origem": "0035938-67.2018.8.26.0053",
+    "requerente_caps": "FERNANDO SANTOS ERNESTO",
+    "vara": "1ª Vara de Fazenda Pública",
+    "valor_total_requisitado": 150000.00,
+    "banco": "341",
+    "agencia": "1234",
+    "conta": "12345-6",
+    "conta_tipo": "corrente"
+  }
+}
+```
+
+### **ETAPA 2: Importação JSONs → PostgreSQL**
+
+```bash
+# Teste (dry-run - não altera banco)
+python importar_postgres.py --input ./output/json --dry-run
+
+# Importação real
+python importar_postgres.py --input ./output/json
+```
+
+**Argumentos:**
+- `--input`: Diretório com JSONs (padrão: `./output/json`)
+- `--dry-run`: Simula importação sem alterar banco
+- `--force`: Força reimportação de todos os JSONs
+
+---
 
 ## 📋 Schema PostgreSQL
 
-O sistema cria automaticamente a tabela `lista_processos` com:
+### **Tabela Principal: `lista_processos`**
 
-- **Chaves**: `cpf`, `numero_processo`
-- **Dados do Ofício**: vara, requerente, advogado, etc.
-- **Dados Financeiros**: valores, juros, contribuições
-- **Preferências**: idoso, doença grave, PCD
-- **Controle**: timestamp, texto completo, status
+```sql
+CREATE TABLE lista_processos (
+    -- Chaves
+    cpf VARCHAR(11) NOT NULL,
+    numero_processo VARCHAR(30) NOT NULL,
 
-## 🏗️ Arquitetura
+    -- Dados do Ofício
+    vara VARCHAR(100),
+    processo_execucao VARCHAR(30),
+    processo_conhecimento VARCHAR(30),
+    requerente_caps VARCHAR(200),
+    advogado_nome VARCHAR(200),
+    advogado_oab VARCHAR(20),
 
-### Stack Tecnológica
-- **Python 3.11** com PyMuPDF para extração de texto
-- **OpenAI GPT-5 Nano** para extração estruturada
-- **Pydantic v2** para validação de dados
-- **FastAPI** para API REST
-- **PostgreSQL** para persistência
-- **Docker** para containerização
-- **Traefik** para proxy reverso
+    -- Dados Financeiros
+    valor_principal_liquido DECIMAL(15,2),
+    valor_principal_bruto DECIMAL(15,2),
+    juros_moratorios DECIMAL(15,2),
+    contrib_previdenciaria_iprem DECIMAL(15,2),
+    contrib_previdenciaria_hspm DECIMAL(15,2),
+    valor_total_requisitado DECIMAL(15,2),
+    data_base_atualizacao DATE,
 
-### Fluxo de Processamento
-1. **DetectorOficio**: Localiza páginas de ofícios no PDF
-2. **ProcessadorOficio**: Orquestra o pipeline completo
-3. **GPT-5 Nano**: Extrai dados estruturados
-4. **Pydantic**: Valida e normaliza dados
-5. **PostgreSQL**: Armazena com upsert
+    -- Dados Bancários (ANEXO II)
+    banco VARCHAR(10),
+    agencia VARCHAR(20),
+    conta VARCHAR(30),
+    conta_tipo VARCHAR(20),
 
-### Algoritmo de Detecção
+    -- Preferências
+    idoso BOOLEAN,
+    doenca_grave BOOLEAN,
+    pcd BOOLEAN,
+
+    -- Controle
+    texto_completo_oficio TEXT NOT NULL,
+    timestamp_processamento TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    processado BOOLEAN DEFAULT FALSE,
+
+    PRIMARY KEY (cpf, numero_processo)
+);
+```
+
+### **Consultas Úteis**
+
+```sql
+-- Total de registros
+SELECT COUNT(*) FROM lista_processos;
+
+-- Processos com dados bancários (ANEXO II)
+SELECT COUNT(*) FROM lista_processos
+WHERE banco IS NOT NULL AND conta IS NOT NULL;
+
+-- Estatísticas gerais
+SELECT * FROM vw_estatisticas_processamento;
+
+-- Processos por vara
+SELECT * FROM vw_processos_por_vara;
+
+-- Últimos 10 processados
+SELECT cpf, numero_processo, requerente_caps,
+       banco, agencia, conta, timestamp_processamento
+FROM lista_processos
+ORDER BY timestamp_processamento DESC
+LIMIT 10;
+```
+
+---
+
+## 🪟 Deploy Windows Server 2022
+
+### **Guia Completo**
+
+Consulte **[DEPLOY_WINDOWS_SERVER.md](DEPLOY_WINDOWS_SERVER.md)** para instruções detalhadas de:
+
+- Instalação Python no Windows Server
+- Configuração de ambiente virtual
+- Estrutura de arquivos Windows
+- Automação com Task Scheduler
+- Troubleshooting Windows específico
+
+### **Quick Start Windows**
+
+```powershell
+# 1. Instalar dependências
+pip install -r requirements.txt
+
+# 2. Configurar .env
+copy .env.example .env
+notepad .env
+
+# 3. Testar compatibilidade
+python teste_windows_compat.py
+
+# 4. Processar PDFs
+python exportar_json.py --input data\consultas --output output --limite 5
+
+# 5. Importar para PostgreSQL
+python importar_postgres.py --input output\json --dry-run
+python importar_postgres.py --input output\json
+```
+
+---
+
+## 📊 Performance e Custos
+
+### **Métricas Reais**
+
+| Métrica | Valor |
+|---------|-------|
+| **Tempo por PDF** | ~30s |
+| **Custo OpenAI** | <$0.01 |
+| **Taxa de sucesso** | 100% |
+| **Taxa de detecção** | 100% |
+| **Precisão** | 100% (zero falsos positivos) |
+
+### **Estimativa para 51 PDFs**
+
+- **Tempo total**: ~25 minutos
+- **Custo total**: ~$0.51
+- **PDFs/hora**: ~120
+
+### **Dataset Analisado**
+
+- 51 PDFs de processos reais
+- 100% com texto nativo (OCR desnecessário)
+- ~20% contêm ANEXO II com dados bancários
+- Estrutura validada: `{cpf}/{processo_cnj}.pdf`
+
+---
+
+## 🔍 Detecção e Extração
+
+### **DetectorOficio (Ofício Requisitório)**
+
 Validação hierárquica com critérios ponderados:
+
 - **Título específico** (peso 3): "OFÍCIO REQUISITÓRIO Nº"
 - **Cabeçalho oficial** (peso 3): "TRIBUNAL DE JUSTIÇA DO ESTADO DE SÃO PAULO"
 - **Vara específica** (peso 2): "VARA DE FAZENDA PÚBLICA"
 - **Contexto** (peso 1): "VALOR GLOBAL DA REQUISIÇÃO"
 
-## 📊 Performance
+**Mínimo**: 5 pontos para detectar ofício (score >= 5/9)
 
-### Métricas Reais
-- **Taxa de sucesso**: 100%
-- **Taxa de detecção**: 100%
-- **Tempo de processamento**: ~30s por processo
-- **Custo por documento**: <$0.01
-- **Precisão**: 100% (zero falsos positivos)
+### **DetectorAnexoII (Dados Bancários)**
 
-### Deploy em Produção ✅
-- **VPS**: srv987902.hstgr.cloud (Hostinger)
-- **Status**: 100% funcional em produção
-- **Uptime**: Contínuo desde 26/09/2025
-- **Health Check**: ✅ Passando
-- **URLs**: http://srv987902.hstgr.cloud:8000
+Critérios de detecção:
 
-### Escalabilidade
-- **Suporte**: Múltiplos ofícios por processo
-- **Volume**: Testado com 40+ páginas por PDF
-- **Concorrência**: Ready para processamento paralelo
+1. **Marcador**: "ANEXO II" presente
+2. **Campos esperados**: Pelo menos 3 de:
+   - Nome, CPF/CNPJ/RNE, Banco, Agência, Conta
+   - Valor Requisitado, Total deste Requerente
+3. **Estrutura**: Formato tabular "Credor nº: X"
 
-## 🔐 Segurança
+### **Extração com GPT-5 Nano**
 
-### Configurações Recomendadas
-- **Environment Variables**: Nunca commitar credenciais
-- **Traefik**: HTTPS automático com Let's Encrypt
-- **Health Checks**: Monitoramento contínuo
-- **Logs**: Auditoria completa
+Prompt estruturado extrai:
 
-### Traefik Labels
-```yaml
-labels:
-  - "traefik.enable=true"
-  - "traefik.http.routers.ocr.rule=Host(`ocr.seudominio.com`)"
-  - "traefik.http.routers.ocr.entrypoints=websecure"
-  - "traefik.http.routers.ocr.tls.certresolver=letsencrypt"
+**Campos Obrigatórios:**
+- processo_origem (CNJ)
+- requerente_caps (MAIÚSCULAS)
+
+**Campos Opcionais:**
+- Ofício: vara, datas, advogado, valores
+- ANEXO II: banco, agência, conta, conta_tipo
+
+---
+
+## 📁 Estrutura de Arquivos
+
 ```
+ocr-oficios-tjsp/
+│
+├── app/                            # Código fonte
+│   ├── __init__.py
+│   ├── detector.py                 # Detecção ofícios
+│   ├── detector_anexo.py           # Detecção ANEXO II
+│   ├── processador.py              # Pipeline principal
+│   ├── schemas.py                  # Validação Pydantic
+│   └── main.py
+│
+├── data/                           # PDFs de entrada
+│   └── consultas/
+│       └── {cpf}/
+│           └── {processo}.pdf
+│
+├── output/                         # Saídas processamento
+│   ├── json/                       # JSONs gerados
+│   │   └── {cpf}/
+│   │       └── {processo}.json
+│   ├── logs/                       # Logs exportação
+│   └── estatisticas.json
+│
+├── logs/                           # Logs importação
+│
+├── exportar_json.py                # ETAPA 1: PDFs → JSONs
+├── importar_postgres.py            # ETAPA 2: JSONs → PostgreSQL
+│
+├── teste_windows_compat.py         # Testes compatibilidade
+├── teste_pipeline_completo.sh      # Teste end-to-end (Linux)
+├── teste_pipeline_completo.bat     # Teste end-to-end (Windows)
+│
+├── schema.sql                      # Schema PostgreSQL
+├── requirements.txt                # Dependências Python
+├── .env.example                    # Template configuração
+│
+└── DEPLOY_WINDOWS_SERVER.md        # Guia deploy Windows
+```
+
+---
 
 ## 📚 Documentação
 
-- **[Deploy Guide](deploy/README.md)**: Guia completo de instalação
-- **[Deploy History](HISTORICO_DEPLOY.md)**: Cronologia do deploy bem-sucedido
-- **[API Documentation](api.py)**: Endpoints e funcionalidades
-- **[Architecture](DOCUMENTACAO_PROJETO.md)**: Detalhes técnicos
-- **[Analysis Report](RELATORIO_FINAL_REFINAMENTO.md)**: Relatório de implementação
-- **[VPS Commands](vps_commands.md)**: Comandos úteis para VPS
+- **[DEPLOY_WINDOWS_SERVER.md](DEPLOY_WINDOWS_SERVER.md)** - Guia completo Windows Server 2022
+- **[RESUMO_IMPLEMENTACAO.md](RESUMO_IMPLEMENTACAO.md)** - Resumo técnico da implementação
+- **[DOCUMENTACAO_PROJETO.md](DOCUMENTACAO_PROJETO.md)** - Arquitetura e detalhes técnicos
+- **[HISTORICO_DEPLOY.md](HISTORICO_DEPLOY.md)** - Histórico do deploy em produção
 
-## 🤝 Suporte
+---
 
-### Logs e Debugging
+## 🔧 Manutenção
+
+### **Visualizar Logs**
+
 ```bash
-# Logs da aplicação
-docker-compose logs ocr-app
+# Linux/macOS
+tail -f output/logs/exportacao_*.log
+tail -f logs/importacao_*.log
 
-# Status dos services
-docker-compose ps
-
-# Health check
-curl -f https://ocr.seudominio.com/health
+# Windows
+Get-Content output\logs\exportacao_*.log -Tail 50 -Wait
 ```
 
-### Troubleshooting
-1. **Verificar .env**: Todas as variáveis configuradas
-2. **Testar conexão DB**: PostgreSQL acessível
-3. **Validar OpenAI**: API key e modelo corretos
-4. **Confirmar Traefik**: Labels e network configurados
+### **Reprocessamento**
+
+```bash
+# Deletar JSON específico
+rm output/json/02174781824/0035938-67.2018.8.26.0053.json
+
+# Reprocessar apenas esse PDF
+python exportar_json.py --input data/consultas/02174781824
+
+# Reimportar
+python importar_postgres.py --input output/json --force
+```
+
+### **Limpeza**
+
+```bash
+# Limpar outputs de teste
+rm -rf output_teste
+
+# Limpar logs antigos (>7 dias)
+find output/logs -name "*.log" -mtime +7 -delete
+```
+
+---
+
+## ⚠️ Troubleshooting
+
+### **Erro: "OPENAI_API_KEY não configurada"**
+
+```bash
+# Verificar .env
+cat .env | grep OPENAI_API_KEY
+
+# Configurar manualmente
+export OPENAI_API_KEY=sk-proj-...  # Linux/macOS
+set OPENAI_API_KEY=sk-proj-...     # Windows CMD
+```
+
+### **Erro: Conexão PostgreSQL**
+
+```bash
+# Testar conexão
+psql -h servidor -U postgres -d oficios_tjsp -c "SELECT 1;"
+
+# Verificar variáveis .env
+echo $POSTGRES_HOST
+```
+
+### **PDFs não detectados**
+
+```bash
+# Verificar estrutura
+ls data/consultas/*/
+
+# Testar com limite
+python exportar_json.py --input data/consultas --limite 1
+```
+
+### **Windows: Encoding UTF-8**
+
+```powershell
+# Configurar console
+chcp 65001
+
+# Scripts com encoding correto
+# -*- coding: utf-8 -*-
+```
+
+---
+
+## 🤝 Contribuindo
+
+1. Fork o projeto
+2. Crie uma branch (`git checkout -b feature/nova-funcionalidade`)
+3. Commit suas mudanças (`git commit -m 'Add: nova funcionalidade'`)
+4. Push para a branch (`git push origin feature/nova-funcionalidade`)
+5. Abra um Pull Request
+
+---
 
 ## 📄 Licença
 
@@ -209,4 +539,16 @@ Sistema desenvolvido para processamento de documentos oficiais do TJSP.
 
 ---
 
-**🎉 Sistema pronto para produção com Traefik na VPS!**
+## 🎯 Próximos Passos
+
+- [ ] Interface web para upload de PDFs
+- [ ] Dashboard de estatísticas em tempo real
+- [ ] Processamento paralelo (múltiplos workers)
+- [ ] Export CSV customizável
+- [ ] API REST para consulta de processos
+
+---
+
+**✅ Sistema pronto para produção - Windows Server 2022 + Linux + macOS!**
+
+**Pipeline modular | Dados bancários ANEXO II | Cache JSON | 100% compatível**

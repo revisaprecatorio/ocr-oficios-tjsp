@@ -37,12 +37,18 @@ CREATE TABLE IF NOT EXISTS lista_processos (
     doenca_grave BOOLEAN DEFAULT FALSE,          -- Doença grave
     pcd BOOLEAN DEFAULT FALSE,                   -- Pessoa com deficiência
     
+    -- Campos Bancários (ANEXO II)
+    banco VARCHAR(10),                           -- Código do banco (ex: 001, 341)
+    agencia VARCHAR(20),                         -- Número da agência
+    conta VARCHAR(30),                           -- Número da conta com dígito
+    conta_tipo VARCHAR(20),                      -- Tipo de conta (corrente, poupança)
+
     -- Campos de Controle
     texto_completo_oficio TEXT NOT NULL,         -- Texto completo para auditoria
     timestamp_processamento TIMESTAMP DEFAULT CURRENT_TIMESTAMP,  -- Timestamp processamento
     data_envio DATE,                             -- Data de envio do ofício
     processado BOOLEAN DEFAULT FALSE,            -- Status do processamento
-    
+
     -- Definir Primary Key
     PRIMARY KEY (cpf, numero_processo)
 );
@@ -53,12 +59,17 @@ CREATE INDEX IF NOT EXISTS idx_lista_processos_numero_processo ON lista_processo
 CREATE INDEX IF NOT EXISTS idx_lista_processos_processado ON lista_processos(processado);
 CREATE INDEX IF NOT EXISTS idx_lista_processos_timestamp ON lista_processos(timestamp_processamento);
 CREATE INDEX IF NOT EXISTS idx_lista_processos_vara ON lista_processos(vara);
+CREATE INDEX IF NOT EXISTS idx_lista_processos_banco ON lista_processos(banco);
 
 -- Comentários nas colunas
 COMMENT ON TABLE lista_processos IS 'Tabela principal para armazenar dados extraídos de Ofícios Requisitórios TJSP';
 COMMENT ON COLUMN lista_processos.cpf IS 'CPF do requerente (apenas números, sem formatação)';
 COMMENT ON COLUMN lista_processos.numero_processo IS 'Número do processo no formato CNJ';
 COMMENT ON COLUMN lista_processos.requerente_caps IS 'Nome do requerente em MAIÚSCULAS (campo obrigatório)';
+COMMENT ON COLUMN lista_processos.banco IS 'Código do banco extraído do ANEXO II';
+COMMENT ON COLUMN lista_processos.agencia IS 'Número da agência bancária extraído do ANEXO II';
+COMMENT ON COLUMN lista_processos.conta IS 'Número da conta bancária com dígito extraído do ANEXO II';
+COMMENT ON COLUMN lista_processos.conta_tipo IS 'Tipo de conta bancária (corrente, poupança) extraído do ANEXO II';
 COMMENT ON COLUMN lista_processos.texto_completo_oficio IS 'Texto completo do ofício para auditoria e reprocessamento';
 COMMENT ON COLUMN lista_processos.processado IS 'Indica se o processamento foi concluído com sucesso';
 
@@ -98,12 +109,13 @@ CREATE TRIGGER trg_update_timestamp_processamento
 
 -- View para estatísticas
 CREATE OR REPLACE VIEW vw_estatisticas_processamento AS
-SELECT 
+SELECT
     COUNT(*) as total_registros,
     COUNT(CASE WHEN processado = true THEN 1 END) as processados_sucesso,
     COUNT(CASE WHEN processado = false THEN 1 END) as processados_erro,
     COUNT(CASE WHEN requerente_caps IS NOT NULL THEN 1 END) as com_dados_extraidos,
     COUNT(CASE WHEN valor_total_requisitado IS NOT NULL THEN 1 END) as com_valores_financeiros,
+    COUNT(CASE WHEN banco IS NOT NULL AND conta IS NOT NULL THEN 1 END) as com_dados_bancarios,
     COUNT(CASE WHEN idoso = true THEN 1 END) as beneficiarios_idosos,
     COUNT(CASE WHEN doenca_grave = true THEN 1 END) as beneficiarios_doenca_grave,
     COUNT(CASE WHEN pcd = true THEN 1 END) as beneficiarios_pcd,

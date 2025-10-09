@@ -13,6 +13,7 @@ from psycopg2.extras import RealDictCursor
 from openai import OpenAI
 
 from .detector import DetectorOficio
+from .detector_anexo import DetectorAnexoII
 from .schemas import OficioRequisitorio, ProcessoMetadata, OficioCompleto
 
 
@@ -43,10 +44,11 @@ class ProcessadorOficio:
         # Configurações do banco
         self.db_config = db_config
         
-        # Inicializar detector
+        # Inicializar detectores
         self.detector = DetectorOficio()
-        
-        logger.info("ProcessadorOficio inicializado")
+        self.detector_anexo = DetectorAnexoII()
+
+        logger.info("ProcessadorOficio inicializado com suporte a ANEXO II")
     
     def processar_arquivo(self, pdf_path: str) -> Optional[OficioCompleto]:
         """
@@ -89,10 +91,19 @@ class ProcessadorOficio:
             # Atualizar metadata com dados detectados
             metadata.paginas_oficio = paginas_oficio
             metadata.texto_completo_oficio = texto_oficio
-            
+
+            # Detectar ANEXO II (opcional - nem todos os processos têm)
+            paginas_anexo, texto_anexo = self.detector_anexo.detectar_anexo_ii(pdf_path)
+
+            # Combinar textos para extração completa
+            texto_completo = texto_oficio
+            if texto_anexo:
+                logger.info(f"ANEXO II encontrado em {len(paginas_anexo)} página(s)")
+                texto_completo += f"\n\n=== ANEXO II ===\n\n{texto_anexo}"
+
             # Extrair dados estruturados com LLM
-            logger.info(f"Enviando {len(texto_oficio)} chars para GPT-5 Nano")
-            dados_oficio = self._extrair_dados_llm(texto_oficio)
+            logger.info(f"Enviando {len(texto_completo)} chars para GPT-5 Nano")
+            dados_oficio = self._extrair_dados_llm(texto_completo, tem_anexo_ii=bool(texto_anexo))
             
             if not dados_oficio:
                 logger.error(f"Falha na extração LLM: {pdf_path}")
@@ -167,22 +178,33 @@ class ProcessadorOficio:
             logger.error(f"Erro ao extrair metadata de {pdf_path}: {e}")
             return None
     
-    def _extrair_dados_llm(self, texto_oficio: str) -> Optional[Dict[str, Any]]:
+    def _extrair_dados_llm(self, texto_oficio: str, tem_anexo_ii: bool = False) -> Optional[Dict[str, Any]]:
         """
         Extrai dados estruturados do texto do ofício usando GPT-5 Nano.
-        Conforme template do AGENTS.md.
-        
+        Conforme template do AGENTS.md + dados bancários do ANEXO II.
+
         Args:
-            texto_oficio: Texto completo do ofício
-            
+            texto_oficio: Texto completo do ofício (pode incluir ANEXO II)
+            tem_anexo_ii: Indica se o texto contém ANEXO II
+
         Returns:
             Dicionário com dados extraídos ou None se falhar
         """
         try:
+            # Adicionar campos bancários se ANEXO II presente
+            campos_bancarios = ""
+            if tem_anexo_ii:
+                campos_bancarios = """
+CAMPOS ANEXO II (dados bancários - se presentes):
+- banco: Código do banco (apenas números, ex: 341, 001)
+- agencia: Número da agência (sem dígito)
+- conta: Número da conta com dígito (ex: 12345-6)
+- conta_tipo: Tipo da conta (corrente, poupança)"""
+
             # Template do prompt conforme AGENTS.md
             prompt = f"""Você é um assistente especializado em extrair dados de Ofícios Requisitórios do TJSP.
 
-DOCUMENTO: Ofício Requisitório do Tribunal de Justiça de São Paulo
+DOCUMENTO: Ofício Requisitório do Tribunal de Justiça de São Paulo {' + ANEXO II' if tem_anexo_ii else ''}
 FORMATO: JSON válido
 
 CAMPOS OBRIGATÓRIOS:
@@ -194,12 +216,13 @@ CAMPOS OPCIONAIS:
 - datas (YYYY-MM-DD): data_ajuizamento, data_transito_julgado, data_base_atualizacao
 - partes: advogado_nome, advogado_oab (OAB/UF 000.000), credor_nome, credor_cpf_cnpj, devedor_ente
 - financeiro (números puros): valor_principal_liquido, valor_principal_bruto, juros_moratorios, contrib_previdenciaria_iprem, contrib_previdenciaria_hspm, valor_total_requisitado
-- preferências (bool): idoso, doenca_grave, pcd
+- preferências (bool): idoso, doenca_grave, pcd{campos_bancarios}
 
 REGRAS:
 - Campos não encontrados = null
-- Valores numéricos sem R$, sem pontos de milhar
+- Valores numéricos sem R$, sem pontos de milhar, sem vírgulas (usar ponto decimal)
 - Requerente SEMPRE em MAIÚSCULAS
+- Dados bancários extrair do ANEXO II se disponível
 
 DOCUMENTO:
 {texto_oficio}
