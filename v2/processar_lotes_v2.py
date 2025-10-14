@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """
 Processador de Ofícios em Lotes V2
-Versão 2.0 - Com validação de CPF e extração seletiva de páginas
+Versão 2.1 - Com validação de CPF, extração seletiva e barra de progresso
 """
 
 import os
@@ -13,6 +13,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import List, Dict, Any
 from dotenv import load_dotenv
+from tqdm import tqdm  # Barra de progresso
 
 # Adicionar pasta app ao path
 sys.path.insert(0, str(Path(__file__).parent))
@@ -205,61 +206,66 @@ def processar_em_lotes(pdfs: List[Path], output_dir: Path, inicio_lote: int = 1)
         "tempo_total": 0
     }
     
-    for i in range(0, len(pdfs), TAMANHO_LOTE):
-        lote_num = (i // TAMANHO_LOTE) + 1
+    # Barra de progresso global
+    with tqdm(total=len(pdfs), desc="🔄 Processamento Geral", unit="PDF", 
+              bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}]') as pbar_global:
         
-        if lote_num < inicio_lote:
-            continue
-        
-        lote_pdfs = pdfs[i:i + TAMANHO_LOTE]
-        
-        print(f"{'='*60}")
-        print(f"📦 LOTE {lote_num}/{total_lotes} - V2")
-        print(f"{'='*60}")
-        print(f"PDFs neste lote: {len(lote_pdfs)}")
-        print()
-        
-        resultados_lote = []
-        lote_dir = output_dir / f"lote_{lote_num:03d}"
-        lote_dir.mkdir(parents=True, exist_ok=True)
-        
-        for j, pdf in enumerate(lote_pdfs, 1):
-            print(f"   [{j}/{len(lote_pdfs)}] Processando: {pdf.name}")
-            resultado = processar_pdf(pdf, processador)
-            resultados_lote.append(resultado)
+        for i in range(0, len(pdfs), TAMANHO_LOTE):
+            lote_num = (i // TAMANHO_LOTE) + 1
             
-            # Atualizar estatísticas
-            estatisticas_globais["total_pdfs"] += 1
-            if resultado["sucesso"]:
-                estatisticas_globais["sucesso"] += 1
-            else:
-                estatisticas_globais["erros"] += 1
+            if lote_num < inicio_lote:
+                pbar_global.update(len(pdfs[i:i + TAMANHO_LOTE]))
+                continue
             
-            if resultado["cpf_validado"]:
-                estatisticas_globais["cpf_validado"] += 1
+            lote_pdfs = pdfs[i:i + TAMANHO_LOTE]
             
-            estatisticas_globais["tempo_total"] += resultado["tempo_processamento"]
+            print(f"\n{'='*60}")
+            print(f"📦 LOTE {lote_num}/{total_lotes}")
+            print(f"{'='*60}")
             
-            status = "✅" if resultado["sucesso"] else "❌"
-            erro_msg = resultado.get('erro', 'OK') or 'OK'
-            print(f"      {status} {erro_msg[:80]}")
+            resultados_lote = []
+            lote_dir = output_dir / f"lote_{lote_num:03d}"
+            lote_dir.mkdir(parents=True, exist_ok=True)
             
-            # Salvar JSON individual
-            if resultado["sucesso"] and resultado["dados"]:
-                json_path = lote_dir / f"{resultado['cpf']}_{resultado['pdf'].replace('.pdf', '.json')}"
-                with open(json_path, 'w', encoding='utf-8') as f:
-                    json.dump(resultado["dados"], f, indent=2, ensure_ascii=False, default=str)
-        
-        print()
-        
-        # Gerar CSV do lote
-        csv_path = gerar_csv_lote(resultados_lote, lote_num, output_dir)
-        
-        # Resumo do lote
-        sucesso_lote = sum(1 for r in resultados_lote if r["sucesso"])
-        print(f"   ✅ Sucesso: {sucesso_lote}/{len(lote_pdfs)}")
-        print(f"   ❌ Erros: {len(lote_pdfs) - sucesso_lote}/{len(lote_pdfs)}")
-        print()
+            # Barra de progresso do lote
+            for pdf in tqdm(lote_pdfs, desc=f"  Lote {lote_num}", unit="PDF", leave=False):
+                resultado = processar_pdf(pdf, processador)
+                resultados_lote.append(resultado)
+                
+                # Atualizar estatísticas
+                estatisticas_globais["total_pdfs"] += 1
+                if resultado["sucesso"]:
+                    estatisticas_globais["sucesso"] += 1
+                else:
+                    estatisticas_globais["erros"] += 1
+                
+                if resultado["cpf_validado"]:
+                    estatisticas_globais["cpf_validado"] += 1
+                
+                estatisticas_globais["tempo_total"] += resultado["tempo_processamento"]
+                
+                # Atualizar barra global
+                pbar_global.update(1)
+                
+                # Log de erro (se houver)
+                if not resultado["sucesso"]:
+                    erro_msg = resultado.get('erro', 'N/A')
+                    tqdm.write(f"      ❌ {pdf.name}: {erro_msg[:60]}")
+            
+            # Salvar JSONs individuais
+            for resultado in resultados_lote:
+                if resultado["sucesso"] and resultado["dados"]:
+                    json_path = lote_dir / f"{resultado['cpf']}_{resultado['pdf'].replace('.pdf', '.json')}"
+                    with open(json_path, 'w', encoding='utf-8') as f:
+                        json.dump(resultado["dados"], f, indent=2, ensure_ascii=False, default=str)
+            
+            # Gerar CSV do lote
+            csv_path = gerar_csv_lote(resultados_lote, lote_num, output_dir)
+            
+            # Resumo do lote
+            sucesso_lote = sum(1 for r in resultados_lote if r["sucesso"])
+            print(f"\n   ✅ Sucesso: {sucesso_lote}/{len(lote_pdfs)}")
+            print(f"   ❌ Erros: {len(lote_pdfs) - sucesso_lote}/{len(lote_pdfs)}")
     
     # Estatísticas finais
     print(f"{'='*60}")
