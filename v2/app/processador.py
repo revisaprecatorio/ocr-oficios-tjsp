@@ -175,7 +175,28 @@ class ProcessadorOficio:
                         break
             
             # 7. Montar texto relevante (APENAS páginas necessárias!)
-            texto_relevante = oficio_correto['texto']
+            # CHUNKING: Se ofício muito grande SEM ANEXO II/PROCESSAMENTO, reduzir
+            paginas_oficio = oficio_correto['paginas']
+            num_paginas = len(paginas_oficio)
+            
+            if num_paginas > 100 and not texto_anexo and not texto_proc:
+                logger.warning(f"⚠️ Ofício muito grande ({num_paginas} páginas) sem ANEXO II/PROCESSAMENTO")
+                logger.info(f"🔧 Aplicando CHUNKING: primeiras 50 + últimas 50 páginas")
+                
+                # Extrair apenas primeiras 50 + últimas 50 páginas
+                paginas_chunk = paginas_oficio[:50] + paginas_oficio[-50:]
+                
+                # Re-extrair texto apenas dessas páginas
+                doc = pymupdf.open(pdf_path)
+                texto_chunk = ""
+                for pag in paginas_chunk:
+                    texto_chunk += doc.load_page(pag).get_text() + "\n"
+                doc.close()
+                
+                texto_relevante = texto_chunk
+                logger.info(f"📄 Texto reduzido: {len(texto_relevante):,} chars (100 páginas)")
+            else:
+                texto_relevante = oficio_correto['texto']
             
             if texto_anexo:
                 logger.info(f"📋 ANEXO II encontrado em {len(paginas_anexo)} página(s)")
