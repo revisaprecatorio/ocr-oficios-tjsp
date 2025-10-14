@@ -216,7 +216,38 @@ class ProcessadorOficio:
             else:
                 logger.warning("⚠️ PROCESSAMENTO não encontrado e número não está no título")
             
-            # 8. Enviar ao LLM (muito menor!)
+            # 8. Verificar tamanho e aplicar chunking adicional se necessário
+            # Estimativa conservadora: 1 token ≈ 2 chars (português), limite 128k tokens ≈ 256k chars
+            # Deixar margem de segurança: 200k chars
+            MAX_CHARS = 200_000
+            
+            if len(texto_relevante) > MAX_CHARS:
+                logger.warning(f"⚠️ Texto muito grande ({len(texto_relevante):,} chars > {MAX_CHARS:,})")
+                logger.info(f"🔧 Aplicando CHUNKING AGRESSIVO: primeiras 30 + últimas 30 páginas do ofício")
+                
+                # Re-extrair com chunking mais agressivo
+                paginas_chunk = paginas_oficio[:30] + paginas_oficio[-30:]
+                
+                doc = pymupdf.open(pdf_path)
+                texto_chunk = ""
+                for pag in paginas_chunk:
+                    texto_chunk += doc.load_page(pag).get_text() + "\n"
+                doc.close()
+                
+                texto_relevante = texto_chunk
+                
+                # Re-adicionar ANEXO II e PROCESSAMENTO (se houver)
+                if texto_anexo:
+                    texto_relevante += f"\n\n{'='*60}\n=== ANEXO II ===\n{'='*60}\n\n{texto_anexo}"
+                if texto_proc:
+                    if oficio_rejeitado:
+                        texto_relevante += f"\n\n{'='*60}\n=== NOTA DE REJEIÇÃO ===\n{'='*60}\n\n{texto_proc}"
+                    else:
+                        texto_relevante += f"\n\n{'='*60}\n=== PROCESSAMENTO ===\n{'='*60}\n\n{texto_proc}"
+                
+                logger.info(f"📄 Texto reduzido: {len(texto_relevante):,} chars (60 páginas + anexos)")
+            
+            # 9. Enviar ao LLM (muito menor!)
             logger.info(f"🤖 Enviando {len(texto_relevante):,} chars para GPT-4o-mini")
             logger.info(f"   Páginas enviadas: Ofício {oficio_correto['paginas']} + ANEXO II {paginas_anexo} + PROC {[pagina_proc] if pagina_proc else []}")
             

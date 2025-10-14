@@ -22,8 +22,8 @@ class OficioRequisitorio(BaseModel):
     # ===== CAMPOS OBRIGATÓRIOS =====
     processo_origem: str = Field(
         ..., 
-        description="Número CNJ do processo de origem",
-        min_length=20,
+        description="Número CNJ do processo de origem (ou formato antigo)",
+        min_length=10,  # Reduzido para aceitar formatos antigos mais curtos
         max_length=30
     )
     
