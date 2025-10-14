@@ -1,0 +1,59 @@
+# ============================================================================
+# Docker Compose - Ingestão e Streamlit
+# PostgreSQL está em servidor externo (72.60.62.124)
+# ============================================================================
+
+version: '3.8'
+
+services:
+  # ==========================================================================
+  # Serviço: Streamlit App
+  # ==========================================================================
+  streamlit:
+    build: .
+    container_name: revisa-streamlit
+    ports:
+      - "8501:8501"
+    volumes:
+      # Código da aplicação (hot reload)
+      - ./app:/app/app
+      - ./scripts:/app/scripts
+      
+      # Dados (read-only)
+      - ../1_parsing_PDF/outputs:/app/data/jsons:ro
+      - ../data/consultas:/app/data/pdfs:ro
+      
+      # Logs (persistente)
+      - ./logs:/app/logs
+    
+    environment:
+      # Carregar do .env
+      - DB_HOST=${DB_HOST}
+      - DB_PORT=${DB_PORT}
+      - DB_NAME=${DB_NAME}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - JSON_DIR=/app/data/jsons
+      - PDF_DIR=/app/data/pdfs
+    
+    env_file:
+      - .env
+    
+    restart: unless-stopped
+    
+    networks:
+      - revisa-network
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+# ==========================================================================
+# Networks
+# ==========================================================================
+networks:
+  revisa-network:
+    driver: bridge

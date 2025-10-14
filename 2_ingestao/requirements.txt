@@ -1,0 +1,31 @@
+# ============================================================================
+# Dependências Python - Ingestão PostgreSQL e Streamlit
+# Versão: 1.0.0
+# Python: 3.11+
+# ============================================================================
+
+# Database
+psycopg2-binary>=2.9.9
+sqlalchemy>=2.0.23
+
+# Validação de dados
+pydantic>=2.5.0
+
+# Utilidades
+python-dotenv>=1.0.0
+tqdm>=4.67.0
+
+# Streamlit e visualização
+streamlit>=1.28.0
+pandas>=2.1.0
+plotly>=5.17.0
+altair>=5.1.0
+
+# PDF handling
+PyPDF2>=3.0.0
+
+# Logging
+loguru>=0.7.2
+
+# Data manipulation
+numpy>=1.26.0

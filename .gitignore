@@ -29,6 +29,9 @@ env/
 
 # Environment Variables
 .env
+.env.local
+!.env.example
+!**/.env.example
 config_db.env
 
 # IDE
@@ -83,7 +86,9 @@ output_*
 
 # ambientes/containers
 .env
-.env.*
+.env.local
+.env.production
+!.env.example
 *.sqlite
 *.db
 .clinerules/byterover-rules.md
