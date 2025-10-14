@@ -37,8 +37,8 @@ class OficioRequisitorio(BaseModel):
     # V2: NOVO CAMPO (opcional pois pode não existir em ofícios rejeitados)
     numero_ordem: Optional[str] = Field(
         None,
-        description="Número de ordem/precatório (formato: XXX/YYYY)",
-        pattern=r'^\d{1,5}/\d{4}$'
+        description="Número de ordem/precatório (formato: XXX/YYYY ou XXXXXX/YYYY)",
+        pattern=r'^\d{1,6}/\d{4}$'  # Aceita até 6 dígitos
     )
     
     # ===== CAMPOS OPCIONAIS - OFÍCIO =====
@@ -142,53 +142,36 @@ class OficioRequisitorio(BaseModel):
     # ===== CAMPOS FINANCEIROS - OPCIONAIS (V2) =====
     # Valores armazenados como Decimal para precisão monetária
     # Opcionais para permitir ofícios rejeitados ou PDFs antigos
+    # Validação de formato feita no validador arredondar_decimais
     valor_principal_liquido: Optional[Decimal] = Field(
         None,
-        description="Valor principal líquido (sem R$, sem pontos de milhar)",
-        ge=0,
-        decimal_places=2
+        description="Valor principal líquido (sem R$, sem pontos de milhar)"
     )
     
     valor_principal_bruto: Optional[Decimal] = Field(
         None,
-        description="Valor principal bruto (sem R$, sem pontos de milhar)",
-        ge=0,
-        decimal_places=2
+        description="Valor principal bruto (sem R$, sem pontos de milhar)"
     )
     
     juros_moratorios: Optional[Decimal] = Field(
         None,
-        description="Juros moratórios (sem R$, sem pontos de milhar)",
-        ge=0,
-        decimal_places=2
+        description="Juros moratórios (sem R$, sem pontos de milhar)"
     )
     
+    # V2.1: Campo opcional para ofícios rejeitados
     valor_total_requisitado: Optional[Decimal] = Field(
         None,
-        description="Valor total requisitado (sem R$, sem pontos de milhar)",
-        ge=0,
-        decimal_places=2
+        description="Valor total requisitado (sem R$, sem pontos de milhar). Opcional para ofícios rejeitados."
     )
     
     contrib_previdenciaria_iprem: Optional[Decimal] = Field(
         None, 
-        description="Contribuição previdenciária IPREM (sem R$, sem pontos de milhar)",
-        ge=0,
-        decimal_places=2
+        description="Contribuição previdenciária IPREM (sem R$, sem pontos de milhar)"
     )
     
     contrib_previdenciaria_hspm: Optional[Decimal] = Field(
         None, 
-        description="Contribuição previdenciária HSPM (sem R$, sem pontos de milhar)",
-        ge=0,
-        decimal_places=2
-    )
-    
-    valor_total_requisitado: Decimal = Field(
-        ...,  # V2: Obrigatório!
-        description="Valor total requisitado (sem R$, sem pontos de milhar)",
-        ge=0,
-        decimal_places=2
+        description="Contribuição previdenciária HSPM (sem R$, sem pontos de milhar)"
     )
     
     # ===== CAMPOS OPCIONAIS - PREFERÊNCIAS =====
@@ -386,22 +369,74 @@ class OficioRequisitorio(BaseModel):
             # Se não conseguir converter, retornar None
             return None
     
-    @field_validator('processo_origem')
+    @field_validator('numero_ordem', mode='before')
+    @classmethod
+    def validar_numero_ordem(cls, v: Optional[str]) -> Optional[str]:
+        """
+        Valida e normaliza número de ordem do RPV/Precatório.
+        Aceita formatos: XXX/YY, XXX/YYYY, XXXXXX/YY, XXXXXX/YYYY
+        Normaliza para: XXXXX/YYYY (ano com 4 dígitos)
+        """
+        if v is None or not v:
+            return None
+        
+        v = v.strip()
+        
+        # Pattern flexível: aceita ano com 2 ou 4 dígitos
+        pattern = r'^(\d{1,6})/(\d{2,4})$'
+        match = re.match(pattern, v)
+        
+        if not match:
+            # Se não bater, retornar None (campo opcional)
+            return None
+        
+        numero, ano = match.groups()
+        
+        # Normalizar ano: se tem 2 dígitos, assumir 20XX
+        if len(ano) == 2:
+            ano_int = int(ano)
+            # Se ano >= 90, assumir 19XX, senão 20XX
+            if ano_int >= 90:
+                ano = f"19{ano}"
+            else:
+                ano = f"20{ano}"
+        
+        return f"{numero}/{ano}"
+    
+    @field_validator('processo_origem', mode='before')
     @classmethod
     def validar_processo_cnj(cls, v: str) -> str:
-        """Valida formato do processo CNJ: 0000000-00.0000.0.00.0000 (com possível sufixo)"""
+        """
+        Valida formato do processo CNJ: 0000000-00.0000.0.00.0000
+        Aceita também formatos antigos e tenta normalizar.
+        """
         if not v:
             raise ValueError("Processo de origem é obrigatório")
+        
+        v = v.strip()
         
         # Remover possível sufixo após barra (ex: /35, /0579)
         processo_limpo = v.split('/')[0]
         
         # Pattern CNJ conforme AGENTS.md
-        pattern = r'^\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}$'
-        if not re.match(pattern, processo_limpo):
-            raise ValueError(f"Formato de processo CNJ inválido: {processo_limpo}. Esperado: 0000000-00.0000.0.00.0000")
+        pattern_cnj = r'^\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}$'
         
-        # Retornar apenas o número principal (sem sufixo)
+        if re.match(pattern_cnj, processo_limpo):
+            # Formato CNJ válido
+            return processo_limpo
+        
+        # Se não for CNJ, pode ser formato antigo
+        # Aceitar mas truncar se muito longo (max 30 chars)
+        if len(processo_limpo) > 30:
+            # Tentar extrair apenas a parte principal
+            # Formato antigo comum: XXX.XX.XXXX.XXXXXX-X/XXXXXX-XXX
+            # Pegar apenas até a primeira barra
+            processo_limpo = processo_limpo.split('/')[0]
+            
+            if len(processo_limpo) > 30:
+                # Ainda muito longo, truncar
+                processo_limpo = processo_limpo[:30]
+        
         return processo_limpo
     
     @field_validator('requerente_caps')
@@ -432,12 +467,19 @@ class OficioRequisitorio(BaseModel):
         
         return v
     
-    @field_validator('credor_cpf_cnpj')
+    @field_validator('credor_cpf_cnpj', 'cpf_titular_conta', mode='before')
     @classmethod
     def validar_cpf_cnpj(cls, v: Optional[str]) -> Optional[str]:
-        """Valida formato básico de CPF/CNPJ"""
+        """
+        Valida e limpa formato de CPF/CNPJ.
+        Remove prefixos como 'CPF:', 'CNPJ:' e formata corretamente.
+        """
         if v is None:
             return v
+        
+        # Remover prefixos comuns
+        v = v.strip()
+        v = re.sub(r'^(CPF|CNPJ):\s*', '', v, flags=re.IGNORECASE)
         
         # Remove formatação
         numeros = re.sub(r'[^\d]', '', v)
