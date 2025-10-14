@@ -1,12 +1,6 @@
 pdf,cpf,sucesso,tempo_s,oficios_encontrados,cpf_validado,rejeitado,motivo_rejeicao,anomalia,descricao_anomalia,processo_origem,requerente_caps,numero_ordem,valor_principal_liquido,valor_principal_bruto,juros_moratorios,valor_total,banco,agencia,conta,conta_tipo,vara,contrib_iprem,contrib_hspm,data_nascimento,data_base,idoso,doenca_grave,pcd,anomalias
-0015266-16.2022.8.26.0500.pdf,01103192817,✓,12.2,10,✓,⚠️,,✗,,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✗,✗,OK
-0176505-63.2021.8.26.0500.pdf,02174781824,✓,12.9,7,✓,⚠️,O ofício requisitório encaminhado eletronicamente ...,✗,,✓,✓,✗,✓,✓,✓,✓,✓,✓,✓,✓,✓,✗,✗,✓,✓,✓,✗,✗,OK
-0221031-18.2021.8.26.0500.pdf,02174781824,✓,13.7,12,✓,⚠️,,✗,,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✗,✗,OK
-0037256-10.2015.8.26.0500.pdf,03730461893,✗,9.6,52,✓,✗,,✗,,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,"Validação falhou: 1 validation error for OficioRequisitorio
-valor_total_requisitado
-  Decimal input should be an integer, float, string or Decimal object [type=decimal_type, input_value=None, input_type=NoneType]
-    For further information visit https://errors.pydantic.dev/2.11/v/decimal_type"
-0068067-16.2016.8.26.0500.pdf,03730461893,✗,17.8,195,✓,✗,,✗,,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,"Validação falhou: 1 validation error for OficioRequisitorio
-numero_ordem
-  String should match pattern '^\d{1,5}/\d{4}$' [type=string_pattern_mismatch, input_value='34.996,35', input_type=str]
-    For further information visit https://errors.pydantic.dev/2.11/v/string_pattern_mismatch"
+0015266-16.2022.8.26.0500.pdf,01103192817,✓,10.9,10,✓,⚠️,,✗,,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✗,✗,OK
+0176505-63.2021.8.26.0500.pdf,02174781824,✓,13.0,7,✓,⚠️,O ofício requisitório encaminhado eletronicamente ...,✗,,✓,✓,✗,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✗,✗,OK
+0221031-18.2021.8.26.0500.pdf,02174781824,✓,10.5,12,✓,⚠️,,✗,,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✗,✗,OK
+0037256-10.2015.8.26.0500.pdf,03730461893,✓,8.8,52,✓,⚠️,não foram individualizadas as verbas principal e j...,✗,,✓,✓,✗,✗,✗,✗,✗,✗,✗,✗,✗,✓,✓,✓,✓,✓,✗,✗,✗,OK
+0068067-16.2016.8.26.0500.pdf,03730461893,✓,38.3,195,✓,✗,,✗,,✓,✓,✗,✓,✓,✓,✓,✗,✗,✗,✗,✓,✓,✓,✗,✓,✗,✗,✗,OK
