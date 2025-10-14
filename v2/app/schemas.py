@@ -329,7 +329,13 @@ class OficioRequisitorio(BaseModel):
     )
     @classmethod
     def arredondar_decimais(cls, v):
-        """Arredonda valores para 2 casas decimais automaticamente"""
+        """
+        Limpa e normaliza valores monetários antes da validação.
+        
+        Remove: R$, espaços, pontos de milhar
+        Converte: vírgula em ponto decimal
+        Aceita: int, float, str, Decimal
+        """
         if v is None:
             return v
         
@@ -341,11 +347,27 @@ class OficioRequisitorio(BaseModel):
             if isinstance(v, (int, float)):
                 v = Decimal(str(v))
             elif isinstance(v, str):
-                # Remover espaços e caracteres especiais
-                v = v.strip().replace(',', '.')
+                # Limpar string: remover R$, espaços, pontos de milhar
+                v = v.strip()
+                v = v.replace('R$', '').replace('R$ ', '')
+                v = v.replace(' ', '')
+                
                 # Se estiver vazio ou for "null", retornar None
-                if not v or v.lower() == 'null':
+                if not v or v.lower() in ('null', 'none', 'n/a', '-'):
                     return None
+                
+                # Remover pontos de milhar (mas manter ponto decimal se houver)
+                # Lógica: se tem vírgula, é separador decimal brasileiro
+                if ',' in v:
+                    # Formato brasileiro: 1.234.567,89
+                    v = v.replace('.', '')  # Remove pontos de milhar
+                    v = v.replace(',', '.')  # Converte vírgula em ponto
+                elif v.count('.') > 1:
+                    # Múltiplos pontos = pontos de milhar (ex: 1.234.567)
+                    # Remove todos exceto o último
+                    partes = v.split('.')
+                    v = ''.join(partes[:-1]) + '.' + partes[-1]
+                
                 v = Decimal(v)
             elif isinstance(v, Decimal):
                 pass  # Já é Decimal
@@ -353,10 +375,14 @@ class OficioRequisitorio(BaseModel):
                 # Tipo não suportado, retornar None
                 return None
             
+            # Validar se é positivo
+            if v < 0:
+                return None
+            
             # Arredondar para 2 casas decimais
             return v.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
             
-        except (ValueError, InvalidOperation):
+        except (ValueError, InvalidOperation, AttributeError):
             # Se não conseguir converter, retornar None
             return None
     
