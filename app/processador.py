@@ -39,7 +39,7 @@ class ProcessadorOficio:
         """
         # Inicializar OpenAI client
         self.client = OpenAI(api_key=openai_api_key)
-        self.modelo_gpt = "gpt-5-nano-2025-08-07"  # Conforme AGENTS.md
+        self.modelo_gpt = "gpt-4o-mini"  # Modelo OpenAI para extração estruturada
         
         # Configurações do banco
         self.db_config = db_config
@@ -180,7 +180,7 @@ class ProcessadorOficio:
     
     def _extrair_dados_llm(self, texto_oficio: str, tem_anexo_ii: bool = False) -> Optional[Dict[str, Any]]:
         """
-        Extrai dados estruturados do texto do ofício usando GPT-5 Nano.
+        Extrai dados estruturados do texto do ofício usando GPT-4o-mini.
         Conforme template do AGENTS.md + dados bancários do ANEXO II.
 
         Args:
@@ -229,11 +229,11 @@ DOCUMENTO:
 
 Retorne APENAS JSON válido:"""
 
-            # Fazer chamada para GPT-5 Nano
+            # Fazer chamada para GPT-4o-mini
             response = self.client.chat.completions.create(
                 model=self.modelo_gpt,
-                messages=[{"role": "user", "content": prompt}]
-                # GPT-5 Nano usa temperatura padrão (1), não suporta temperature=0
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0  # Determinístico para extração estruturada
             )
             
             # Extrair resposta

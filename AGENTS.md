@@ -8,8 +8,8 @@ Sistema de extração automatizada de dados de Ofícios Requisitórios do TJSP a
 
 - Use Python 3.11+ com venv: `python3.11 -m venv .venv && source .venv/bin/activate`
 - Install deps: `pip install -r requirements.txt`
-- Estrutura de pastas: `./Processos/{cpf_numerico}/{numero_processo_cnj}.pdf`
-- Pasta base padrão: `Processos/` no diretório do projeto
+- Estrutura de pastas: `./data/consultas/{cpf_numerico}/{numero_processo_cnj}.pdf`
+- Pasta base padrão: `data/consultas/` no diretório do projeto
 - O nome do CPF = apenas números (sem pontos/traços)
 - O nome do arquivo = número do processo CNJ
 - Configure `.env` com OPENAI_API_KEY e credenciais PostgreSQL
@@ -46,8 +46,8 @@ Mínimo 2/3 critérios para detectar início do ofício.
 - Não use fallbacks ou OCR - PDFs são sempre nativos/digitais
 
 **LLM para extração estruturada:**
-- Model: `gpt-5-nano-2025-08-07` (OpenAI)
-- Pricing: $0.05/1M input tokens, $0.40/1M output tokens
+- Model: `gpt-4o-mini` (OpenAI)
+- Pricing: $0.150/1M input tokens, $0.600/1M output tokens
 - Import: `from openai import OpenAI`
 - Nunca use Gemini, Claude ou outros modelos
 
@@ -67,6 +67,7 @@ Mínimo 2/3 critérios para detectar início do ofício.
 ```bash
 # OpenAI API
 OPENAI_API_KEY=sk-...
+OPENAI_MODEL=gpt-4o-mini
 
 # PostgreSQL
 DB_HOST=localhost
@@ -75,8 +76,8 @@ DB_NAME=oficios_tjsp
 DB_USER=postgres
 DB_PASSWORD=your_password
 
-# Base directory (padrão: pasta "Processos" no projeto)
-BASE_DIR=./Processos
+# Base directory (padrão: pasta "data/consultas" no projeto)
+BASE_DIR=./data/consultas
 ```
 
 ## Running the system
@@ -168,7 +169,7 @@ Tabela `lista_processos` com campos:
 ❌ Não duplique registros (use upsert)
 ❌ Não deixe campos obrigatórios vazios (processo_origem, requerente_caps)
 
-## GPT-5 Nano (gpt-5-nano-2025-08-07) prompt template
+## GPT-4o-mini prompt template
 
 ```python
 prompt = f"""Você é um assistente especializado em extrair dados de Ofícios Requisitórios do TJSP.
@@ -206,10 +207,10 @@ Retorne APENAS JSON válido:"""
 - **Validação + DB:** <0.05s
 - **Total:** <1.3s por processo
 
-**Custo (GPT-5 Nano):**
-- Ofício médio: ~3k tokens input, ~500 tokens output
-- Custo por doc: ~$0.00035
-- 1000 docs: ~$0.35
+**Custo (GPT-4o-mini):**
+- Ofício médio: ~4k tokens input, ~500 tokens output
+- Custo por doc: ~$0.0009
+- 50 docs/dia: ~$0.045/dia = $1.35/mês
 
 ## Debugging tips
 
@@ -305,3 +306,24 @@ salvar_postgres(cpf, numero_processo, oficio.dict(), texto_oficio)
 - [Pydantic V2](https://docs.pydantic.dev/latest/)
 - [PostgreSQL Upsert](https://www.postgresql.org/docs/current/sql-insert.html#SQL-ON-CONFLICT)
 - [CNJ Numeração Única](https://www.cnj.jus.br/programas-e-acoes/numeracao-unica/)
+
+[byterover-mcp]
+
+[byterover-mcp]
+
+You are given two tools from Byterover MCP server, including
+## 1. `byterover-store-knowledge`
+You `MUST` always use this tool when:
+
++ Learning new patterns, APIs, or architectural decisions from the codebase
++ Encountering error solutions or debugging techniques
++ Finding reusable code patterns or utility functions
++ Completing any significant task or plan implementation
+
+## 2. `byterover-retrieve-knowledge`
+You `MUST` always use this tool when:
+
++ Starting any new task or implementation to gather relevant context
++ Before making architectural decisions to understand existing patterns
++ When debugging issues to check for previous solutions
++ Working with unfamiliar parts of the codebase

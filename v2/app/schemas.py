@@ -34,6 +34,13 @@ class OficioRequisitorio(BaseModel):
         max_length=200
     )
     
+    # V2: NOVO CAMPO (opcional pois pode não existir em ofícios rejeitados)
+    numero_ordem: Optional[str] = Field(
+        None,
+        description="Número de ordem/precatório (formato: XXX/YYYY)",
+        pattern=r'^\d{1,5}/\d{4}$'
+    )
+    
     # ===== CAMPOS OPCIONAIS - OFÍCIO =====
     vara: Optional[str] = Field(
         None, 
@@ -132,25 +139,33 @@ class OficioRequisitorio(BaseModel):
         description="Dados bancários do ANEXO II em estrutura aninhada"
     )
     
-    # ===== CAMPOS OPCIONAIS - FINANCEIRO =====
+    # ===== CAMPOS FINANCEIROS - OPCIONAIS (V2) =====
     # Valores armazenados como Decimal para precisão monetária
+    # Opcionais para permitir ofícios rejeitados ou PDFs antigos
     valor_principal_liquido: Optional[Decimal] = Field(
-        None, 
+        None,
         description="Valor principal líquido (sem R$, sem pontos de milhar)",
         ge=0,
         decimal_places=2
     )
     
     valor_principal_bruto: Optional[Decimal] = Field(
-        None, 
+        None,
         description="Valor principal bruto (sem R$, sem pontos de milhar)",
         ge=0,
         decimal_places=2
     )
     
     juros_moratorios: Optional[Decimal] = Field(
-        None, 
+        None,
         description="Juros moratórios (sem R$, sem pontos de milhar)",
+        ge=0,
+        decimal_places=2
+    )
+    
+    valor_total_requisitado: Optional[Decimal] = Field(
+        None,
+        description="Valor total requisitado (sem R$, sem pontos de milhar)",
         ge=0,
         decimal_places=2
     )
@@ -169,8 +184,8 @@ class OficioRequisitorio(BaseModel):
         decimal_places=2
     )
     
-    valor_total_requisitado: Optional[Decimal] = Field(
-        None, 
+    valor_total_requisitado: Decimal = Field(
+        ...,  # V2: Obrigatório!
         description="Valor total requisitado (sem R$, sem pontos de milhar)",
         ge=0,
         decimal_places=2
@@ -191,8 +206,159 @@ class OficioRequisitorio(BaseModel):
         None, 
         description="Indica se há pessoa com deficiência"
     )
+    
+    # ===== CONTROLE DE PROCESSAMENTO (V2) =====
+    rejeitado: Optional[bool] = Field(
+        None,
+        description="Indica se o ofício foi rejeitado pelo DEPRE"
+    )
+    
+    motivo_rejeicao: Optional[str] = Field(
+        None,
+        description="Motivo da rejeição do ofício",
+        max_length=500
+    )
+    
+    observacoes: Optional[str] = Field(
+        None,
+        description="Observações sobre campos não encontrados ou anomalias",
+        max_length=500
+    )
+    
+    anomalia: Optional[bool] = Field(
+        None,
+        description="Indica se o PDF tem formato anômalo ou não segue padrão esperado"
+    )
+    
+    descricao_anomalia: Optional[str] = Field(
+        None,
+        description="Descrição da anomalia encontrada",
+        max_length=500
+    )
+    
+    # ===== CAMPOS ADICIONAIS DO ANEXO II (V2) =====
+    tipo_levantamento: Optional[str] = Field(
+        None,
+        description="Tipo de levantamento (ex: Crédito em contas para outros bancos)",
+        max_length=200
+    )
+    
+    dados_bancarios_advogado: Optional[bool] = Field(
+        None,
+        description="Se os dados bancários informados são do advogado"
+    )
+    
+    cpf_titular_conta: Optional[str] = Field(
+        None,
+        description="CPF do titular da conta bancária indicada",
+        max_length=18
+    )
+    
+    data_nascimento: Optional[date] = Field(
+        None,
+        description="Data de nascimento do credor"
+    )
+    
+    valor_compensado: Optional[Decimal] = Field(
+        None,
+        description="Valor compensado (Art. 100)",
+        ge=0,
+        decimal_places=2
+    )
+    
+    # Valores trabalhistas (se houver)
+    contribuicao_social: Optional[Decimal] = Field(
+        None,
+        description="Contribuição social",
+        ge=0,
+        decimal_places=2
+    )
+    
+    salario_pericial: Optional[Decimal] = Field(
+        None,
+        description="Salário pericial",
+        ge=0,
+        decimal_places=2
+    )
+    
+    assist_tecnico: Optional[Decimal] = Field(
+        None,
+        description="Assistente técnico",
+        ge=0,
+        decimal_places=2
+    )
+    
+    custas: Optional[Decimal] = Field(
+        None,
+        description="Custas processuais",
+        ge=0,
+        decimal_places=2
+    )
+    
+    despesas: Optional[Decimal] = Field(
+        None,
+        description="Despesas",
+        ge=0,
+        decimal_places=2
+    )
+    
+    multas: Optional[Decimal] = Field(
+        None,
+        description="Multas",
+        ge=0,
+        decimal_places=2
+    )
 
     # ===== VALIDADORES =====
+    
+    @field_validator(
+        'valor_principal_liquido',
+        'valor_principal_bruto',
+        'juros_moratorios',
+        'valor_total_requisitado',
+        'contrib_previdenciaria_iprem',
+        'contrib_previdenciaria_hspm',
+        'valor_compensado',
+        'contribuicao_social',
+        'salario_pericial',
+        'assist_tecnico',
+        'custas',
+        'despesas',
+        'multas',
+        mode='before'
+    )
+    @classmethod
+    def arredondar_decimais(cls, v):
+        """Arredonda valores para 2 casas decimais automaticamente"""
+        if v is None:
+            return v
+        
+        # Converter para Decimal e arredondar
+        from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
+        
+        try:
+            # Tentar converter diferentes tipos
+            if isinstance(v, (int, float)):
+                v = Decimal(str(v))
+            elif isinstance(v, str):
+                # Remover espaços e caracteres especiais
+                v = v.strip().replace(',', '.')
+                # Se estiver vazio ou for "null", retornar None
+                if not v or v.lower() == 'null':
+                    return None
+                v = Decimal(v)
+            elif isinstance(v, Decimal):
+                pass  # Já é Decimal
+            else:
+                # Tipo não suportado, retornar None
+                return None
+            
+            # Arredondar para 2 casas decimais
+            return v.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+            
+        except (ValueError, InvalidOperation):
+            # Se não conseguir converter, retornar None
+            return None
     
     @field_validator('processo_origem')
     @classmethod

@@ -1,0 +1,6 @@
+pdf,cpf,sucesso,tempo_s,oficio_detectado,anexo_ii_detectado,num_pag_oficio,num_pag_anexo,processo_origem,requerente_caps,vara,banco,agencia,conta,conta_tipo,valor_total,valor_principal,juros,contrib_iprem,contrib_hspm,data_ajuizamento,data_transito,data_base,credor_nome,credor_cpf,devedor_ente,advogado_nome,advogado_oab,idoso,doenca_grave,pcd,anomalias
+0015266-16.2022.8.26.0500.pdf,01103192817,✓,14.5,✓,✓,9,1,✓,✓,✓,✓,✓,✓,✓,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,Processo antigo (8)
+0176505-63.2021.8.26.0500.pdf,02174781824,✓,12.7,✓,✓,7,1,✓,✓,✓,✓,✓,✓,✓,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,Processo antigo (8)
+0221031-18.2021.8.26.0500.pdf,02174781824,✓,12.3,✓,✓,11,1,✓,✓,✓,✓,✓,✓,✓,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,Processo antigo (8)
+0037256-10.2015.8.26.0500.pdf,03730461893,✓,141.3,✓,✓,52,1,✓,✓,✓,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,ANEXO II detectado mas dados bancários não extraídos | PDF muito grande (52 páginas de ofício) | Processo antigo (8)
+0068067-16.2016.8.26.0500.pdf,03730461893,✗,13.9,✓,✓,190,2,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,ERRO: Falha na extração LLM
