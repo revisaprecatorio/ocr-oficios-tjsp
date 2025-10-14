@@ -383,10 +383,13 @@ DOCUMENTO: Ofício Requisitório do Tribunal de Justiça de São Paulo
 
 - processo_origem: Número CNJ do processo (formato: 0000000-00.0000.0.00.0000)
 - requerente_caps: Nome TODO EM MAIÚSCULAS
-- numero_ordem: Número do precatório/ofício (formato: XXX/YYYY, ex: 644/2015, 2913/2023)
+- numero_ordem: Número de ordem do RPV/Precatório (formato: XXXXX/YYYY)
+  ⚠️ ATENÇÃO - DIFERENÇA CRÍTICA:
+  * CORRETO: "644/2015", "2913/2023", "12345/2024" (formato: números/ano)
+  * ERRADO: "0181657-92.2021.8.26.0500" (isso é número do PROCESSO, não número de ordem!)
   * Buscar no TÍTULO: "OFÍCIO REQUISITÓRIO Nº XXX/YYYY"
-  * OU na seção "PROCESSAMENTO": "Nº de Ordem: XXX/YYYY"
-  * NÃO confundir com número do processo (que tem formato diferente)
+  * OU na seção "PROCESSAMENTO": "Nº de Ordem: XXX/YYYY" ou "Ordem: XXX/YYYY"
+  * Se NÃO encontrar o número de ordem, retorne null (não invente!)
 - valor_principal_liquido: Valor principal líquido (número decimal)
 - valor_principal_bruto: Valor principal bruto (número decimal)
 - juros_moratorios: Juros moratórios (número decimal)
