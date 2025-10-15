@@ -345,15 +345,25 @@ def main():
         st.subheader("Resultados da Consulta")
         
         if not df.empty:
+            # Criar cópia do DataFrame para exibição
+            df_display = df.copy()
+            
             # Formatar valores
-            if 'valor_total_requisitado' in df.columns:
-                df['valor_total_requisitado'] = df['valor_total_requisitado'].apply(
+            if 'valor_total_requisitado' in df_display.columns:
+                df_display['valor_total_requisitado'] = df_display['valor_total_requisitado'].apply(
                     lambda x: f"R$ {x:,.2f}" if pd.notna(x) else "-"
                 )
             
+            # Selecionar colunas principais para exibição
+            colunas_exibir = [
+                'cpf', 'numero_processo_cnj', 'requerente_caps', 'vara',
+                'valor_total_requisitado', 'rejeitado', 'idoso', 'doenca_grave', 'pcd'
+            ]
+            colunas_exibir = [col for col in colunas_exibir if col in df_display.columns]
+            
             # Exibir tabela
             st.dataframe(
-                df,
+                df_display[colunas_exibir],
                 width='stretch',
                 height=400
             )
@@ -366,6 +376,68 @@ def main():
                 file_name=f"oficios_tjsp_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
                 mime="text/csv"
             )
+            
+            st.markdown("---")
+            
+            # Seção de visualização rápida de PDF
+            st.subheader("🔍 Visualização Rápida de PDF")
+            st.info("💡 Selecione um processo na lista abaixo para visualizar o PDF")
+            
+            # Criar lista de processos com informações resumidas
+            processo_options = []
+            for idx, row in df.iterrows():
+                requerente = row['requerente_caps'][:40] if len(row['requerente_caps']) > 40 else row['requerente_caps']
+                rejeitado = row.get('rejeitado', False)
+                status = "❌ Rejeitado" if pd.notna(rejeitado) and rejeitado else "✅ Aprovado"
+                processo_options.append(f"{row['numero_processo_cnj']} | {requerente} | {status}")
+            
+            # Selectbox para escolher processo
+            selected_option = st.selectbox(
+                "Escolha um processo para visualizar:",
+                options=range(len(processo_options)),
+                format_func=lambda x: processo_options[x],
+                key="pdf_viewer_tab1"
+            )
+            
+            if selected_option is not None:
+                selected_row = df.iloc[selected_option]
+                cpf = selected_row['cpf']
+                numero_processo = selected_row['numero_processo_cnj']
+                
+                # Informações do processo
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.write(f"**CPF:** {cpf}")
+                with col2:
+                    st.write(f"**Processo:** {numero_processo}")
+                with col3:
+                    valor = selected_row.get('valor_total_requisitado', '-')
+                    st.write(f"**Valor:** {valor}")
+                
+                # Botão de download e visualização
+                pdf_path = get_pdf_path(cpf, numero_processo)
+                
+                col1, col2 = st.columns([1, 4])
+                with col1:
+                    if pdf_path.exists():
+                        with open(pdf_path, "rb") as f:
+                            st.download_button(
+                                label="📥 Download PDF",
+                                data=f,
+                                file_name=f"{numero_processo}.pdf",
+                                mime="application/pdf",
+                                use_container_width=True
+                            )
+                    else:
+                        st.warning("PDF não encontrado")
+                
+                # Visualizar PDF inline
+                if pdf_path.exists():
+                    st.markdown("---")
+                    with st.expander("📄 Visualizar PDF (clique para expandir)", expanded=True):
+                        display_pdf(pdf_path)
+                else:
+                    st.error(f"❌ PDF não encontrado: {pdf_path}")
         else:
             st.info("Nenhum resultado encontrado com os filtros aplicados.")
     
