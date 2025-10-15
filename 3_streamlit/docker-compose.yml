@@ -1,0 +1,62 @@
+version: '3.8'
+
+services:
+  streamlit:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: oficios-streamlit
+    restart: unless-stopped
+    
+    environment:
+      # Database - Conecta ao PostgreSQL do host via IP do Docker bridge
+      - DB_HOST=172.17.0.1
+      - DB_PORT=5432
+      - DB_NAME=${DB_NAME}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      
+      # Paths
+      - PDF_DIR=/data/consultas
+      - JSON_DIR=/app/outputs
+      
+    volumes:
+      # PDFs (read-only para segurança)
+      - ./data:/data:ro
+      
+    networks:
+      - traefik
+    
+    labels:
+      # Habilitar Traefik
+      - "traefik.enable=true"
+      
+      # Configuração HTTP (porta 8501)
+      - "traefik.http.routers.streamlit.rule=Host(`72.60.62.124`)"
+      - "traefik.http.routers.streamlit.entrypoints=web"
+      - "traefik.http.routers.streamlit.service=streamlit"
+      - "traefik.http.services.streamlit.loadbalancer.server.port=8501"
+      
+      # BasicAuth Middleware
+      - "traefik.http.middlewares.streamlit-auth.basicauth.users=${BASICAUTH_HASH}"
+      - "traefik.http.routers.streamlit.middlewares=streamlit-auth"
+      
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    
+    # Limites de recursos
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+networks:
+  traefik:
+    external: true
