@@ -36,7 +36,8 @@ st.markdown("""
         font-weight: bold;
         color: #1f77b4;
         text-align: center;
-        padding: 1rem 0;
+        padding: 0.2rem 0;
+        margin-top: -1rem;
     }
     .metric-card {
         background-color: #f0f2f6;
@@ -46,6 +47,10 @@ st.markdown("""
     }
     .stDataFrame {
         font-size: 0.9rem;
+    }
+    /* Reduzir espaçamento superior geral */
+    .block-container {
+        padding-top: 2rem;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -305,8 +310,9 @@ def main():
     # Header
     st.markdown('<div class="main-header">⚖️ Ofícios Requisitórios TJSP</div>', unsafe_allow_html=True)
     
-    # Mostrar info de cache
-    st.info(f"✅ {len(df_completo)} processos carregados em memória | Filtros são instantâneos!")
+    # Nota: Removida mensagem de info para economizar espaço vertical
+    # {len(df_completo)} processos carregados em cache, filtros processados em memória
+    
     st.markdown("---")
     
     # Aplicar filtros no DataFrame em memória (INSTANTÂNEO!)
