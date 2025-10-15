@@ -45,8 +45,29 @@ BASICAUTH_HASH=revisaprecatorio:$$apr1$$abc123$$xyz
 ```
 
 ### **3. Upload dos PDFs**
+
+**Opção A: Via rsync (com chave SSH temporária)**
 ```bash
-# Do seu Mac
+# No Mac: Criar chave SSH sem senha
+ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519_temp -N ""
+ssh-copy-id -i ~/.ssh/id_ed25519_temp root@srv987902.hstgr.cloud
+
+# Comprimir PDFs
+cd /Users/persivalballeste/Documents/@IANIA/PROJECTS/revisa/revisa/3_OCR
+tar -czf data_consultas.tar.gz data/consultas/
+
+# Upload
+scp -i ~/.ssh/id_ed25519_temp data_consultas.tar.gz root@srv987902.hstgr.cloud:/root/
+
+# Na VPS: Extrair
+cd /root
+tar -xzf data_consultas.tar.gz
+cp -r data/consultas/* /root/ocr-oficios-tjsp/3_streamlit/data/consultas/
+rm -rf data/ data_consultas.tar.gz
+```
+
+**Opção B: Via scp direto (se chave SSH funcionar)**
+```bash
 rsync -avz --progress \
   /Users/persivalballeste/Documents/@IANIA/PROJECTS/revisa/revisa/3_OCR/data/consultas/ \
   root@srv987902.hstgr.cloud:/root/ocr-oficios-tjsp/3_streamlit/data/consultas/
@@ -54,11 +75,14 @@ rsync -avz --progress \
 
 ### **4. Deploy**
 ```bash
-# Dar permissão de execução
-chmod +x deploy.sh
+cd /root/ocr-oficios-tjsp/3_streamlit
 
-# Executar deploy
-./deploy.sh
+# Build e iniciar
+docker-compose build
+docker-compose up -d
+
+# Ver logs
+docker-compose logs -f
 ```
 
 ---
