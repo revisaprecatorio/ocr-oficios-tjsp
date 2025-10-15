@@ -1,6 +1,6 @@
 # 🏛️ Sistema OCR - Ofícios Requisitórios TJSP
 
-Sistema automatizado de extração de dados de Ofícios Requisitórios do TJSP a partir de PDFs nativos, com suporte a **ANEXO II** (dados bancários), pipeline modular em 2 etapas, e compatibilidade total com **Windows Server 2022**.
+Sistema automatizado de extração de dados de Ofícios Requisitórios do TJSP a partir de PDFs nativos, com suporte a **ANEXO II** (dados bancários), pipeline modular em 3 etapas, interface web Streamlit, e compatibilidade total com **Windows Server 2022**.
 
 ---
 
@@ -8,10 +8,11 @@ Sistema automatizado de extração de dados de Ofícios Requisitórios do TJSP a
 
 - ✅ **Extração automatizada** de ofícios requisitórios + ANEXO II
 - ✅ **Detecção inteligente** com algoritmo hierárquico refinado
-- ✅ **Processamento IA** com GPT-5 Nano (OpenAI)
+- ✅ **Processamento IA** com GPT-4o-mini (OpenAI)
 - ✅ **Dados bancários** extraídos do ANEXO II (banco, agência, conta)
 - ✅ **Validação robusta** com Pydantic v2
-- ✅ **Pipeline modular** em 2 etapas (PDFs → JSONs → PostgreSQL)
+- ✅ **Pipeline modular** em 3 etapas (PDFs → JSONs → PostgreSQL → Interface Web)
+- ✅ **Interface Streamlit** para consulta e visualização
 - ✅ **PostgreSQL** para persistência de dados
 - ✅ **Cross-platform** (Windows Server 2022, Linux, macOS)
 - ✅ **Cache JSON** para reprocessamento sem custo OpenAI
@@ -20,34 +21,46 @@ Sistema automatizado de extração de dados de Ofícios Requisitórios do TJSP a
 
 ## 🏗️ Arquitetura
 
-### **Pipeline Modular em 2 Etapas**
+### **Pipeline Modular em 3 Etapas**
 
 ```
-ETAPA 1: PDFs → JSONs (offline, cache local)
+ETAPA 1: PDFs → JSONs (1_parsing_PDF/)
 ├── DetectorOficio → localiza páginas "OFÍCIO REQUISITÓRIO"
 ├── DetectorAnexoII → localiza páginas "ANEXO II" (dados bancários)
-├── GPT-5 Nano → extrai dados estruturados (ofício + anexo)
+├── GPT-4o-mini → extrai dados estruturados (ofício + anexo)
 ├── Pydantic → valida e normaliza
-└── Output → JSON por processo em output/json/{cpf}/{processo}.json
+└── Output → JSON por processo em outputs/json/{cpf}_{processo}.json
 
-ETAPA 2: JSONs → PostgreSQL (independente)
+ETAPA 2: JSONs → PostgreSQL (2_ingestao/)
 ├── Lê JSONs validados
 ├── Upsert no PostgreSQL (ON CONFLICT DO UPDATE)
+├── Validação de dados
 └── Logs detalhados + estatísticas
+
+ETAPA 3: Interface Web (3_streamlit/)
+├── Consulta dados do PostgreSQL
+├── Filtros avançados (CPF, Processo, Vara, Status, Valores, Datas)
+├── Visualização de estatísticas e gráficos
+├── Download de PDFs originais
+└── Export para CSV
 ```
 
 **Vantagens:**
 - 📦 JSONs intermediários = cache (reprocessar sem custo OpenAI)
 - 🔍 Validação manual antes de importar
 - 🔄 Reprocessamento seletivo
-- 🧪 Testes sem alterar banco (--dry-run)
+- 🧪 Testes sem alterar banco
+- 📊 Interface web para consulta e análise
+- 📥 Download de PDFs e dados em CSV
 
 ### **Stack Tecnológica**
 
 - **Python 3.11+** com PyMuPDF para extração de texto nativo
-- **OpenAI GPT-5 Nano** para extração estruturada
+- **OpenAI GPT-4o-mini** para extração estruturada
 - **Pydantic v2** para validação de dados
-- **PostgreSQL** para persistência
+- **PostgreSQL** para persistência de dados
+- **Streamlit** para interface web
+- **Pandas & Plotly** para análise e visualização
 - **pathlib** para compatibilidade cross-platform
 
 ---
@@ -286,6 +299,76 @@ FROM lista_processos
 ORDER BY timestamp_processamento DESC
 LIMIT 10;
 ```
+
+---
+
+## 📊 Interface Web Streamlit
+
+### **Acesso à Interface**
+
+```bash
+cd 3_streamlit
+./run.sh
+
+# Ou manualmente:
+source ../.venv/bin/activate
+streamlit run app/streamlit_app.py --server.port=8501
+```
+
+**URL:** http://localhost:8501
+
+### **Funcionalidades**
+
+#### **1. Aba "Dados"**
+- ✅ Tabela com **todas as colunas** do banco de dados
+- ✅ Visualização completa de 37+ campos
+- ✅ Formatação automática de valores monetários
+- ✅ Export para CSV
+- ✅ Visualização rápida de PDF com download
+
+#### **2. Aba "Gráficos"**
+- ✅ Distribuição por Status (Aprovado/Rejeitado)
+- ✅ Top 5 Varas com mais processos
+- ✅ Gráficos interativos com Plotly
+
+#### **3. Aba "Visualizar PDF"**
+- ✅ Seleção de processo
+- ✅ Download de PDF original
+- ✅ Informações do arquivo (tamanho)
+
+### **Filtros Disponíveis**
+
+**Sidebar com filtros avançados:**
+- 🔍 **CPF** (apenas números)
+- 🔍 **Número do Processo**
+- 🎯 **Preferências** (Idoso, Doença Grave, PCD)
+- 🏛️ **Vara** (dropdown)
+- 📊 **Status** (Todos, Rejeitados, Aprovados)
+- 💰 **Valores** (mínimo e máximo)
+- 📅 **Datas** (início e fim)
+
+### **Estatísticas em Tempo Real**
+
+Cards com métricas principais:
+- 📊 Total de Processos
+- ❌ Rejeitados
+- 💰 Valor Total
+- 👴 Idosos
+
+### **Performance**
+
+- ⚡ **Cache em memória** (5 minutos)
+- ⚡ **Filtros instantâneos** (processados em memória)
+- ⚡ **Carregamento inicial**: ~2-3s
+- ⚡ **Resposta de filtros**: <100ms
+
+### **Documentação Completa**
+
+Consulte **[3_streamlit/README.md](3_streamlit/README.md)** para:
+- Instruções detalhadas de uso
+- Configuração do `.env`
+- Troubleshooting
+- Customização da interface
 
 ---
 

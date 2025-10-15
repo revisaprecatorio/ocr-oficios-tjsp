@@ -4,6 +4,67 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 
 ---
 
+## [2.1.0] - 2025-10-14
+
+### 🎨 Interface Streamlit Otimizada
+
+#### ✨ Adicionado
+
+**Visualização de PDF Simplificada**
+- Download destacado como solução principal
+- Botão primary azul com tamanho do arquivo
+- Mensagens informativas sobre disponibilidade
+- Remoção de visualização inline (não funciona com PDFs grandes)
+
+**Tabela Completa**
+- Exibição de todas as 37+ colunas do banco de dados
+- Formatação de múltiplos campos monetários
+- Scroll horizontal para navegação
+- Dados completos acessíveis
+
+#### 🎨 Melhorado
+
+**UX do Download de PDF**
+- Botão centralizado e destacado (tipo primary)
+- Informação de tamanho do arquivo no label
+- Mensagens claras orientando uso
+- Fallback confiável para qualquer tamanho de PDF
+
+**Visualização de Dados**
+- Todas as colunas visíveis na aba Dados
+- Formatação de valor_principal_liquido
+- Formatação de valor_principal_bruto
+- Formatação de valor_total_requisitado
+
+#### 🗑️ Removido
+
+**Visualização Inline de PDF**
+- Iframe base64 (não funciona com PDFs >3 MB)
+- Expanders de visualização inline
+- Tentativas de renderização que falhavam
+- Código complexo e desnecessário
+
+#### 🔧 Corrigido
+
+**Erros de Renderização**
+- TypeError com valores NA no campo rejeitado
+- StreamlitDuplicateElementId (keys únicas adicionadas)
+- Deprecation warning (use_container_width → width)
+- PDFs grandes não renderizando
+
+#### 📊 Estrutura Final
+
+```
+3_streamlit/                    # Módulo isolado
+├── app/streamlit_app.py        # Interface otimizada
+├── .env.example                # Config documentada
+├── README.md                   # Docs completa
+├── requirements.txt            # Deps específicas
+└── run.sh                      # Execução facilitada
+```
+
+---
+
 ## [2.0.0] - 2025-10-14
 
 ### 🎉 Reorganização Completa do Projeto
