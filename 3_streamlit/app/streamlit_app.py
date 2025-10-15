@@ -171,16 +171,32 @@ def get_pdf_path(cpf: str, numero_processo: str) -> Path:
 
 
 def display_pdf(pdf_path: Path):
-    """Exibe PDF inline"""
+    """
+    Exibe opções para visualizar PDF
+    Nota: Base64 iframe tem limite de ~2-4 MB, então oferecemos alternativas
+    """
     if not pdf_path.exists():
         st.warning(f"PDF não encontrado: {pdf_path}")
         return
     
-    with open(pdf_path, "rb") as f:
-        base64_pdf = base64.b64encode(f.read()).decode('utf-8')
+    # Verificar tamanho do arquivo
+    file_size_mb = pdf_path.stat().st_size / (1024 * 1024)
     
-    pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="800" type="application/pdf"></iframe>'
-    st.markdown(pdf_display, unsafe_allow_html=True)
+    if file_size_mb > 3:
+        # PDF muito grande para iframe base64
+        st.warning(f"⚠️ PDF grande ({file_size_mb:.1f} MB). Use o botão de download para visualizar.")
+        st.info("💡 **Dica:** Clique em 'Download PDF' acima para abrir o arquivo no seu visualizador de PDF.")
+    else:
+        # Tentar exibir inline para PDFs menores
+        try:
+            with open(pdf_path, "rb") as f:
+                base64_pdf = base64.b64encode(f.read()).decode('utf-8')
+            
+            pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="800" type="application/pdf"></iframe>'
+            st.markdown(pdf_display, unsafe_allow_html=True)
+        except Exception as e:
+            st.error(f"❌ Erro ao exibir PDF: {e}")
+            st.info("💡 Use o botão de download acima para visualizar o arquivo.")
 
 
 def main():
@@ -417,25 +433,34 @@ def main():
                 # Botão de download e visualização
                 pdf_path = get_pdf_path(cpf, numero_processo)
                 
-                col1, col2 = st.columns([1, 4])
-                with col1:
-                    if pdf_path.exists():
+                if pdf_path.exists():
+                    # Verificar tamanho do arquivo
+                    file_size_mb = pdf_path.stat().st_size / (1024 * 1024)
+                    
+                    st.markdown("---")
+                    
+                    # Botão de download destacado
+                    col1, col2, col3 = st.columns([2, 2, 2])
+                    with col2:
                         with open(pdf_path, "rb") as f:
                             st.download_button(
-                                label="📥 Download PDF",
+                                label=f"📥 Download PDF ({file_size_mb:.1f} MB)",
                                 data=f,
                                 file_name=f"{numero_processo}.pdf",
                                 mime="application/pdf",
-                                use_container_width=True
+                                use_container_width=True,
+                                type="primary",
+                                key=f"download_tab1_{numero_processo}"
                             )
+                    
+                    st.info("💡 **Recomendação:** Faça o download do PDF para melhor visualização no seu navegador ou aplicativo de PDF.")
+                    
+                    # Tentar visualizar inline apenas para PDFs pequenos
+                    if file_size_mb <= 3:
+                        with st.expander("📄 Visualizar PDF Inline (pode não funcionar para PDFs grandes)", expanded=False):
+                            display_pdf(pdf_path)
                     else:
-                        st.warning("PDF não encontrado")
-                
-                # Visualizar PDF inline
-                if pdf_path.exists():
-                    st.markdown("---")
-                    with st.expander("📄 Visualizar PDF (clique para expandir)", expanded=True):
-                        display_pdf(pdf_path)
+                        st.warning(f"⚠️ PDF muito grande ({file_size_mb:.1f} MB) para visualização inline. Use o botão de download acima.")
                 else:
                     st.error(f"❌ PDF não encontrado: {pdf_path}")
         else:
@@ -489,25 +514,47 @@ def main():
                 cpf = selected_row['cpf']
                 numero_processo = selected_row['numero_processo_cnj']
                 
-                st.write(f"**Requerente:** {selected_row['requerente_caps']}")
-                st.write(f"**CPF:** {cpf}")
-                st.write(f"**Processo:** {numero_processo}")
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.write(f"**Requerente:** {selected_row['requerente_caps'][:40]}")
+                with col2:
+                    st.write(f"**CPF:** {cpf}")
+                with col3:
+                    st.write(f"**Processo:** {numero_processo}")
                 
                 pdf_path = get_pdf_path(cpf, numero_processo)
                 
-                col1, col2 = st.columns([3, 1])
-                with col1:
-                    if pdf_path.exists():
+                if pdf_path.exists():
+                    # Verificar tamanho do arquivo
+                    file_size_mb = pdf_path.stat().st_size / (1024 * 1024)
+                    
+                    st.markdown("---")
+                    
+                    # Botão de download destacado e centralizado
+                    col1, col2, col3 = st.columns([2, 2, 2])
+                    with col2:
                         with open(pdf_path, "rb") as f:
                             st.download_button(
-                                label="📥 Download PDF",
+                                label=f"📥 Download PDF ({file_size_mb:.1f} MB)",
                                 data=f,
                                 file_name=f"{numero_processo}.pdf",
-                                mime="application/pdf"
+                                mime="application/pdf",
+                                use_container_width=True,
+                                type="primary",
+                                key=f"download_tab3_{numero_processo}"
                             )
-                
-                st.markdown("---")
-                display_pdf(pdf_path)
+                    
+                    st.info("💡 **Recomendação:** Faça o download do PDF para melhor visualização no seu navegador ou aplicativo de PDF.")
+                    
+                    # Tentar visualizar inline apenas para PDFs pequenos
+                    if file_size_mb <= 3:
+                        st.markdown("---")
+                        with st.expander("📄 Visualizar PDF Inline (pode não funcionar para PDFs grandes)", expanded=False):
+                            display_pdf(pdf_path)
+                    else:
+                        st.warning(f"⚠️ PDF muito grande ({file_size_mb:.1f} MB) para visualização inline. Use o botão de download acima.")
+                else:
+                    st.error(f"❌ PDF não encontrado: {pdf_path}")
         else:
             st.info("Nenhum processo para visualizar.")
 
