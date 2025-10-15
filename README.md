@@ -622,16 +622,68 @@ Sistema desenvolvido para processamento de documentos oficiais do TJSP.
 
 ---
 
-## 🎯 Próximos Passos
+## 🚀 Deploy em Produção
 
-- [ ] Interface web para upload de PDFs
-- [ ] Dashboard de estatísticas em tempo real
-- [ ] Processamento paralelo (múltiplos workers)
-- [ ] Export CSV customizável
-- [ ] API REST para consulta de processos
+### **Status Atual: v2.1.0 (15/10/2025)**
+
+✅ **Deploy funcionando em produção:**
+- **URL:** http://72.60.62.124:8501
+- **Ambiente:** Docker + Docker Compose
+- **Dados:** 1.4GB de PDFs processados
+- **PostgreSQL:** Integrado e funcionando
+- **Interface:** Streamlit com filtros avançados
+
+📋 **Documentação de Deploy:**
+- **[3_streamlit/README_DEPLOY.md](3_streamlit/README_DEPLOY.md)** - Guia completo de deploy
+- **[3_streamlit/CHANGELOG.md](3_streamlit/CHANGELOG.md)** - Histórico de versões
 
 ---
 
-**✅ Sistema pronto para produção - Windows Server 2022 + Linux + macOS!**
+## ⚠️ Limitações Conhecidas
 
-**Pipeline modular | Dados bancários ANEXO II | Cache JSON | 100% compatível**
+Este projeto está **funcional em produção** mas ainda carece de:
+
+1. **🔴 CRÍTICO: Validação de Falsos Rejeitados**
+   - Sistema não valida se ofícios foram incorretamente rejeitados durante o processamento
+   - Pode haver processos válidos marcados como rejeitados
+   - **PRÓXIMA ETAPA PRIORITÁRIA**
+
+2. **Logs de Auditoria** - Falta rastreabilidade completa de ações do usuário
+3. **Testes Automatizados** - Ausência de testes unitários e de integração
+4. **Backup Automático** - PDFs e dados não possuem backup automatizado
+5. **Monitoramento** - Falta alertas de falhas e métricas de performance
+
+**Recomendação:** Use em ambiente de homologação antes de produção crítica.
+
+---
+
+## 🎯 Próximos Passos (Roadmap)
+
+### **v2.2.0 - Validação e Qualidade (PRÓXIMO)**
+- [ ] **🔴 PRIORIDADE: Implementar validação de falsos rejeitados**
+- [ ] Adicionar sistema de logs de auditoria
+- [ ] Criar testes automatizados (pytest)
+- [ ] Implementar backup automático de PDFs
+- [ ] Adicionar monitoramento (Prometheus/Grafana)
+
+### **v2.3.0 - Segurança e Performance**
+- [ ] Ativar BasicAuth via Traefik
+- [ ] Adicionar HTTPS com Let's Encrypt
+- [ ] Implementar rate limiting
+- [ ] Adicionar cache Redis
+- [ ] Otimizar queries do banco
+
+### **v3.0.0 - Expansão**
+- [ ] Interface web para upload de PDFs
+- [ ] API REST para integração externa
+- [ ] Sistema de notificações
+- [ ] Dashboard de analytics avançado
+- [ ] Export CSV/Excel customizável
+- [ ] Processamento paralelo (múltiplos workers)
+- [ ] Integração com n8n
+
+---
+
+**✅ Sistema em produção v2.1.0 - Windows Server 2022 + Linux + macOS!**
+
+**Pipeline modular | Dados bancários ANEXO II | Cache JSON | Deploy Docker | Interface Web**
