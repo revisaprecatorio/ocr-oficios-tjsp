@@ -126,6 +126,9 @@ class DetectorProcessamento:
         """
         Verifica se o texto indica que o ofício foi rejeitado.
         
+        IMPORTANTE: "PROCESSAMENTO COM INFORMAÇÃO" NÃO é rejeição!
+        Ofícios com número de ordem foram ACEITOS pelo DEPRE.
+        
         Args:
             texto: Texto da página
             
@@ -134,8 +137,20 @@ class DetectorProcessamento:
         """
         texto_upper = texto.upper()
         
+        # 🔴 REGRA CRÍTICA: Se tem "PROCESSAMENTO COM INFORMAÇÃO" → NÃO é rejeitado
+        if "PROCESSAMENTO COM INFORMAÇÃO" in texto_upper or "PROCESSAMENTO COM INFORMACAO" in texto_upper:
+            logger.info("✅ PROCESSAMENTO COM INFORMAÇÃO detectado → Ofício ACEITO (não rejeitado)")
+            return False
+        
+        # 🔴 REGRA CRÍTICA: Se tem número de ordem → NÃO é rejeitado
+        if self.extrair_numero_ordem(texto):
+            logger.info("✅ Número de ordem detectado → Ofício ACEITO (não rejeitado)")
+            return False
+        
+        # Verificar keywords de rejeição
         for keyword in self.keywords_rejeicao:
             if keyword.upper() in texto_upper:
+                logger.warning(f"⚠️ Keyword de rejeição encontrada: {keyword}")
                 return True
         
         return False
