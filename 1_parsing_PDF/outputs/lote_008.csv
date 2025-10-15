@@ -1,0 +1,6 @@
+pdf,cpf,sucesso,tempo_s,oficios_encontrados,cpf_validado,rejeitado,motivo_rejeicao,anomalia,descricao_anomalia,processo_origem,requerente_caps,numero_ordem,valor_principal_liquido,valor_principal_bruto,juros_moratorios,valor_total,banco,agencia,conta,conta_tipo,vara,contrib_iprem,contrib_hspm,data_nascimento,data_base,idoso,doenca_grave,pcd,anomalias
+0221004-35.2021.8.26.0500.pdf,19884761434,✓,13.1,10,✓,⚠️,,✗,,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✗,✗,OK
+0015796-15.2025.8.26.0500.pdf,27308157830,✓,13.2,32,✓,✗,,✗,,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✗,✗,✗,OK
+0158003-37.2025.8.26.0500.pdf,27308157830,✓,14.7,13,✓,⚠️,A quantia requerida não consta na planilha de cálc...,✗,,✓,✓,✗,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✗,✗,✗,OK
+0220428-42.2021.8.26.0500.pdf,41609824415,✓,14.9,10,✓,⚠️,,✗,,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✗,✗,✗,OK
+7002129-28.2011.8.26.0500.pdf,47116781820,✓,33.8,29,✓,✗,,✗,,✓,✓,✗,✗,✗,✗,✗,✗,✗,✗,✗,✓,✗,✗,✗,✗,✗,✗,✗,OK

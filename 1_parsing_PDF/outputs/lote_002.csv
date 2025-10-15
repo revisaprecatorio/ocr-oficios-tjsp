@@ -1,0 +1,6 @@
+pdf,cpf,sucesso,tempo_s,oficios_encontrados,cpf_validado,rejeitado,motivo_rejeicao,anomalia,descricao_anomalia,processo_origem,requerente_caps,numero_ordem,valor_principal_liquido,valor_principal_bruto,juros_moratorios,valor_total,banco,agencia,conta,conta_tipo,vara,contrib_iprem,contrib_hspm,data_nascimento,data_base,idoso,doenca_grave,pcd,anomalias
+0077658-31.2018.8.26.0500.pdf,03730461893,✓,45.6,156,✓,✗,,✗,,✓,✓,✓,✓,✓,✓,✓,✗,✗,✗,✗,✓,✗,✓,✓,✓,✗,✗,✗,OK
+0176522-02.2021.8.26.0500.pdf,03730461893,✓,11.5,7,✓,⚠️,O ofício requisitório encaminhado eletronicamente ...,✗,,✓,✓,✗,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✗,✗,OK
+0220341-86.2021.8.26.0500.pdf,03730461893,✓,10.7,10,✓,⚠️,,✗,,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✗,✗,OK
+0179487-50.2021.8.26.0500.pdf,06495530803,✓,15.6,7,✓,⚠️,O ofício requisitório encaminhado eletronicamente ...,✗,,✓,✓,✗,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✗,✗,✗,OK
+0223266-55.2021.8.26.0500.pdf,06495530803,✓,13.1,11,✓,⚠️,,✗,,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✗,✗,✗,OK

@@ -51,27 +51,110 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
-@st.cache_resource
-def get_db_connection():
-    """Cria conexão com PostgreSQL (cached)"""
-    return psycopg2.connect(
-        host=os.getenv("DB_HOST"),
-        port=os.getenv("DB_PORT"),
-        database=os.getenv("DB_NAME"),
-        user=os.getenv("DB_USER"),
-        password=os.getenv("DB_PASSWORD")
-    )
+@st.cache_data(ttl=300)  # Cache por 5 minutos
+def carregar_todos_dados():
+    """
+    Carrega TODOS os dados do PostgreSQL em memória (cached)
+    Executado apenas uma vez na inicialização
+    """
+    with st.spinner("🔄 Aguarde, organizando e indexando os dados..."):
+        try:
+            conn = psycopg2.connect(
+                host=os.getenv("DB_HOST"),
+                port=os.getenv("DB_PORT"),
+                database=os.getenv("DB_NAME"),
+                user=os.getenv("DB_USER"),
+                password=os.getenv("DB_PASSWORD")
+            )
+            
+            # Query para buscar TODOS os dados de uma vez
+            query = """
+                SELECT 
+                    id, cpf, numero_processo_cnj, processo_origem, requerente_caps,
+                    numero_ordem, vara, processo_execucao, processo_conhecimento,
+                    data_ajuizamento, data_transito_julgado, data_base_atualizacao,
+                    advogado_nome, advogado_oab, credor_nome, credor_cpf_cnpj, devedor_ente,
+                    banco, agencia, conta, conta_tipo,
+                    valor_principal_liquido, valor_principal_bruto, juros_moratorios,
+                    valor_total_requisitado, contrib_previdenciaria_iprem, contrib_previdenciaria_hspm,
+                    idoso, doenca_grave, pcd,
+                    rejeitado, motivo_rejeicao, observacoes, anomalia, descricao_anomalia,
+                    process_diagnostico, caminho_pdf, timestamp_ingestao
+                FROM esaj_detalhe_processos
+                ORDER BY timestamp_ingestao DESC;
+            """
+            
+            df = pd.read_sql_query(query, conn)
+            conn.close()
+            
+            # Converter tipos para otimizar memória (sem warnings)
+            if 'rejeitado' in df.columns:
+                df['rejeitado'] = df['rejeitado'].astype('boolean')
+            if 'idoso' in df.columns:
+                df['idoso'] = df['idoso'].astype('boolean')
+            if 'doenca_grave' in df.columns:
+                df['doenca_grave'] = df['doenca_grave'].astype('boolean')
+            if 'pcd' in df.columns:
+                df['pcd'] = df['pcd'].astype('boolean')
+            if 'process_diagnostico' in df.columns:
+                df['process_diagnostico'] = df['process_diagnostico'].astype('boolean')
+            
+            return df
+            
+        except Exception as e:
+            st.error(f"❌ Erro ao carregar dados: {e}")
+            return pd.DataFrame()
 
 
-def executar_query(query: str, params=None) -> pd.DataFrame:
-    """Executa query e retorna DataFrame"""
-    conn = get_db_connection()
-    try:
-        df = pd.read_sql_query(query, conn, params=params)
-        return df
-    except Exception as e:
-        st.error(f"Erro ao executar query: {e}")
-        return pd.DataFrame()
+def filtrar_dataframe(df: pd.DataFrame, filtros: dict) -> pd.DataFrame:
+    """
+    Aplica filtros no DataFrame em memória (RÁPIDO!)
+    """
+    df_filtrado = df.copy()
+    
+    # Filtro: CPF
+    if filtros.get('cpf'):
+        df_filtrado = df_filtrado[df_filtrado['cpf'] == filtros['cpf']]
+    
+    # Filtro: Processo
+    if filtros.get('processo'):
+        df_filtrado = df_filtrado[
+            df_filtrado['numero_processo_cnj'].str.contains(filtros['processo'], case=False, na=False)
+        ]
+    
+    # Filtro: Vara
+    if filtros.get('vara') and filtros['vara'] != "Todas":
+        df_filtrado = df_filtrado[df_filtrado['vara'] == filtros['vara']]
+    
+    # Filtro: Status
+    if filtros.get('rejeitado') is not None:
+        df_filtrado = df_filtrado[df_filtrado['rejeitado'] == filtros['rejeitado']]
+    
+    # Filtro: Preferências
+    if filtros.get('idoso'):
+        df_filtrado = df_filtrado[df_filtrado['idoso'] == True]
+    
+    if filtros.get('doenca_grave'):
+        df_filtrado = df_filtrado[df_filtrado['doenca_grave'] == True]
+    
+    if filtros.get('pcd'):
+        df_filtrado = df_filtrado[df_filtrado['pcd'] == True]
+    
+    # Filtro: Valores
+    if filtros.get('valor_min', 0) > 0:
+        df_filtrado = df_filtrado[df_filtrado['valor_total_requisitado'] >= filtros['valor_min']]
+    
+    if filtros.get('valor_max', 1000000) < 1000000:
+        df_filtrado = df_filtrado[df_filtrado['valor_total_requisitado'] <= filtros['valor_max']]
+    
+    # Filtro: Datas
+    if filtros.get('data_inicio'):
+        df_filtrado = df_filtrado[df_filtrado['data_ajuizamento'] >= pd.to_datetime(filtros['data_inicio'])]
+    
+    if filtros.get('data_fim'):
+        df_filtrado = df_filtrado[df_filtrado['data_ajuizamento'] <= pd.to_datetime(filtros['data_fim'])]
+    
+    return df_filtrado
 
 
 def get_pdf_path(cpf: str, numero_processo: str) -> Path:
@@ -99,103 +182,68 @@ def main():
     
     # Header
     st.markdown('<div class="main-header">⚖️ Ofícios Requisitórios TJSP</div>', unsafe_allow_html=True)
+    
+    # Carregar dados em memória (cached - executado apenas 1x)
+    df_completo = carregar_todos_dados()
+    
+    if df_completo.empty:
+        st.error("❌ Nenhum dado disponível no banco de dados.")
+        return
+    
+    # Mostrar info de cache
+    st.info(f"✅ {len(df_completo)} processos carregados em memória | Filtros são instantâneos!")
     st.markdown("---")
     
     # Sidebar - Filtros
     st.sidebar.header("🔍 Filtros")
     
+    # Dicionário de filtros
+    filtros = {}
+    
     # Filtro: CPF
-    cpf_filter = st.sidebar.text_input("CPF (apenas números)", "")
+    filtros['cpf'] = st.sidebar.text_input("CPF (apenas números)", "")
     
     # Filtro: Processo
-    processo_filter = st.sidebar.text_input("Número do Processo", "")
+    filtros['processo'] = st.sidebar.text_input("Número do Processo", "")
     
-    # Filtro: Vara
-    varas_query = "SELECT DISTINCT vara FROM esaj_detalhe_processos WHERE vara IS NOT NULL ORDER BY vara;"
-    varas_df = executar_query(varas_query)
-    varas_options = ["Todas"] + varas_df['vara'].tolist() if not varas_df.empty else ["Todas"]
-    vara_filter = st.sidebar.selectbox("Vara", varas_options)
+    # Filtro: Vara (extrair opções do DataFrame em memória)
+    varas_unicas = sorted(df_completo['vara'].dropna().unique().tolist())
+    varas_options = ["Todas"] + varas_unicas
+    filtros['vara'] = st.sidebar.selectbox("Vara", varas_options)
     
     # Filtro: Status
     st.sidebar.subheader("Status")
-    rejeitado_filter = st.sidebar.checkbox("Apenas Rejeitados", value=False)
-    aprovado_filter = st.sidebar.checkbox("Apenas Aprovados", value=False)
+    status_option = st.sidebar.radio(
+        "Selecione o status:",
+        ["Todos", "Apenas Rejeitados", "Apenas Aprovados"],
+        index=0
+    )
+    
+    if status_option == "Apenas Rejeitados":
+        filtros['rejeitado'] = True
+    elif status_option == "Apenas Aprovados":
+        filtros['rejeitado'] = False
+    else:
+        filtros['rejeitado'] = None
     
     # Filtro: Preferências
     st.sidebar.subheader("Preferências")
-    idoso_filter = st.sidebar.checkbox("Idoso", value=False)
-    doenca_grave_filter = st.sidebar.checkbox("Doença Grave", value=False)
-    pcd_filter = st.sidebar.checkbox("PCD", value=False)
+    filtros['idoso'] = st.sidebar.checkbox("Idoso", value=False)
+    filtros['doenca_grave'] = st.sidebar.checkbox("Doença Grave", value=False)
+    filtros['pcd'] = st.sidebar.checkbox("PCD", value=False)
     
     # Filtro: Valores
     st.sidebar.subheader("Valores")
-    valor_min = st.sidebar.number_input("Valor Mínimo (R$)", min_value=0.0, value=0.0, step=1000.0)
-    valor_max = st.sidebar.number_input("Valor Máximo (R$)", min_value=0.0, value=1000000.0, step=1000.0)
+    filtros['valor_min'] = st.sidebar.number_input("Valor Mínimo (R$)", min_value=0.0, value=0.0, step=1000.0)
+    filtros['valor_max'] = st.sidebar.number_input("Valor Máximo (R$)", min_value=0.0, value=1000000.0, step=1000.0)
     
     # Filtro: Datas
     st.sidebar.subheader("Datas")
-    data_inicio = st.sidebar.date_input("Data Ajuizamento - Início", value=None)
-    data_fim = st.sidebar.date_input("Data Ajuizamento - Fim", value=None)
+    filtros['data_inicio'] = st.sidebar.date_input("Data Ajuizamento - Início", value=None)
+    filtros['data_fim'] = st.sidebar.date_input("Data Ajuizamento - Fim", value=None)
     
-    # Construir query com filtros
-    query = """
-        SELECT 
-            id, cpf, numero_processo_cnj, processo_origem, requerente_caps,
-            vara, rejeitado, idoso, doenca_grave, pcd,
-            valor_total_requisitado, data_ajuizamento,
-            motivo_rejeicao, observacoes
-        FROM esaj_detalhe_processos
-        WHERE 1=1
-    """
-    params = {}
-    
-    if cpf_filter:
-        query += " AND cpf = %(cpf)s"
-        params['cpf'] = cpf_filter
-    
-    if processo_filter:
-        query += " AND numero_processo_cnj LIKE %(processo)s"
-        params['processo'] = f"%{processo_filter}%"
-    
-    if vara_filter != "Todas":
-        query += " AND vara = %(vara)s"
-        params['vara'] = vara_filter
-    
-    if rejeitado_filter:
-        query += " AND rejeitado = true"
-    
-    if aprovado_filter:
-        query += " AND (rejeitado = false OR rejeitado IS NULL)"
-    
-    if idoso_filter:
-        query += " AND idoso = true"
-    
-    if doenca_grave_filter:
-        query += " AND doenca_grave = true"
-    
-    if pcd_filter:
-        query += " AND pcd = true"
-    
-    if valor_min > 0:
-        query += " AND valor_total_requisitado >= %(valor_min)s"
-        params['valor_min'] = valor_min
-    
-    if valor_max < 1000000:
-        query += " AND valor_total_requisitado <= %(valor_max)s"
-        params['valor_max'] = valor_max
-    
-    if data_inicio:
-        query += " AND data_ajuizamento >= %(data_inicio)s"
-        params['data_inicio'] = data_inicio
-    
-    if data_fim:
-        query += " AND data_ajuizamento <= %(data_fim)s"
-        params['data_fim'] = data_fim
-    
-    query += " ORDER BY timestamp_ingestao DESC;"
-    
-    # Executar query
-    df = executar_query(query, params)
+    # Aplicar filtros no DataFrame em memória (INSTANTÂNEO!)
+    df = filtrar_dataframe(df_completo, filtros)
     
     # Estatísticas
     col1, col2, col3, col4 = st.columns(4)
@@ -233,7 +281,7 @@ def main():
             # Exibir tabela
             st.dataframe(
                 df,
-                use_container_width=True,
+                width='stretch',
                 height=400
             )
             

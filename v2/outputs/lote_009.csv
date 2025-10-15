@@ -1,9 +1,0 @@
-pdf,cpf,sucesso,tempo_s,oficios_encontrados,cpf_validado,rejeitado,motivo_rejeicao,anomalia,descricao_anomalia,processo_origem,requerente_caps,numero_ordem,valor_principal_liquido,valor_principal_bruto,juros_moratorios,valor_total,banco,agencia,conta,conta_tipo,vara,contrib_iprem,contrib_hspm,data_nascimento,data_base,idoso,doenca_grave,pcd,anomalias
-0085911-66.2022.8.26.0500.pdf,49783491920,✓,16.8,11,✓,⚠️,,✗,,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✗,✗,✗,OK
-7002920-94.2011.8.26.0500.pdf,51525003968,✗,51.8,17,✓,✗,,✗,,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,"Validação falhou: 1 validation error for OficioRequisitorio
-processo_origem
-  String should have at least 20 characters [type=string_too_short, input_value='053.98.417851-9', input_type=str]
-    For further information visit https://errors.pydantic.dev/2.11/v/string_too_short"
-0352014-66.2025.8.26.0500.pdf,74724118768,✓,10.3,16,✓,⚠️,"A situação do CPF do credor constante do anexo II,...",✗,,✓,✓,✗,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✗,✗,OK
-0223459-02.2023.8.26.0500.pdf,93661509853,✓,12.8,21,✓,✗,,✗,,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✗,✗,OK
-7009758-92.2007.8.26.0500.pdf,93661509853,✓,8.7,16,✓,✗,,✗,,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✗,✓,✗,✗,✗,✓,✗,✗,✗,OK

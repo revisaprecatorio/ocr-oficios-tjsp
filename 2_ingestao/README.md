@@ -90,7 +90,11 @@ psql -h 72.60.62.124 -p 5432 -U admin -d n8n -f sql/03_test_queries.sql
 ### **6. Executar Streamlit**
 
 ```bash
-streamlit run app/streamlit_app.py
+# Opção 1: Script helper
+./run_streamlit.sh
+
+# Opção 2: Comando direto
+streamlit run app/streamlit_app.py --server.port=8501
 ```
 
 ---
