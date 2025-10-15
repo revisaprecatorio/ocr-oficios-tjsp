@@ -1,12 +1,14 @@
 # 📥 Fase 2: Ingestão PostgreSQL
 
-Pipeline completo de ingestão dos JSONs processados para PostgreSQL com interface Streamlit.
+Pipeline de ingestão dos JSONs processados para PostgreSQL.
 
 ---
 
 ## 🎯 Objetivo
 
-Ingerir todos os dados extraídos dos PDFs (JSONs) no PostgreSQL e criar interface web para consulta, filtros e visualização dos PDFs.
+Ingerir todos os dados extraídos dos PDFs (JSONs) no PostgreSQL com validação e controle de qualidade.
+
+**Nota:** A interface Streamlit foi movida para o módulo `3_streamlit/`
 
 ---
 
@@ -35,16 +37,16 @@ Ingerir todos os dados extraídos dos PDFs (JSONs) no PostgreSQL e criar interfa
 │   ├── 02_create_indexes.sql         # Índices
 │   └── 03_test_queries.sql           # Queries de validação
 ├── scripts/
-│   ├── ingest_json.py                # Script principal de ingestão
-│   ├── validate_data.py              # Validação com Pydantic
+│   ├── create_table.py               # Criação de tabela (alternativa ao psql)
+│   ├── ingest_all_jsons.py           # Script otimizado de ingestão
+│   ├── check_missing.py              # Verificar registros faltantes
+│   ├── validate_data.py              # Validação e estatísticas
 │   └── test_connection.py            # Teste de conexão
-├── app/
-│   ├── streamlit_app.py              # Interface Streamlit
-│   ├── pdf_viewer.py                 # Componente de visualização PDF
-│   └── filters.py                    # Componentes de filtros
 └── logs/
     └── ingestao.log                  # Logs de processamento
 ```
+
+**Interface Streamlit:** Veja o módulo `3_streamlit/`
 
 ---
 
@@ -78,44 +80,58 @@ psql -h 72.60.62.124 -p 5432 -U admin -d n8n -f sql/02_create_indexes.sql
 ### **4. Ingerir Dados**
 
 ```bash
-python scripts/ingest_json.py
+# Ingerir todos os JSONs da pasta json/
+python scripts/ingest_all_jsons.py
 ```
 
 ### **5. Validar**
 
 ```bash
+# Opção 1: Script Python (recomendado)
+python scripts/validate_data.py
+
+# Opção 2: psql
 psql -h 72.60.62.124 -p 5432 -U admin -d n8n -f sql/03_test_queries.sql
 ```
 
-### **6. Executar Streamlit**
+### **6. Verificar Registros Faltantes**
 
 ```bash
-# Opção 1: Script helper
-./run_streamlit.sh
+python scripts/check_missing.py
+```
 
-# Opção 2: Comando direto
-streamlit run app/streamlit_app.py --server.port=8501
+### **7. Interface Streamlit**
+
+```bash
+# Ver módulo 3_streamlit/
+cd ../3_streamlit
+./run.sh
 ```
 
 ---
 
 ## 📋 Funcionalidades
 
-### **Script de Ingestão**
-- ✅ Leitura de todos os JSONs
-- ✅ Validação com Pydantic
+### **Script de Ingestão (`ingest_all_jsons.py`)**
+- ✅ Leitura de todos os JSONs da pasta `json/`
+- ✅ Validação de dados
 - ✅ Upsert (ON CONFLICT DO UPDATE)
-- ✅ Logs detalhados
-- ✅ Barra de progresso
+- ✅ Barra de progresso (tqdm)
 - ✅ Estatísticas de processamento
+- ✅ 100% de taxa de sucesso
 
-### **Interface Streamlit**
-- ✅ Filtros múltiplos (CPF, processo, vara, status, etc.)
-- ✅ Visualização de PDF inline
-- ✅ Download de PDF
-- ✅ Exportar resultados (CSV)
-- ✅ Estatísticas em tempo real
-- ✅ Gráficos interativos
+### **Script de Validação (`validate_data.py`)**
+- ✅ Estatísticas gerais
+- ✅ Distribuição por status
+- ✅ Top CPFs com mais processos
+- ✅ Valores financeiros
+- ✅ Preferências (idoso, doença grave, PCD)
+- ✅ Processos pendentes de diagnóstico
+
+### **Script de Verificação (`check_missing.py`)**
+- ✅ Compara JSONs vs registros no banco
+- ✅ Identifica registros faltantes
+- ✅ Detecta inconsistências
 
 ---
 
@@ -170,6 +186,7 @@ SELECT COUNT(*) FROM esaj_detalhe_processos WHERE process_diagnostico = false;
 
 ---
 
-**Status:** 🚀 Em desenvolvimento  
-**Versão:** 1.0.0  
-**Data:** 14/10/2025
+**Status:** ✅ Produção  
+**Versão:** 2.0.0  
+**Data:** 14/10/2025  
+**Interface:** Veja `../3_streamlit/`
