@@ -36,8 +36,8 @@ st.markdown("""
         font-weight: bold;
         color: #1f77b4;
         text-align: center;
-        padding: 0.5rem 0;
-        margin-top: 0;
+        padding: 1rem 0 0.5rem 0;
+        margin-top: 0.5rem;
     }
     .metric-card {
         background-color: #f0f2f6;
@@ -48,9 +48,9 @@ st.markdown("""
     .stDataFrame {
         font-size: 0.9rem;
     }
-    /* Reduzir espaçamento superior geral */
+    /* Espaçamento superior para não cortar o título */
     .block-container {
-        padding-top: 1rem;
+        padding-top: 2rem;
     }
 </style>
 """, unsafe_allow_html=True)
