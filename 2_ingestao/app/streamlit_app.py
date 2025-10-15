@@ -36,8 +36,8 @@ st.markdown("""
         font-weight: bold;
         color: #1f77b4;
         text-align: center;
-        padding: 0.2rem 0;
-        margin-top: -1rem;
+        padding: 0.5rem 0;
+        margin-top: 0;
     }
     .metric-card {
         background-color: #f0f2f6;
@@ -50,7 +50,7 @@ st.markdown("""
     }
     /* Reduzir espaçamento superior geral */
     .block-container {
-        padding-top: 2rem;
+        padding-top: 1rem;
     }
 </style>
 """, unsafe_allow_html=True)
