@@ -1,6 +1,0 @@
-pdf,cpf,sucesso,tempo_s,oficios_encontrados,cpf_validado,rejeitado,motivo_rejeicao,anomalia,descricao_anomalia,processo_origem,requerente_caps,numero_ordem,valor_principal_liquido,valor_principal_bruto,juros_moratorios,valor_total,banco,agencia,conta,conta_tipo,vara,contrib_iprem,contrib_hspm,data_nascimento,data_base,idoso,doenca_grave,pcd,anomalias
-7007473-24.2010.8.26.0500.pdf,06495530803,✓,21.3,19,✓,✗,,✗,,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✗,✗,✗,✓,✓,✗,✗,OK
-0077044-50.2023.8.26.0500.pdf,07620857893,✓,22.0,38,✓,✗,,✗,,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✗,✗,✓,✓,✗,✓,✗,OK
-0302248-83.2021.8.26.0500.pdf,10004525817,✓,14.6,7,✓,⚠️,não foram discriminadas corretamente todas as verb...,✗,,✓,✓,✗,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✗,✗,✗,OK
-0181664-84.2021.8.26.0500.pdf,10077339851,✓,15.3,7,✓,⚠️,O ofício requisitório encaminhado eletronicamente ...,✗,,✓,✓,✗,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✗,✗,✗,OK
-0179484-95.2021.8.26.0500.pdf,10103818812,✓,13.6,7,✓,⚠️,O ofício requisitório encaminhado eletronicamente ...,✗,,✓,✓,✗,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✗,✗,✗,OK
