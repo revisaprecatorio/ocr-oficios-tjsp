@@ -1,6 +1,22 @@
 # 🚀 Deploy Streamlit - Docker + Traefik
 
-Guia completo para deploy do Streamlit em Docker com Traefik e BasicAuth.
+Guia completo para deploy do Streamlit em Docker com acesso direto via porta 8501.
+
+**Status:** ✅ Deploy testado e funcionando em produção (15/10/2025)
+
+---
+
+## ⚠️ **IMPORTANTE: Limitações Conhecidas**
+
+Este projeto está **funcional** mas ainda carece de:
+
+1. **Validação de Falsos Rejeitados:** Sistema não valida se ofícios foram incorretamente rejeitados durante o processamento
+2. **Logs de Auditoria:** Falta rastreabilidade completa de ações do usuário
+3. **Testes Automatizados:** Ausência de testes unitários e de integração
+4. **Backup Automático:** PDFs e dados não possuem backup automatizado
+5. **Monitoramento:** Falta alertas de falhas e métricas de performance
+
+**Recomendação:** Use em ambiente de homologação antes de produção crítica.
 
 ---
 
@@ -8,9 +24,9 @@ Guia completo para deploy do Streamlit em Docker com Traefik e BasicAuth.
 
 - ✅ Docker instalado
 - ✅ Docker Compose instalado
-- ✅ Traefik rodando
-- ✅ PostgreSQL acessível
-- ✅ Rede Docker `traefik` criada
+- ✅ PostgreSQL acessível (porta 5432)
+- ✅ 2GB RAM disponível
+- ✅ 10GB espaço em disco (para PDFs)
 
 ---
 
@@ -194,9 +210,9 @@ docker-compose up -d
 
 **URL:** http://72.60.62.124:8501
 
-**Credenciais:**
-- Usuário: `revisaprecatorio`
-- Senha: `R3v1s@2025`
+**Status:** ✅ Funcionando (acesso direto via porta, sem BasicAuth por enquanto)
+
+**Nota:** BasicAuth via Traefik está configurado mas não ativo. Para ativar, remover `ports:` do docker-compose.yml e usar apenas roteamento via Traefik.
 
 ---
 
@@ -258,6 +274,28 @@ PostgreSQL (172.17.0.1:5432)
 
 ---
 
+---
+
+## 🔄 Histórico de Deploy
+
+### **v2.1.0 - 15/10/2025**
+- ✅ Deploy inicial em produção
+- ✅ Acesso via porta direta (8501)
+- ✅ Integração com PostgreSQL funcionando
+- ✅ Upload de 1.4GB de PDFs via scp
+- ⚠️ Pendente: Validação de falsos rejeitados
+- ⚠️ Pendente: BasicAuth via Traefik
+
+### **Próximas Melhorias**
+- [ ] Implementar validação de falsos rejeitados
+- [ ] Ativar BasicAuth via Traefik
+- [ ] Adicionar testes automatizados
+- [ ] Implementar backup automático
+- [ ] Adicionar monitoramento e alertas
+
+---
+
 **Versão:** 2.1.0  
 **Data:** 15/10/2025  
+**Status:** ✅ Produção (com limitações conhecidas)  
 **Desenvolvedor:** Cascade AI + Persival Balleste
