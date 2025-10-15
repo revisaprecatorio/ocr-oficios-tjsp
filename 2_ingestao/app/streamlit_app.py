@@ -109,6 +109,7 @@ def carregar_todos_dados():
 def filtrar_dataframe(df: pd.DataFrame, filtros: dict) -> pd.DataFrame:
     """
     Aplica filtros no DataFrame em memória (RÁPIDO!)
+    SEM cache para permitir atualização instantânea da UI
     """
     df_filtrado = df.copy()
     
@@ -180,6 +181,18 @@ def display_pdf(pdf_path: Path):
 def main():
     """Função principal"""
     
+    # Inicializar session_state para filtros (persistente entre reruns)
+    if 'idoso' not in st.session_state:
+        st.session_state.idoso = False
+    if 'doenca_grave' not in st.session_state:
+        st.session_state.doenca_grave = False
+    if 'pcd' not in st.session_state:
+        st.session_state.pcd = False
+    if 'cpf_filter' not in st.session_state:
+        st.session_state.cpf_filter = ""
+    if 'processo_filter' not in st.session_state:
+        st.session_state.processo_filter = ""
+    
     # Header
     st.markdown('<div class="main-header">⚖️ Ofícios Requisitórios TJSP</div>', unsafe_allow_html=True)
     
@@ -200,11 +213,21 @@ def main():
     # Dicionário de filtros
     filtros = {}
     
-    # Filtro: CPF
-    filtros['cpf'] = st.sidebar.text_input("CPF (apenas números)", "")
+    # Filtro: CPF (com session_state)
+    st.session_state.cpf_filter = st.sidebar.text_input(
+        "CPF (apenas números)", 
+        value=st.session_state.cpf_filter,
+        key="txt_cpf"
+    )
+    filtros['cpf'] = st.session_state.cpf_filter
     
-    # Filtro: Processo
-    filtros['processo'] = st.sidebar.text_input("Número do Processo", "")
+    # Filtro: Processo (com session_state)
+    st.session_state.processo_filter = st.sidebar.text_input(
+        "Número do Processo", 
+        value=st.session_state.processo_filter,
+        key="txt_processo"
+    )
+    filtros['processo'] = st.session_state.processo_filter
     
     # Filtro: Vara (extrair opções do DataFrame em memória)
     varas_unicas = sorted(df_completo['vara'].dropna().unique().tolist())
@@ -226,11 +249,32 @@ def main():
     else:
         filtros['rejeitado'] = None
     
-    # Filtro: Preferências
+    # Filtro: Preferências (usando session_state diretamente para feedback instantâneo)
     st.sidebar.subheader("Preferências")
-    filtros['idoso'] = st.sidebar.checkbox("Idoso", value=False)
-    filtros['doenca_grave'] = st.sidebar.checkbox("Doença Grave", value=False)
-    filtros['pcd'] = st.sidebar.checkbox("PCD", value=False)
+    
+    # Checkboxes com valor direto do session_state (INSTANTÂNEO!)
+    st.session_state.idoso = st.sidebar.checkbox(
+        "👴 Idoso", 
+        value=st.session_state.idoso,
+        key="cb_idoso"
+    )
+    
+    st.session_state.doenca_grave = st.sidebar.checkbox(
+        "🏥 Doença Grave", 
+        value=st.session_state.doenca_grave,
+        key="cb_doenca"
+    )
+    
+    st.session_state.pcd = st.sidebar.checkbox(
+        "♿ PCD", 
+        value=st.session_state.pcd,
+        key="cb_pcd"
+    )
+    
+    # Usar valores do session_state
+    filtros['idoso'] = st.session_state.idoso
+    filtros['doenca_grave'] = st.session_state.doenca_grave
+    filtros['pcd'] = st.session_state.pcd
     
     # Filtro: Valores
     st.sidebar.subheader("Valores")
@@ -243,9 +287,11 @@ def main():
     filtros['data_fim'] = st.sidebar.date_input("Data Ajuizamento - Fim", value=None)
     
     # Aplicar filtros no DataFrame em memória (INSTANTÂNEO!)
-    df = filtrar_dataframe(df_completo, filtros)
+    # Sem cache - permite UI responsiva
+    with st.spinner("🔄 Filtrando..."):
+        df = filtrar_dataframe(df_completo, filtros)
     
-    # Estatísticas
+    # Estatísticas (calculadas em memória)
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
