@@ -636,6 +636,7 @@ Sistema desenvolvido para processamento de documentos oficiais do TJSP.
 📋 **Documentação de Deploy:**
 - **[3_streamlit/README_DEPLOY.md](3_streamlit/README_DEPLOY.md)** - Guia completo de deploy
 - **[3_streamlit/CHANGELOG.md](3_streamlit/CHANGELOG.md)** - Histórico de versões
+- **[GERENCIAMENTO_SERVICOS_VPS.md](GERENCIAMENTO_SERVICOS_VPS.md)** - Gerenciamento de serviços Docker na VPS
 
 ---
 
