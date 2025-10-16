@@ -695,16 +695,24 @@ else:
 
 ## 🎯 Próximos Passos (Roadmap)
 
-### **v2.2.0 - Validação e Qualidade**
+### **v2.2.0 - Validação e Qualidade** ✅ CONCLUÍDO
 - [x] **✅ CONCLUÍDO: Validação de falsos rejeitados (16/10/2025)**
 - [x] **✅ CONCLUÍDO: Pipeline completo automatizado (16/10/2025)**
 - [x] **✅ CONCLUÍDO: Todas as colunas no Streamlit (16/10/2025)**
+- [x] **✅ CONCLUÍDO: Script de ingestão corrigido (16/10/2025)**
+- [x] **✅ CONCLUÍDO: Deploy em produção validado (16/10/2025)**
+
+### **v2.3.0 - Cálculo de Preferências (PRÓXIMO)**
+- [ ] **🔴 PRIORIDADE: Recalcular tag `idoso` baseado em `data_nascimento`**
+  - Lógica: `idade = data_atual - data_nascimento >= 60 anos`
+  - Atualizar registros existentes no PostgreSQL
+  - Adicionar cálculo automático no processamento
 - [ ] Adicionar sistema de logs de auditoria
 - [ ] Criar testes automatizados (pytest)
 - [ ] Implementar backup automático de PDFs
 - [ ] Adicionar monitoramento (Prometheus/Grafana)
 
-### **v2.3.0 - Segurança e Performance**
+### **v2.4.0 - Segurança e Performance**
 - [ ] Ativar BasicAuth via Traefik
 - [ ] Adicionar HTTPS com Let's Encrypt
 - [ ] Implementar rate limiting

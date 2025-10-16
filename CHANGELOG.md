@@ -67,6 +67,20 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 - Falsos rejeitados: 0 (100% de precisão)
 - Taxa de correção: 100%
 
+**Validação PostgreSQL:**
+- 44/50 registros (88%) com `data_nascimento`
+- 27/50 registros (54%) com `tipo_levantamento`
+- 33/50 registros (66%) com `valor_compensado`
+
+#### 🚀 Deploy
+
+**Redeploy Streamlit VPS (16/10/2025):**
+- ✅ Script de ingestão corrigido
+- ✅ Tabela PostgreSQL limpa e reingerida
+- ✅ Streamlit atualizado com 49 colunas
+- ✅ Todas as colunas visíveis na interface
+- ✅ Deploy validado em produção
+
 ---
 
 ## [2.1.0] - 2025-10-14

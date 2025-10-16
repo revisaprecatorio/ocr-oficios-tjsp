@@ -98,4 +98,7 @@ output_*
 .cursor/rules/byterover-rules.mdc
 .kiro/steering/byterover-rules.md
 .qoder/rules/byterover-rules.md
-.augment/rules/byterover-rules.md
+.augment/rules/byterover-rules.mddata_consultas.tar.gz
+*.tar.gz
+1_parsing_PDF/outputs/lote_*.csv
+deploy/
