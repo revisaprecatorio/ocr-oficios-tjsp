@@ -4,6 +4,57 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 
 ---
 
+## [2.3.0] - 2025-10-16
+
+### 🎂 Cálculo Automático da Tag IDOSO
+
+#### ✨ Adicionado
+
+**Recálculo Automático de Idoso**
+- Script `recalcular_idoso.py` para atualizar registros existentes
+- Cálculo automático no processamento de PDFs
+- Lógica: `idade = data_atual - data_nascimento >= 60 anos`
+- Integração com pipeline completo
+
+**Funcionalidades**
+- Recálculo em lote de todos os registros com `data_nascimento`
+- Validação automática de inconsistências
+- Relatório detalhado com estatísticas
+- Ajuste correto para aniversários não completados
+
+**Documentação**
+- `README_RECALCULO_IDOSO.md` com guia completo
+- Exemplos de uso e queries SQL
+- Troubleshooting e casos especiais
+
+#### 🔧 Implementação
+
+**Processamento Automático**
+- Arquivo: `1_parsing_PDF/app/processador.py`
+- Cálculo após validação Pydantic
+- Log de idade calculada para cada registro
+
+**Script de Recálculo**
+- Arquivo: `2_ingestao/scripts/recalcular_idoso.py`
+- Atualiza registros existentes no PostgreSQL
+- Validação final de consistência
+
+**Pipeline Completo**
+- Etapa 5 adicionada: Recálculo de tag idoso
+- Execução automática após ingestão
+
+#### 📊 Métricas
+
+**Última Execução (16/10/2025):**
+- Total processado: 44 registros
+- Idosos (≥60 anos): 27 (61.4%)
+- Não idosos (<60 anos): 17 (38.6%)
+- Registros atualizados: 12
+- Registros já corretos: 32
+- Taxa de sucesso: 100%
+
+---
+
 ## [2.2.0] - 2025-10-16
 
 ### 🎉 Pipeline Completo 100% Funcional

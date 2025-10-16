@@ -702,17 +702,24 @@ else:
 - [x] **✅ CONCLUÍDO: Script de ingestão corrigido (16/10/2025)**
 - [x] **✅ CONCLUÍDO: Deploy em produção validado (16/10/2025)**
 
-### **v2.3.0 - Cálculo de Preferências (PRÓXIMO)**
-- [ ] **🔴 PRIORIDADE: Recalcular tag `idoso` baseado em `data_nascimento`**
+### **v2.3.0 - Cálculo de Preferências** ✅ CONCLUÍDO
+- [x] **✅ CONCLUÍDO: Recalcular tag `idoso` baseado em `data_nascimento` (16/10/2025)**
   - Lógica: `idade = data_atual - data_nascimento >= 60 anos`
-  - Atualizar registros existentes no PostgreSQL
-  - Adicionar cálculo automático no processamento
+  - Script de recálculo em lote criado
+  - Cálculo automático no processamento implementado
+  - Integrado ao pipeline completo
+  - 27/44 registros (61.4%) identificados como idosos
+
+### **v2.4.0 - Qualidade e Testes (PRÓXIMO)**
+- [ ] **🔴 PRIORIDADE: Criar testes automatizados (pytest)**
+  - Testes unitários para detector e processador
+  - Testes de integração do pipeline
+  - Testes de validação de schemas
 - [ ] Adicionar sistema de logs de auditoria
-- [ ] Criar testes automatizados (pytest)
 - [ ] Implementar backup automático de PDFs
 - [ ] Adicionar monitoramento (Prometheus/Grafana)
 
-### **v2.4.0 - Segurança e Performance**
+### **v2.5.0 - Segurança e Performance**
 - [ ] Ativar BasicAuth via Traefik
 - [ ] Adicionar HTTPS com Let's Encrypt
 - [ ] Implementar rate limiting

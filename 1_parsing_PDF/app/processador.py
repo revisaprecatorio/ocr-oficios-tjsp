@@ -304,6 +304,22 @@ class ProcessadorOficio:
                     "num_oficios": len(todos_oficios)
                 }
             
+            # 8.1. Calcular flag IDOSO automaticamente
+            if oficio_validado.data_nascimento:
+                from datetime import date
+                hoje = date.today()
+                idade = hoje.year - oficio_validado.data_nascimento.year
+                
+                # Ajustar se ainda não fez aniversário este ano
+                if (hoje.month, hoje.day) < (oficio_validado.data_nascimento.month, oficio_validado.data_nascimento.day):
+                    idade -= 1
+                
+                # Atualizar flag idoso
+                oficio_validado.idoso = (idade >= 60)
+                logger.info(f"🎂 Idade calculada: {idade} anos → idoso={oficio_validado.idoso}")
+            else:
+                logger.debug("⚠️ data_nascimento não disponível, flag idoso não calculada")
+            
             # 9. Retornar resultado de sucesso
             logger.info("✅ Processamento V2 concluído com sucesso!")
             return {
