@@ -139,39 +139,59 @@ class ProcessadorOficio:
             )
             
             # 6.1. Verificar se ofício foi REJEITADO (ANTES de validar!)
+            # 🔴 REGRA CRÍTICA: Verificar ACEITAÇÃO primeiro (prioridade máxima)
             oficio_rejeitado = False
             motivo_rejeicao = None
+            tem_processamento_com_informacao = False
+            tem_numero_ordem = False
             
-            # Buscar rejeição no texto do PROCESSAMENTO ou em páginas próximas
-            if texto_proc and self.detector_proc.eh_oficio_rejeitado(texto_proc):
-                oficio_rejeitado = True
-                motivo_rejeicao = self.detector_proc.extrair_motivo_rejeicao(texto_proc)
-                logger.warning(f"⚠️ OFÍCIO REJEITADO detectado na página {pagina_proc}!")
-                if motivo_rejeicao:
-                    logger.info(f"   Motivo: {motivo_rejeicao[:100]}...")
+            # Verificar se tem PROCESSAMENTO COM INFORMAÇÃO ou número de ordem
+            if texto_proc:
+                texto_upper = texto_proc.upper()
+                if "PROCESSAMENTO COM INFORMAÇÃO" in texto_upper or "PROCESSAMENTO COM INFORMACAO" in texto_upper:
+                    tem_processamento_com_informacao = True
+                    logger.info("✅ PROCESSAMENTO COM INFORMAÇÃO detectado → Ofício ACEITO")
+                
+                if self.detector_proc.extrair_numero_ordem(texto_proc):
+                    tem_numero_ordem = True
+                    logger.info("✅ Número de ordem detectado → Ofício ACEITO")
+            
+            # 🔴 PRIORIDADE: Se tem PROCESSAMENTO COM INFORMAÇÃO ou número de ordem → NÃO é rejeitado
+            if tem_processamento_com_informacao or tem_numero_ordem:
+                oficio_rejeitado = False
+                logger.info("✅ Ofício ACEITO (tem PROCESSAMENTO COM INFORMAÇÃO ou número de ordem)")
             else:
-                # Buscar rejeição em páginas próximas ao ofício
-                logger.debug("Buscando NOTA DE REJEIÇÃO em páginas próximas...")
-                for pag_offset in range(0, 50):
-                    pag_busca = ultima_pag_oficio + pag_offset
-                    try:
-                        doc = pymupdf.open(pdf_path)
-                        if pag_busca < len(doc):
-                            texto_busca = doc.load_page(pag_busca).get_text()
-                            if self.detector_proc.eh_oficio_rejeitado(texto_busca):
-                                oficio_rejeitado = True
-                                motivo_rejeicao = self.detector_proc.extrair_motivo_rejeicao(texto_busca)
-                                logger.warning(f"⚠️ OFÍCIO REJEITADO detectado na página {pag_busca + 1}!")
-                                if motivo_rejeicao:
-                                    logger.info(f"   Motivo: {motivo_rejeicao[:100]}...")
-                                # Usar esse texto como PROCESSAMENTO
-                                if not texto_proc:
-                                    texto_proc = texto_busca
-                                    pagina_proc = pag_busca
-                                break
-                        doc.close()
-                    except Exception as e:
-                        logger.debug(f"Erro ao buscar rejeição na página {pag_busca}: {e}")
+                # Só verificar rejeição se NÃO tem indicadores de aceitação
+                # Buscar rejeição no texto do PROCESSAMENTO ou em páginas próximas
+                if texto_proc and self.detector_proc.eh_oficio_rejeitado(texto_proc):
+                    oficio_rejeitado = True
+                    motivo_rejeicao = self.detector_proc.extrair_motivo_rejeicao(texto_proc)
+                    logger.warning(f"⚠️ OFÍCIO REJEITADO detectado na página {pagina_proc}!")
+                    if motivo_rejeicao:
+                        logger.info(f"   Motivo: {motivo_rejeicao[:100]}...")
+                else:
+                    # Buscar rejeição em páginas próximas ao ofício
+                    logger.debug("Buscando NOTA DE REJEIÇÃO em páginas próximas...")
+                    for pag_offset in range(0, 50):
+                        pag_busca = ultima_pag_oficio + pag_offset
+                        try:
+                            doc = pymupdf.open(pdf_path)
+                            if pag_busca < len(doc):
+                                texto_busca = doc.load_page(pag_busca).get_text()
+                                if self.detector_proc.eh_oficio_rejeitado(texto_busca):
+                                    oficio_rejeitado = True
+                                    motivo_rejeicao = self.detector_proc.extrair_motivo_rejeicao(texto_busca)
+                                    logger.warning(f"⚠️ OFÍCIO REJEITADO detectado na página {pag_busca + 1}!")
+                                    if motivo_rejeicao:
+                                        logger.info(f"   Motivo: {motivo_rejeicao[:100]}...")
+                                    # Usar esse texto como PROCESSAMENTO
+                                    if not texto_proc:
+                                        texto_proc = texto_busca
+                                        pagina_proc = pag_busca
+                                    break
+                            doc.close()
+                        except Exception as e:
+                            logger.debug(f"Erro ao buscar rejeição na página {pag_busca}: {e}")
                         break
             
             # 7. Montar texto relevante (APENAS páginas necessárias!)

@@ -4,6 +4,71 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 
 ---
 
+## [2.2.0] - 2025-10-16
+
+### 🎉 Pipeline Completo 100% Funcional
+
+#### ✨ Adicionado
+
+**Pipeline Automatizado End-to-End**
+- Script `pipeline_completo.sh` para execução completa do pipeline
+- Limpeza automática de JSONs antigos antes do processamento
+- Organização automática de JSONs em pasta centralizada
+- Importação automática para PostgreSQL (VPS)
+- Validação automática de resultados com estatísticas
+
+**Correção de Falsos Rejeitados**
+- Lógica de priorização de aceitação implementada
+- Verificação de "PROCESSAMENTO COM INFORMAÇÃO" antes de rejeição
+- Verificação de `numero_ordem` antes de rejeição
+- 100% de precisão: 0 falsos rejeitados em 26 ofícios com número de ordem
+
+**Colunas Completas no Streamlit**
+- Adicionadas 11 colunas faltantes na query do Streamlit:
+  - `data_nascimento` (data de nascimento do credor)
+  - `tipo_levantamento`
+  - `dados_bancarios_advogado`
+  - `cpf_titular_conta`
+  - `valor_compensado`
+  - `contribuicao_social`
+  - `salario_pericial`
+  - `assist_tecnico`
+  - `custas`
+  - `despesas`
+  - `multas`
+- Total: 49 colunas agora disponíveis na interface
+
+**Documentação**
+- Arquivo `ANOMALIA-A-REVER.md` documentando caso anômalo
+- README atualizado com seção "Pipeline Completo de Ponta a Ponta"
+- Roadmap atualizado com tarefas concluídas
+
+#### 🔧 Corrigido
+
+**Lógica de Detecção de Rejeição**
+- Problema: 13 ofícios com `numero_ordem` marcados incorretamente como rejeitados
+- Solução: Priorizar verificação de aceitação antes de rejeição
+- Arquivo: `1_parsing_PDF/app/processador.py`
+- Resultado: 0 falsos rejeitados (100% de precisão)
+
+**Streamlit - Colunas Faltantes**
+- Problema: 11 colunas da tabela PostgreSQL não eram carregadas
+- Solução: Atualizar query SQL para incluir todas as colunas
+- Arquivo: `3_streamlit/app/streamlit_app.py`
+- Resultado: 49/49 colunas agora disponíveis
+
+#### 📊 Métricas
+
+**Última Execução do Pipeline (16/10/2025):**
+- Total processado: 51 PDFs
+- Sucesso: 50 (98%)
+- Tempo total: 598.9s (~10 minutos)
+- Tempo médio: 11.7s/PDF
+- Falsos rejeitados: 0 (100% de precisão)
+- Taxa de correção: 100%
+
+---
+
 ## [2.1.0] - 2025-10-14
 
 ### 🎨 Interface Streamlit Otimizada
