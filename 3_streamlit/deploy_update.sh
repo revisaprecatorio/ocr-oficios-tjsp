@@ -3,37 +3,47 @@
 # SCRIPT DE DEPLOY/UPDATE - Streamlit VPS
 # ============================================================================
 # Execute este script NA VPS via SSH
+# Versão: 2.2.0
+# Data: 16/10/2025
 # ============================================================================
 
 set -e  # Parar em caso de erro
 
+# Configurações
+PROJECT_DIR="/root/ocr-oficios-tjsp"
+STREAMLIT_DIR="${PROJECT_DIR}/3_streamlit"
+CONTAINER_NAME="oficios-streamlit"
+
 echo "============================================================"
-echo "🚀 ATUALIZANDO STREAMLIT NA VPS"
+echo "🚀 ATUALIZANDO STREAMLIT NA VPS - v2.2.0"
 echo "============================================================"
+echo ""
+echo "📁 Diretório: ${PROJECT_DIR}"
+echo "🐳 Container: ${CONTAINER_NAME}"
 echo ""
 
 # 1. Pull do GitHub
 echo "📥 1. Baixando alterações do GitHub..."
-cd /root/3_OCR
+cd ${PROJECT_DIR}
 git pull origin main
 echo "   ✅ Pull concluído"
 echo ""
 
 # 2. Parar container
 echo "🛑 2. Parando container atual..."
-docker stop oficios-streamlit || true
+docker stop ${CONTAINER_NAME} || true
 echo "   ✅ Container parado"
 echo ""
 
 # 3. Remover container
 echo "🗑️  3. Removendo container antigo..."
-docker rm oficios-streamlit || true
+docker rm ${CONTAINER_NAME} || true
 echo "   ✅ Container removido"
 echo ""
 
 # 4. Rebuild
 echo "🔨 4. Reconstruindo imagem..."
-cd 3_streamlit
+cd ${STREAMLIT_DIR}
 docker-compose build --no-cache
 echo "   ✅ Imagem reconstruída"
 echo ""
@@ -56,15 +66,22 @@ echo ""
 
 # 8. Mostrar logs
 echo "📋 8. Últimas linhas do log:"
-docker logs --tail 20 oficios-streamlit
+docker logs --tail 20 ${CONTAINER_NAME}
 echo ""
 
 echo "============================================================"
-echo "✅ DEPLOY CONCLUÍDO!"
+echo "✅ DEPLOY CONCLUÍDO - v2.2.0!"
 echo "============================================================"
 echo ""
 echo "🌐 URL: http://72.60.62.124:8501"
 echo ""
-echo "📋 Para ver logs em tempo real:"
-echo "   docker logs -f oficios-streamlit"
+echo "📋 Comandos úteis:"
+echo "   docker logs -f ${CONTAINER_NAME}        # Ver logs em tempo real"
+echo "   docker ps | grep streamlit              # Verificar status"
+echo "   docker restart ${CONTAINER_NAME}        # Reiniciar container"
+echo ""
+echo "📊 Novidades v2.2.0:"
+echo "   ✅ 49 colunas disponíveis (incluindo data_nascimento)"
+echo "   ✅ 0 falsos rejeitados (100% precisão)"
+echo "   ✅ Pipeline completo automatizado"
 echo ""

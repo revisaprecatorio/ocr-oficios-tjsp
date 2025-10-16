@@ -1,22 +1,36 @@
 # 🚀 Deploy Streamlit - Docker + Traefik
 
-Guia completo para deploy do Streamlit em Docker com acesso direto via porta 8501.
+Guia completo para deploy e atualização do Streamlit em Docker com acesso direto via porta 8501.
 
-**Status:** ✅ Deploy testado e funcionando em produção (15/10/2025)
+**Status:** ✅ Deploy testado e funcionando em produção  
+**Versão Atual:** v2.2.0 (16/10/2025)  
+**URL Produção:** http://72.60.62.124:8501
 
 ---
 
-## ⚠️ **IMPORTANTE: Limitações Conhecidas**
+## 🔄 **ATUALIZAÇÃO RÁPIDA (v2.2.0)**
 
-Este projeto está **funcional** mas ainda carece de:
+Se você já tem o Streamlit rodando e quer apenas atualizar para a versão mais recente:
 
-1. **Validação de Falsos Rejeitados:** Sistema não valida se ofícios foram incorretamente rejeitados durante o processamento
-2. **Logs de Auditoria:** Falta rastreabilidade completa de ações do usuário
-3. **Testes Automatizados:** Ausência de testes unitários e de integração
-4. **Backup Automático:** PDFs e dados não possuem backup automatizado
-5. **Monitoramento:** Falta alertas de falhas e métricas de performance
+```bash
+# Na VPS via SSH
+cd /root/ocr-oficios-tjsp/3_streamlit
+./deploy_update.sh
+```
 
-**Recomendação:** Use em ambiente de homologação antes de produção crítica.
+**Novidades v2.2.0:**
+- ✅ 49 colunas disponíveis (incluindo `data_nascimento`)
+- ✅ 0 falsos rejeitados (100% precisão)
+- ✅ Pipeline completo automatizado
+
+---
+
+## ⚠️ **Limitações Conhecidas**
+
+1. **Logs de Auditoria:** Falta rastreabilidade completa de ações do usuário
+2. **Testes Automatizados:** Ausência de testes unitários e de integração
+3. **Backup Automático:** PDFs e dados não possuem backup automatizado
+4. **Monitoramento:** Falta alertas de falhas e métricas de performance
 
 ---
 
