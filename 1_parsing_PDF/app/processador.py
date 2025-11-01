@@ -267,11 +267,11 @@ class ProcessadorOficio:
                 
                 logger.info(f"📄 Texto reduzido: {len(texto_relevante):,} chars (60 páginas + anexos)")
             
-            # 9. Enviar ao LLM (muito menor!)
-            logger.info(f"🤖 Enviando {len(texto_relevante):,} chars para GPT-4o-mini")
+            # 9. Enviar ao LLM com Modo Híbrido (Gemini + OpenAI fallback)
+            logger.info(f"🤖 Enviando {len(texto_relevante):,} chars para LLM (modo híbrido)")
             logger.info(f"   Páginas enviadas: Ofício {oficio_correto['paginas']} + ANEXO II {paginas_anexo} + PROC {[pagina_proc] if pagina_proc else []}")
             
-            dados_oficio = self._extrair_dados_llm(
+            dados_oficio = self._extrair_dados_llm_hibrido(
                 texto_relevante, 
                 tem_anexo_ii=bool(texto_anexo),
                 tem_processamento=bool(texto_proc),
@@ -411,6 +411,227 @@ class ProcessadorOficio:
             "num_oficios": 0
         }
     
+    def _extrair_dados_llm_hibrido(
+        self, 
+        texto_oficio: str, 
+        tem_anexo_ii: bool = False,
+        tem_processamento: bool = False,
+        numero_ordem_titulo: Optional[str] = None,
+        oficio_rejeitado: bool = False,
+        motivo_rejeicao: Optional[str] = None
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Extração híbrida: Gemini 2.5 Flash (primeiro) com fallback para GPT-4o-mini.
+        
+        NOVA em FINDING 08: Combina qualidade do Gemini (13 campos, grátis) 
+        com confiabilidade do OpenAI (12 campos, 100% sucesso).
+        
+        Args:
+            texto_oficio: Texto relevante (ofício + ANEXO II + PROCESSAMENTO)
+            tem_anexo_ii: Se ANEXO II está presente
+            tem_processamento: Se PROCESSAMENTO está presente
+            numero_ordem_titulo: Número de ordem extraído do título (PDFs antigos)
+            oficio_rejeitado: Se o ofício foi rejeitado
+            motivo_rejeicao: Motivo da rejeição (se houver)
+            
+        Returns:
+            Dicionário com dados extraídos ou None
+        """
+        # Criar LLM adapter se não existir
+        if not hasattr(self, 'llm_adapter'):
+            try:
+                from .llm_adapter import LLMAdapter, LLMProvider
+                gemini_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+                
+                if gemini_key:
+                    self.llm_adapter = LLMAdapter(
+                        openai_api_key=self.openai_api_key,
+                        gemini_api_key=gemini_key
+                    )
+                    self.llm_provider_enum = LLMProvider
+                    logger.info("✅ LLM Adapter híbrido configurado (Gemini + OpenAI)")
+                else:
+                    logger.warning("⚠️ GOOGLE_API_KEY não encontrada, usando apenas OpenAI")
+                    self.llm_adapter = None
+            except Exception as e:
+                logger.warning(f"⚠️ Erro ao configurar LLM Adapter: {e}, usando apenas OpenAI")
+                self.llm_adapter = None
+        
+        # Se adapter não disponível, usar método legado
+        if not self.llm_adapter:
+            return self._extrair_dados_llm(
+                texto_oficio, tem_anexo_ii, tem_processamento,
+                numero_ordem_titulo, oficio_rejeitado, motivo_rejeicao
+            )
+        
+        # Construir prompt (mesmo prompt para ambos LLMs)
+        prompt = self._construir_prompt_llm(
+            texto_oficio, tem_anexo_ii, tem_processamento,
+            numero_ordem_titulo, oficio_rejeitado, motivo_rejeicao
+        )
+        
+        # TENTATIVA 1: Gemini 2.5 Flash (mais completo, grátis)
+        try:
+            logger.info("🔄 Tentando extração com Gemini 2.5 Flash...")
+            dados = self.llm_adapter.extract_structured_data(
+                prompt,
+                provider=self.llm_provider_enum.GEMINI
+            )
+            logger.info("✅ Gemini: Extração bem-sucedida!")
+            return dados
+        
+        except Exception as e:
+            erro_msg = str(e)
+            logger.warning(f"⚠️ Gemini falhou: {erro_msg[:100]}")
+            
+            # Log do motivo específico
+            if "finish_reason" in erro_msg:
+                logger.warning("   Motivo: Bloqueio de conteúdo (safety filter)")
+            elif "quota" in erro_msg.lower() or "429" in erro_msg:
+                logger.warning("   Motivo: Quota excedida")
+            else:
+                logger.warning(f"   Motivo: {erro_msg[:80]}")
+            
+            logger.info("🔄 Usando fallback para OpenAI...")
+        
+        # FALLBACK: OpenAI GPT-4o-mini (mais confiável, pago)
+        try:
+            dados = self.llm_adapter.extract_structured_data(
+                prompt,
+                provider=self.llm_provider_enum.OPENAI
+            )
+            logger.info("✅ OpenAI: Extração bem-sucedida (fallback)!")
+            return dados
+        
+        except Exception as e:
+            logger.error(f"❌ Ambos LLMs falharam! Último erro (OpenAI): {e}")
+            return None
+    
+    def _construir_prompt_llm(
+        self,
+        texto_oficio: str,
+        tem_anexo_ii: bool = False,
+        tem_processamento: bool = False,
+        numero_ordem_titulo: Optional[str] = None,
+        oficio_rejeitado: bool = False,
+        motivo_rejeicao: Optional[str] = None
+    ) -> str:
+        """
+        Constrói prompt para extração LLM (usado por ambos OpenAI e Gemini).
+        
+        Returns:
+            String com prompt completo
+        """
+        # Ajustar prompt se ofício rejeitado
+        nota_rejeicao = ""
+        if oficio_rejeitado:
+            nota_rejeicao = f"""
+⚠️ ATENÇÃO: Este ofício foi REJEITADO pelo DEPRE!
+- Extraia apenas os dados disponíveis no documento
+- Campos que não estiverem disponíveis devem ser null
+- Não invente valores
+- Marque rejeitado=true
+"""
+        
+        # Adicionar nota sobre anomalias
+        nota_anomalia = ""
+        if len(texto_oficio) < 500:
+            nota_anomalia = """
+⚠️ ATENÇÃO: Documento muito curto ou com formato anômalo!
+- Se o documento não seguir o padrão esperado, marque anomalia=true
+- Descreva o problema encontrado em descricao_anomalia
+- Extraia o que for possível
+"""
+        
+        # Prompt completo
+        return f"""Você é um assistente especializado em extrair dados de Ofícios Requisitórios do TJSP.
+
+IMPORTANTE: Retorne JSON com estrutura FLAT (campos no nível raiz), NÃO use objetos aninhados!
+
+{nota_rejeicao}{nota_anomalia}
+
+DOCUMENTO: Ofício Requisitório do Tribunal de Justiça de São Paulo
+
+=== CAMPOS OBRIGATÓRIOS (nível raiz do JSON) ===
+
+- processo_origem: Número CNJ do processo (formato: 0000000-00.0000.0.00.0000)
+- requerente_caps: Nome TODO EM MAIÚSCULAS
+- numero_ordem: Número de ordem do RPV/Precatório (formato: XXXXX/YYYY)
+  ⚠️ ATENÇÃO - DIFERENÇA CRÍTICA:
+  * CORRETO: "644/2015", "2913/2023", "12345/2024" (formato: números/ano)
+  * ERRADO: "0181657-92.2021.8.26.0500" (isso é número do PROCESSO, não número de ordem!)
+  * Buscar no TÍTULO: "OFÍCIO REQUISITÓRIO Nº XXX/YYYY"
+  * OU na seção "PROCESSAMENTO": "Nº de Ordem: XXX/YYYY" ou "Ordem: XXX/YYYY"
+  * Se NÃO encontrar o número de ordem, retorne null (não invente!)
+- valor_principal_liquido: Valor principal líquido (número decimal)
+- valor_principal_bruto: Valor principal bruto (número decimal)
+- juros_moratorios: Juros moratórios (número decimal)
+- valor_total_requisitado: Valor total requisitado (número decimal)
+
+=== CAMPOS OPCIONAIS (nível raiz do JSON) ===
+
+DADOS BANCÁRIOS (ANEXO II):
+- banco: Código do banco (apenas números, ex: 341)
+- agencia: Número da agência
+- conta: Número da conta (com dígito)
+- conta_tipo: Tipo de conta (corrente/poupança)
+- dados_bancarios_advogado: Se dados são do advogado (true/false)
+- cpf_titular_conta: CPF do titular da conta
+
+CONTRIBUIÇÕES:
+- contrib_previdenciaria_iprem: INST.PREV. ou IPREMSAOPAULO (número)
+- contrib_previdenciaria_hspm: ASSIST.MÉD. ou HSPMSAOPAULO (número)
+
+DATAS (formato YYYY-MM-DD):
+- data_nascimento: Data de nascimento do credor
+- data_base_atualizacao: Data base para atualização
+- data_ajuizamento: Data de ajuizamento
+- data_transito_julgado: Data do trânsito em julgado
+
+PREFERÊNCIAS (true/false):
+- idoso: Credor com mais de 60 anos
+- doenca_grave: Portador de doença grave
+- pcd: Pessoa com deficiência
+
+OUTROS VALORES:
+- tipo_levantamento: Tipo de levantamento
+- valor_compensado: Valor compensado (número)
+- contribuicao_social: Contribuição social (número)
+- salario_pericial: Salário pericial (número)
+- assist_tecnico: Assistente técnico (número)
+- custas: Custas (número)
+- despesas: Despesas (número)
+- multas: Multas (número)
+
+OUTRAS INFORMAÇÕES:
+- vara: Vara responsável
+- credor_nome: Nome do credor
+- credor_cpf_cnpj: CPF/CNPJ do credor
+- devedor_ente: Ente devedor
+- advogado_nome: Nome do advogado
+- advogado_oab: OAB do advogado
+
+CONTROLE:
+- rejeitado: Se o ofício foi rejeitado (true/false)
+- motivo_rejeicao: Motivo da rejeição (se houver)
+- anomalia: Se o PDF tem formato anômalo (true/false)
+- descricao_anomalia: Descrição do problema encontrado (se houver)
+
+=== REGRAS CRÍTICAS ===
+
+1. ESTRUTURA: JSON FLAT (todos os campos no nível raiz, SEM objetos aninhados)
+2. Campos não encontrados = null
+3. Valores numéricos: SEM R$, SEM pontos de milhar, vírgula = ponto decimal
+4. Datas: formato YYYY-MM-DD
+5. Requerente: SEMPRE em MAIÚSCULAS
+6. Booleanos: true ou false (minúsculas)
+7. Número de ordem: buscar na seção "PROCESSAMENTO" (formato: XXX/YYYY)
+
+DOCUMENTO:
+{texto_oficio}
+
+Retorne APENAS JSON FLAT válido:"""
+    
     def _extrair_dados_llm(
         self, 
         texto_oficio: str, 
@@ -421,9 +642,10 @@ class ProcessadorOficio:
         motivo_rejeicao: Optional[str] = None
     ) -> Optional[Dict[str, Any]]:
         """
-        Extrai dados estruturados usando GPT-4o-mini.
+        Extrai dados estruturados usando GPT-4o-mini APENAS (método legado).
         
         V2: Prompt atualizado com número de ordem e ANEXO II completo.
+        NOTA: Prefer usar _extrair_dados_llm_hibrido() para modo híbrido.
         
         Args:
             texto_oficio: Texto relevante (ofício + ANEXO II + PROCESSAMENTO)

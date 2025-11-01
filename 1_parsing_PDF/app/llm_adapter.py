@@ -70,13 +70,13 @@ class LLMAdapter:
         if gemini_api_key:
             try:
                 genai.configure(api_key=gemini_api_key)
-                self.gemini_model = genai.GenerativeModel("gemini-2.5-pro")
+                self.gemini_model = genai.GenerativeModel("gemini-2.5-flash")
                 self.providers_available[LLMProvider.GEMINI] = {
-                    "model": "gemini-2.5-pro",
+                    "model": "gemini-2.5-flash",
                     "max_tokens": 1048576,  # 1M input tokens
                     "temperature": 0
                 }
-                logger.info("✅ Gemini configurado: gemini-2.5-pro")
+                logger.info("✅ Gemini configurado: gemini-2.5-flash")
             except Exception as e:
                 logger.error(f"❌ Erro ao configurar Gemini: {e}")
     
@@ -181,15 +181,17 @@ class LLMAdapter:
         temperature: float
     ) -> Dict[str, Any]:
         """
-        Extração via Google Gemini (2.5 Pro).
+        Extração via Google Gemini (2.5 Flash).
         
         Características:
         - Resposta: Text (precisa fazer parse manual)
         - Tokens: ~1M input (contexto 60x maior!)
+        - Velocidade: Mais rápido que Pro
+        - Limites: Mais generosos (1K RPM vs 150 RPM)
         - Custo: Grátis até limite, depois mais barato que OpenAI
         """
         try:
-            model_name = model_override or "gemini-2.5-pro"
+            model_name = model_override or "gemini-2.5-flash"
             
             # Criar modelo se override
             if model_override:
