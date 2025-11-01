@@ -98,42 +98,103 @@ class DetectorAnexoII:
 
     def _eh_pagina_anexo_ii(self, texto: str) -> bool:
         """
-        Verifica se a página contém ANEXO II usando critérios múltiplos.
+        Verifica se a página contém ANEXO II com dados bancários REAIS.
+        
+        NOVA VERSÃO (FINDING 05): Detecta apenas ANEXO II com dados bancários,
+        evitando falsos positivos (páginas de decisão e índices).
 
         Args:
             texto: Texto da página
 
         Returns:
-            True se a página contém ANEXO II
+            True se a página contém ANEXO II bancário real
         """
         texto_upper = texto.upper()
 
-        # Critério 1: Marcador "ANEXO II" presente
+        # PRÉ-REQUISITO: Deve conter "ANEXO II"
         marcador_encontrado = False
         for marcador in self.marcadores_anexo:
             if re.search(marcador, texto_upper):
                 marcador_encontrado = True
-                logger.debug(f"Marcador encontrado: {marcador}")
                 break
 
         if not marcador_encontrado:
             return False
 
-        # Critério 2: Pelo menos 3 campos esperados presentes
-        campos_encontrados = 0
-        for campo in self.campos_esperados:
-            if re.search(campo, texto_upper):
-                campos_encontrados += 1
-
-        if campos_encontrados >= 3:
-            logger.debug(f"ANEXO II confirmado: {campos_encontrados} campos encontrados")
+        # === VERIFICAR PRESENÇA DE DADOS BANCÁRIOS REAIS ===
+        
+        # 1. CPF formatado (XXX.XXX.XXX-XX)
+        padrao_cpf = re.compile(r'\d{3}\.\d{3}\.\d{3}-\d{2}')
+        tem_cpf = bool(padrao_cpf.search(texto))
+        
+        # 2. Estrutura de credor
+        tem_credor = bool(self.padrao_credor.search(texto)) or (
+            'NOME:' in texto_upper and 'CPF' in texto_upper
+        )
+        
+        # 3. Valor monetário (aceita variantes: "Valor:", "R$", etc.)
+        tem_valor = (
+            'VALOR TOTAL' in texto_upper or 
+            'VALOR REQUISITADO' in texto_upper or
+            'TOTAL DESTE REQUERENTE' in texto_upper or
+            ('VALOR' in texto_upper and 'R$' in texto_upper)  # Variante simples
+        )
+        
+        # === EXCLUIR FALSOS POSITIVOS CONHECIDOS ===
+        
+        # Falso positivo 1: Páginas de DECISÃO judicial
+        eh_decisao = (
+            'PROCESSO DIGITAL' in texto_upper or
+            'DECISÃO' in texto_upper
+        ) and (
+            'JUIZ' in texto_upper or
+            'DESEMBARGADOR' in texto_upper
+        )
+        
+        # Falso positivo 2: Índices de documentos
+        eh_indice = (
+            'ÍNDICE' in texto_upper or 
+            'SUMÁRIO' in texto_upper
+        ) and (
+            'CAPÍTULO' in texto_upper or
+            texto.count('\n') < 30  # Índices são compactos
+        )
+        
+        # Falso positivo 3: Menções ao ANEXO II sem dados
+        # (ex: "...observando-se também a Portaria [...] seja instruído com planilha...")
+        menciona_portaria = (
+            'PORTARIA' in texto_upper and 
+            'INSTRUÍDO' in texto_upper
+        )
+        
+        # === DECISÃO FINAL ===
+        
+        # Deve ter dados bancários reais E não ser falso positivo
+        tem_dados_reais = tem_cpf and tem_credor and tem_valor
+        eh_falso_positivo = eh_decisao or eh_indice or (menciona_portaria and not tem_cpf)
+        
+        if tem_dados_reais and not eh_falso_positivo:
+            logger.info(f"✅ ANEXO II bancário confirmado (CPF: {tem_cpf}, Credor: {tem_credor}, Valor: {tem_valor})")
             return True
-
-        # Critério 3: Estrutura de credor presente (formato tabular)
-        if self.padrao_credor.search(texto):
-            logger.debug("ANEXO II confirmado: estrutura de credor detectada")
-            return True
-
+        elif marcador_encontrado and not tem_dados_reais:
+            # Log de falso positivo rejeitado
+            motivo = []
+            if eh_decisao:
+                motivo.append("página de DECISÃO judicial")
+            if eh_indice:
+                motivo.append("ÍNDICE de documento")
+            if menciona_portaria:
+                motivo.append("apenas menção à Portaria")
+            if not tem_cpf:
+                motivo.append("sem CPF formatado")
+            if not tem_credor:
+                motivo.append("sem estrutura de credor")
+            if not tem_valor:
+                motivo.append("sem valores monetários")
+            
+            logger.debug(f"⚠️ ANEXO II rejeitado (falso positivo): {', '.join(motivo)}")
+            return False
+        
         return False
 
     def _extrair_texto_anexo(self, pdf_path: str, paginas: List[int]) -> str:
