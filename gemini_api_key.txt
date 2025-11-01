@@ -1,0 +1,17 @@
+# Google Gemini API Key para Testes
+# Data: 01/11/2025
+
+GOOGLE_API_KEY=AIzaSyDaPekNGH_d1ywT2_ZojhHYGLQcNeLEUYM
+
+# Instruções de uso:
+# 1. Adicionar ao .env do projeto:
+#    echo "GOOGLE_API_KEY=AIzaSyDaPekNGH_d1ywT2_ZojhHYGLQcNeLEUYM" >> .env
+#
+# 2. Ou exportar na sessão:
+#    export GOOGLE_API_KEY=AIzaSyDaPekNGH_d1ywT2_ZojhHYGLQcNeLEUYM
+#
+# 3. Uso no código Python:
+#    import os
+#    import google.generativeai as genai
+#    genai.configure(api_key=os.getenv('GOOGLE_API_KEY'))
+
