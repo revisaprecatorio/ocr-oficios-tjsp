@@ -43,6 +43,7 @@ class ProcessadorOficio:
             db_config: Configurações do banco PostgreSQL
         """
         # Inicializar OpenAI client
+        self.openai_api_key = openai_api_key  # Armazenar para LLM adapter
         self.client = OpenAI(api_key=openai_api_key)
         self.modelo_gpt = "gpt-4o-mini"
         
