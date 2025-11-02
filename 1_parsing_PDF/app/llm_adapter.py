@@ -227,6 +227,25 @@ class LLMAdapter:
             # Parse JSON
             dados = json.loads(json_str)
             
+            # FINDING 08: Gemini às vezes retorna lista ao invés de objeto
+            if isinstance(dados, list):
+                logger.warning(f"⚠️ Gemini retornou lista com {len(dados)} itens, extraindo primeiro item")
+                if dados and isinstance(dados[0], dict):
+                    dados = dados[0]
+                    logger.info("   ✅ Primeiro item extraído com sucesso")
+                else:
+                    raise ValueError(
+                        f"Gemini retornou lista inválida. "
+                        f"Esperado: dict, Recebido: list com {len(dados)} itens"
+                    )
+            
+            # Validar que é um dicionário
+            if not isinstance(dados, dict):
+                raise TypeError(
+                    f"Gemini retornou tipo inesperado. "
+                    f"Esperado: dict, Recebido: {type(dados).__name__}"
+                )
+            
             logger.info(f"   ✅ Extração OK: {len(dados)} campos")
             return dados
             

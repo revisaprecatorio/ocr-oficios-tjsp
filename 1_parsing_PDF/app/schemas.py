@@ -493,6 +493,29 @@ class OficioRequisitorio(BaseModel):
         else:
             raise ValueError(f"CPF/CNPJ deve ter 11 ou 14 dígitos: {v}")
     
+    @field_validator('banco', 'agencia', 'conta', mode='before')
+    @classmethod
+    def coerce_banco_to_string(cls, v: Optional[any]) -> Optional[str]:
+        """
+        Coerção de campos bancários para string.
+        
+        FINDING 08: Gemini às vezes retorna banco como int (341) ao invés de str ("341").
+        Este validador garante que sempre será string.
+        """
+        if v is None:
+            return v
+        
+        # Se for int, converter para string
+        if isinstance(v, int):
+            return str(v)
+        
+        # Se já for string, retornar como está
+        if isinstance(v, str):
+            return v
+        
+        # Outros tipos: tentar converter
+        return str(v)
+    
     @model_validator(mode='after')
     def normalizar_dados_bancarios(self):
         """Normaliza dados bancários de estrutura aninhada para campos diretos"""

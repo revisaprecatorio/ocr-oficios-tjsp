@@ -197,10 +197,14 @@ class ProcessadorOficio:
             
             # 7. Montar texto relevante (APENAS páginas necessárias!)
             # CHUNKING: Se ofício muito grande SEM ANEXO II/PROCESSAMENTO, reduzir
+            # FINDING 08: Desabilitar chunking se Gemini disponível (contexto 1M tokens)
             paginas_oficio = oficio_correto['paginas']
             num_paginas = len(paginas_oficio)
             
-            if num_paginas > 100 and not texto_anexo and not texto_proc:
+            # Verificar se Gemini está disponível
+            gemini_disponivel = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+            
+            if num_paginas > 100 and not texto_anexo and not texto_proc and not gemini_disponivel:
                 logger.warning(f"⚠️ Ofício muito grande ({num_paginas} páginas) sem ANEXO II/PROCESSAMENTO")
                 logger.info(f"🔧 Aplicando CHUNKING: primeiras 50 + últimas 50 páginas")
                 
@@ -242,7 +246,7 @@ class ProcessadorOficio:
             # Deixar margem de segurança: 200k chars
             MAX_CHARS = 200_000
             
-            if len(texto_relevante) > MAX_CHARS:
+            if len(texto_relevante) > MAX_CHARS and not gemini_disponivel:
                 logger.warning(f"⚠️ Texto muito grande ({len(texto_relevante):,} chars > {MAX_CHARS:,})")
                 logger.info(f"🔧 Aplicando CHUNKING AGRESSIVO: primeiras 30 + últimas 30 páginas do ofício")
                 
@@ -289,21 +293,67 @@ class ProcessadorOficio:
                     "Falha na extração LLM"
                 )
             
-            # 8. Validar com Pydantic
+            # 8. Validar com Pydantic (com fallback se necessário)
             try:
                 oficio_validado = OficioRequisitorio(**dados_oficio)
                 logger.info("✅ Dados validados com sucesso")
             except Exception as e:
-                logger.error(f"❌ Erro na validação Pydantic: {e}")
-                return {
-                    "cpf": cpf_numerico,
-                    "pdf": Path(pdf_path).name,
-                    "sucesso": False,
-                    "cpf_validado": True,
-                    "erro": f"Validação falhou: {e}",
-                    "tempo_processamento": time.time() - inicio,
-                    "num_oficios": len(todos_oficios)
-                }
+                # FINDING 08: Se validação falhar, tentar fallback para OpenAI
+                from pydantic import ValidationError
+                
+                # Log completo do erro (TODO #3)
+                logger.error(f"❌ Erro na validação Pydantic com dados do Gemini:")
+                logger.error(f"   Tipo: {type(e).__name__}")
+                logger.error(f"   Mensagem: {str(e)}")
+                
+                # Se temos LLM adapter e não tentamos OpenAI ainda, fazer fallback
+                if hasattr(self, 'llm_adapter') and self.llm_adapter:
+                    logger.warning("⚠️ Tentando fallback para OpenAI devido a erro de validação...")
+                    
+                    try:
+                        # Construir prompt novamente
+                        prompt = self._construir_prompt_llm(
+                            texto_relevante,
+                            tem_anexo_ii=bool(texto_anexo),
+                            tem_processamento=bool(texto_proc),
+                            numero_ordem_titulo=numero_ordem_titulo,
+                            oficio_rejeitado=oficio_rejeitado,
+                            motivo_rejeicao=motivo_rejeicao
+                        )
+                        
+                        # Tentar com OpenAI
+                        logger.info("🔄 Extraindo com OpenAI (fallback por erro de validação)...")
+                        dados_oficio = self.llm_adapter.extract_structured_data(
+                            prompt,
+                            provider=self.llm_provider_enum.OPENAI
+                        )
+                        
+                        # Tentar validar novamente
+                        oficio_validado = OficioRequisitorio(**dados_oficio)
+                        logger.info("✅ Dados validados com sucesso (OpenAI fallback)!")
+                        
+                    except Exception as e2:
+                        logger.error(f"❌ Fallback OpenAI também falhou: {e2}")
+                        return {
+                            "cpf": cpf_numerico,
+                            "pdf": Path(pdf_path).name,
+                            "sucesso": False,
+                            "cpf_validado": True,
+                            "erro": f"Validação falhou (Gemini e OpenAI): {e} | {e2}",
+                            "tempo_processamento": time.time() - inicio,
+                            "num_oficios": len(todos_oficios)
+                        }
+                else:
+                    # Sem LLM adapter, retornar erro
+                    return {
+                        "cpf": cpf_numerico,
+                        "pdf": Path(pdf_path).name,
+                        "sucesso": False,
+                        "cpf_validado": True,
+                        "erro": f"Validação falhou: {type(e).__name__}: {str(e)}",
+                        "tempo_processamento": time.time() - inicio,
+                        "num_oficios": len(todos_oficios)
+                    }
             
             # 8.1. Calcular flag IDOSO automaticamente
             if oficio_validado.data_nascimento:
