@@ -619,6 +619,35 @@ DOCUMENTO: Ofício Requisitório do Tribunal de Justiça de São Paulo
 - juros_moratorios: Juros moratórios (número decimal)
 - valor_total_requisitado: Valor total requisitado (número decimal)
 
+⚠️⚠️⚠️ ATENÇÃO CRÍTICA: VALORES MONETÁRIOS NO FORMATO BRASILEIRO ⚠️⚠️⚠️
+
+REGRA FUNDAMENTAL: Em português brasileiro, o PONTO (.) é separador de MILHARES e a VÍRGULA (,) é separador de DECIMAIS!
+
+EXEMPLOS CORRETOS - SIGA EXATAMENTE ESTE PADRÃO:
+
+NO PDF:              RETORNE COMO:
+"R$ 73.431,66"    →  73431.66  (NUMBER, não string!)
+"R$ 88.994,41"    →  88994.41  (NUMBER, não string!)
+"R$ 1.234.567,89" →  1234567.89 (NUMBER, não string!)
+"R$ 190.221,42"   →  190221.42  (NUMBER, não string!)
+"R$ 177.969,22"   →  177969.22  (NUMBER, não string!)
+
+❌❌❌ EXEMPLOS ERRADOS (NÃO FAÇA ISTO): ❌❌❌
+
+"R$ 73.431,66"    →  73.43     ❌ ERRADO! (truncou, interpretou ponto como decimal)
+"R$ 88.994,41"    →  88.99     ❌ ERRADO! (truncou, interpretou ponto como decimal)
+"R$ 73.431,66"    →  "73431.66" ❌ ERRADO! (é string, deve ser NUMBER)
+"R$ 177.969,22"   →  17796     ❌ ERRADO! (esqueceu decimais)
+
+VERIFICAÇÃO OBRIGATÓRIA:
+1. Todos valores monetários são NÚMEROS (type: number), NÃO strings
+2. Valores realistas: R$ 1.000 a R$ 10.000.000 (se < R$ 100, REVISE!)
+3. Líquido ≤ Bruto (se líquido > bruto, INVERTEU OS CAMPOS!)
+
+ATENÇÃO - LÍQUIDO vs BRUTO:
+- Valor Principal LÍQUIDO = APÓS descontos (sempre ≤ bruto)
+- Valor Principal BRUTO = ANTES de descontos (sempre ≥ líquido)
+
 === CAMPOS OPCIONAIS (nível raiz do JSON) ===
 
 DADOS BANCÁRIOS (ANEXO II):
@@ -755,6 +784,35 @@ DOCUMENTO: Ofício Requisitório do Tribunal de Justiça de São Paulo
 - valor_principal_bruto: Valor principal bruto (número decimal)
 - juros_moratorios: Juros moratórios (número decimal)
 - valor_total_requisitado: Valor total requisitado (número decimal)
+
+⚠️⚠️⚠️ ATENÇÃO CRÍTICA: VALORES MONETÁRIOS NO FORMATO BRASILEIRO ⚠️⚠️⚠️
+
+REGRA FUNDAMENTAL: Em português brasileiro, o PONTO (.) é separador de MILHARES e a VÍRGULA (,) é separador de DECIMAIS!
+
+EXEMPLOS CORRETOS - SIGA EXATAMENTE ESTE PADRÃO:
+
+NO PDF:              RETORNE COMO:
+"R$ 73.431,66"    →  73431.66  (NUMBER, não string!)
+"R$ 88.994,41"    →  88994.41  (NUMBER, não string!)
+"R$ 1.234.567,89" →  1234567.89 (NUMBER, não string!)
+"R$ 190.221,42"   →  190221.42  (NUMBER, não string!)
+"R$ 177.969,22"   →  177969.22  (NUMBER, não string!)
+
+❌❌❌ EXEMPLOS ERRADOS (NÃO FAÇA ISTO): ❌❌❌
+
+"R$ 73.431,66"    →  73.43     ❌ ERRADO! (truncou, interpretou ponto como decimal)
+"R$ 88.994,41"    →  88.99     ❌ ERRADO! (truncou, interpretou ponto como decimal)
+"R$ 73.431,66"    →  "73431.66" ❌ ERRADO! (é string, deve ser NUMBER)
+"R$ 177.969,22"   →  17796     ❌ ERRADO! (esqueceu decimais)
+
+VERIFICAÇÃO OBRIGATÓRIA:
+1. Todos valores monetários são NÚMEROS (type: number), NÃO strings
+2. Valores realistas: R$ 1.000 a R$ 10.000.000 (se < R$ 100, REVISE!)
+3. Líquido ≤ Bruto (se líquido > bruto, INVERTEU OS CAMPOS!)
+
+ATENÇÃO - LÍQUIDO vs BRUTO:
+- Valor Principal LÍQUIDO = APÓS descontos (sempre ≤ bruto)
+- Valor Principal BRUTO = ANTES de descontos (sempre ≥ líquido)
 
 === CAMPOS OPCIONAIS (nível raiz do JSON) ===
 
