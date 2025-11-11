@@ -18,7 +18,16 @@ import base64
 
 # Carregar variáveis de ambiente
 env_path = Path(__file__).parent.parent / ".env"
-load_dotenv(env_path)
+print(f"🔍 DEBUG: Looking for .env at: {env_path.absolute()}")
+print(f"🔍 DEBUG: .env exists: {env_path.exists()}")
+
+# Force load with override=True to ensure env vars are set
+load_dotenv(env_path, override=True)
+
+print(f"🔍 DEBUG: DB_HOST = {os.getenv('DB_HOST')}")
+print(f"🔍 DEBUG: DB_PORT = {os.getenv('DB_PORT')}")
+print(f"🔍 DEBUG: DB_NAME = {os.getenv('DB_NAME')}")
+print(f"🔍 DEBUG: DB_USER = {os.getenv('DB_USER')}")
 
 # Configuração da página
 st.set_page_config(
@@ -64,12 +73,21 @@ def carregar_todos_dados():
     """
     with st.spinner("🔄 Aguarde, organizando e indexando os dados..."):
         try:
+            # Explicit connection parameters (fallback to hardcoded if env not loaded)
+            db_host = os.getenv("DB_HOST", "72.60.62.124")
+            db_port = os.getenv("DB_PORT", "5432")
+            db_name = os.getenv("DB_NAME", "n8n")
+            db_user = os.getenv("DB_USER", "admin")
+            db_password = os.getenv("DB_PASSWORD", "BetaAgent2024SecureDB")
+            
+            print(f"🔌 Connecting to: {db_host}:{db_port}/{db_name} as {db_user}")
+            
             conn = psycopg2.connect(
-                host=os.getenv("DB_HOST"),
-                port=os.getenv("DB_PORT"),
-                database=os.getenv("DB_NAME"),
-                user=os.getenv("DB_USER"),
-                password=os.getenv("DB_PASSWORD")
+                host=db_host,
+                port=db_port,
+                database=db_name,
+                user=db_user,
+                password=db_password
             )
             
             # Query para buscar TODOS os dados de uma vez
@@ -86,6 +104,7 @@ def carregar_todos_dados():
                     valor_compensado, contribuicao_social, salario_pericial, 
                     assist_tecnico, custas, despesas, multas,
                     idoso, doenca_grave, pcd,
+                    preferencial, habilitacao_herdeiros, cessao_credito,
                     rejeitado, motivo_rejeicao, observacoes, anomalia, descricao_anomalia,
                     process_diagnostico, caminho_pdf, timestamp_ingestao
                 FROM esaj_detalhe_processos
@@ -104,6 +123,12 @@ def carregar_todos_dados():
                 df['doenca_grave'] = df['doenca_grave'].astype('boolean')
             if 'pcd' in df.columns:
                 df['pcd'] = df['pcd'].astype('boolean')
+            if 'preferencial' in df.columns:
+                df['preferencial'] = df['preferencial'].astype('boolean')
+            if 'habilitacao_herdeiros' in df.columns:
+                df['habilitacao_herdeiros'] = df['habilitacao_herdeiros'].astype('boolean')
+            if 'cessao_credito' in df.columns:
+                df['cessao_credito'] = df['cessao_credito'].astype('boolean')
             if 'process_diagnostico' in df.columns:
                 df['process_diagnostico'] = df['process_diagnostico'].astype('boolean')
             
@@ -148,6 +173,16 @@ def filtrar_dataframe(df: pd.DataFrame, filtros: dict) -> pd.DataFrame:
     
     if filtros.get('pcd') is not None:
         df_filtrado = df_filtrado[df_filtrado['pcd'] == filtros['pcd']]
+    
+    # Filtro: Termos Jurídicos (v2.4.0)
+    if filtros.get('preferencial') is not None:
+        df_filtrado = df_filtrado[df_filtrado['preferencial'] == filtros['preferencial']]
+    
+    if filtros.get('habilitacao_herdeiros') is not None:
+        df_filtrado = df_filtrado[df_filtrado['habilitacao_herdeiros'] == filtros['habilitacao_herdeiros']]
+    
+    if filtros.get('cessao_credito') is not None:
+        df_filtrado = df_filtrado[df_filtrado['cessao_credito'] == filtros['cessao_credito']]
     
     # Filtro: Valores
     if filtros.get('valor_min', 0) > 0:
@@ -268,6 +303,53 @@ def main():
         filtros['pcd'] = None
     
     # ========================================================================
+    # TERMOS JURÍDICOS (v2.4.0)
+    # ========================================================================
+    st.sidebar.subheader("📜 Termos Jurídicos")
+    
+    # Selectbox para Preferencial
+    preferencial_option = st.sidebar.selectbox(
+        "⭐ Preferência",
+        ["Todos", "Com Preferência", "Sem Preferência"],
+        index=0,
+        key="select_preferencial"
+    )
+    if preferencial_option == "Com Preferência":
+        filtros['preferencial'] = True
+    elif preferencial_option == "Sem Preferência":
+        filtros['preferencial'] = False
+    else:
+        filtros['preferencial'] = None
+    
+    # Selectbox para Habilitação de Herdeiros
+    habilitacao_option = st.sidebar.selectbox(
+        "👨‍👩‍👧‍👦 Habilitação de Herdeiros",
+        ["Todos", "Com Habilitação", "Sem Habilitação"],
+        index=0,
+        key="select_habilitacao"
+    )
+    if habilitacao_option == "Com Habilitação":
+        filtros['habilitacao_herdeiros'] = True
+    elif habilitacao_option == "Sem Habilitação":
+        filtros['habilitacao_herdeiros'] = False
+    else:
+        filtros['habilitacao_herdeiros'] = None
+    
+    # Selectbox para Cessão de Crédito
+    cessao_option = st.sidebar.selectbox(
+        "📄 Cessão de Crédito",
+        ["Todos", "Com Cessão", "Sem Cessão"],
+        index=0,
+        key="select_cessao"
+    )
+    if cessao_option == "Com Cessão":
+        filtros['cessao_credito'] = True
+    elif cessao_option == "Sem Cessão":
+        filtros['cessao_credito'] = False
+    else:
+        filtros['cessao_credito'] = None
+    
+    # ========================================================================
     # CARREGAR DADOS (após renderizar controles rápidos)
     # ========================================================================
     
@@ -341,6 +423,25 @@ def main():
     with col4:
         idosos = df['idoso'].sum() if 'idoso' in df.columns else 0
         st.metric("👴 Idosos", int(idosos))
+    
+    # Estatísticas de Termos Jurídicos (v2.4.0)
+    st.markdown("### 📜 Termos Jurídicos Detectados")
+    col5, col6, col7 = st.columns(3)
+    
+    with col5:
+        preferencial_count = df['preferencial'].sum() if 'preferencial' in df.columns else 0
+        preferencial_pct = (preferencial_count / len(df) * 100) if len(df) > 0 else 0
+        st.metric("⭐ Preferência", f"{int(preferencial_count)} ({preferencial_pct:.1f}%)")
+    
+    with col6:
+        habilitacao_count = df['habilitacao_herdeiros'].sum() if 'habilitacao_herdeiros' in df.columns else 0
+        habilitacao_pct = (habilitacao_count / len(df) * 100) if len(df) > 0 else 0
+        st.metric("👨‍👩‍👧‍👦 Habilitação Herdeiros", f"{int(habilitacao_count)} ({habilitacao_pct:.1f}%)")
+    
+    with col7:
+        cessao_count = df['cessao_credito'].sum() if 'cessao_credito' in df.columns else 0
+        cessao_pct = (cessao_count / len(df) * 100) if len(df) > 0 else 0
+        st.metric("📄 Cessão de Crédito", f"{int(cessao_count)} ({cessao_pct:.1f}%)")
     
     st.markdown("---")
     
@@ -479,6 +580,36 @@ def main():
                         labels={'x': 'Quantidade', 'y': 'Vara'}
                     )
                     st.plotly_chart(fig2, use_container_width=True)
+            
+            # Gráfico: Termos Jurídicos (v2.4.0)
+            st.markdown("### 📜 Distribuição de Termos Jurídicos")
+            
+            # Preparar dados para o gráfico
+            termos_data = {
+                'Termo': ['Preferência', 'Habilitação de Herdeiros', 'Cessão de Crédito'],
+                'Quantidade': [
+                    int(df['preferencial'].sum()) if 'preferencial' in df.columns else 0,
+                    int(df['habilitacao_herdeiros'].sum()) if 'habilitacao_herdeiros' in df.columns else 0,
+                    int(df['cessao_credito'].sum()) if 'cessao_credito' in df.columns else 0
+                ]
+            }
+            
+            termos_df = pd.DataFrame(termos_data)
+            
+            # Gráfico de barras horizontal
+            fig3 = px.bar(
+                termos_df,
+                x='Quantidade',
+                y='Termo',
+                orientation='h',
+                title="Termos Jurídicos Detectados",
+                labels={'Quantidade': 'Número de Processos', 'Termo': 'Termo Jurídico'},
+                color='Quantidade',
+                color_continuous_scale='Blues'
+            )
+            fig3.update_layout(showlegend=False)
+            st.plotly_chart(fig3, use_container_width=True)
+            
         else:
             st.info("Nenhum dado para visualizar.")
     

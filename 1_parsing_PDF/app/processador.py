@@ -17,6 +17,7 @@ from openai import OpenAI
 from .detector import DetectorOficio
 from .detector_anexo import DetectorAnexoII
 from .detector_processamento import DetectorProcessamento
+from .detector_termos_juridicos import DetectorTermosJuridicos
 from .schemas import OficioRequisitorio
 
 logger = logging.getLogger(__name__)
@@ -53,9 +54,10 @@ class ProcessadorOficio:
         # Inicializar detectores V2
         self.detector = DetectorOficio()
         self.detector_anexo = DetectorAnexoII()
-        self.detector_proc = DetectorProcessamento()  # NOVO!
+        self.detector_proc = DetectorProcessamento()
+        self.detector_termos = DetectorTermosJuridicos()  # V2.4.0
 
-        logger.info("ProcessadorOficio V2 inicializado")
+        logger.info("ProcessadorOficio V2.4.0 inicializado")
     
     def processar_arquivo(self, pdf_path: str, cpf_numerico: str) -> Dict[str, Any]:
         """
@@ -121,6 +123,20 @@ class ProcessadorOficio:
                     pdf_path,
                     f"CPF {cpf_formatado} não encontrado (PDF tem {len(todos_oficios)} ofício(s))"
                 )
+            
+            # 3.1. Detectar termos jurídicos no texto completo do PDF (V2.4.0)
+            logger.info("🔍 Detectando termos jurídicos no PDF completo...")
+            
+            # Extrair texto completo do PDF para detecção de termos
+            doc = pymupdf.open(pdf_path)
+            texto_completo_pdf = ""
+            for pagina in doc:
+                texto_completo_pdf += pagina.get_text() + "\n"
+            doc.close()
+            
+            # Detectar termos jurídicos
+            termos_juridicos = self.detector_termos.detectar_termos(texto_completo_pdf)
+            logger.info(f"📋 Termos encontrados: {termos_juridicos}")
             
             # 4. Detectar ANEXO II (após ofício correto)
             ultima_pag_oficio = oficio_correto['paginas'][-1]
@@ -370,6 +386,12 @@ class ProcessadorOficio:
                 logger.info(f"🎂 Idade calculada: {idade} anos → idoso={oficio_validado.idoso}")
             else:
                 logger.debug("⚠️ data_nascimento não disponível, flag idoso não calculada")
+            
+            # 8.2. Adicionar termos jurídicos detectados (V2.4.0)
+            oficio_validado.preferencial = termos_juridicos['preferencial']
+            oficio_validado.habilitacao_herdeiros = termos_juridicos['habilitacao_herdeiros']
+            oficio_validado.cessao_credito = termos_juridicos['cessao_credito']
+            logger.info(f"📜 Termos jurídicos adicionados aos dados validados")
             
             # 9. Retornar resultado de sucesso
             logger.info("✅ Processamento V2 concluído com sucesso!")

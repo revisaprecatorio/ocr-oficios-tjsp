@@ -209,6 +209,30 @@ Documentação completa de todas as 49 colunas da tabela PostgreSQL.
 
 ---
 
+## 📜 **Termos Jurídicos (v2.4.0)**
+
+| Coluna | Tipo | Nullable | Default | Descrição |
+|--------|------|----------|---------|-----------|
+| `preferencial` | boolean | YES | FALSE | Pedido de preferência detectado |
+| `habilitacao_herdeiros` | boolean | YES | FALSE | Habilitação de herdeiros detectada |
+| `cessao_credito` | boolean | YES | FALSE | Cessão de crédito detectada |
+
+**Detecção via Regex (case-insensitive):**
+- `preferencial`: Busca "preferência" ou "preferencia"
+- `habilitacao_herdeiros`: Busca "habilitação de herdeiros"
+- `cessao_credito`: Busca "cessão de crédito" ou "cessão de direitos creditórios"
+
+**Exemplo:**
+```json
+{
+  "preferencial": true,
+  "habilitacao_herdeiros": false,
+  "cessao_credito": true
+}
+```
+
+---
+
 ## ⚠️ **Status e Controle**
 
 | Coluna | Tipo | Nullable | Descrição |

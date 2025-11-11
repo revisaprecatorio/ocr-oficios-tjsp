@@ -75,6 +75,7 @@ def montar_insert_query() -> str:
             contrib_previdenciaria_iprem, contrib_previdenciaria_hspm,
             valor_compensado, contribuicao_social, salario_pericial, assist_tecnico, custas, despesas, multas,
             idoso, doenca_grave, pcd,
+            preferencial, habilitacao_herdeiros, cessao_credito,
             rejeitado, motivo_rejeicao, observacoes, anomalia, descricao_anomalia,
             process_diagnostico, caminho_pdf, timestamp_ingestao
         ) VALUES (
@@ -86,6 +87,7 @@ def montar_insert_query() -> str:
             %s, %s, %s, %s,
             %s, %s,
             %s, %s, %s, %s, %s, %s, %s,
+            %s, %s, %s,
             %s, %s, %s,
             %s, %s, %s, %s, %s,
             %s, %s, %s
@@ -130,6 +132,9 @@ def montar_insert_query() -> str:
             idoso = EXCLUDED.idoso,
             doenca_grave = EXCLUDED.doenca_grave,
             pcd = EXCLUDED.pcd,
+            preferencial = EXCLUDED.preferencial,
+            habilitacao_herdeiros = EXCLUDED.habilitacao_herdeiros,
+            cessao_credito = EXCLUDED.cessao_credito,
             rejeitado = EXCLUDED.rejeitado,
             motivo_rejeicao = EXCLUDED.motivo_rejeicao,
             observacoes = EXCLUDED.observacoes,
@@ -154,6 +159,7 @@ def preparar_valores(cpf: str, numero_processo: str, oficio: OficioRequisitorio,
         oficio.valor_compensado, oficio.contribuicao_social, oficio.salario_pericial, oficio.assist_tecnico,
         oficio.custas, oficio.despesas, oficio.multas,
         oficio.idoso, oficio.doenca_grave, oficio.pcd,
+        oficio.preferencial, oficio.habilitacao_herdeiros, oficio.cessao_credito,
         oficio.rejeitado, oficio.motivo_rejeicao, oficio.observacoes, oficio.anomalia, oficio.descricao_anomalia,
         False,  # process_diagnostico (sempre FALSE inicialmente)
         caminho_pdf,

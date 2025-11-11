@@ -186,8 +186,24 @@ class OficioRequisitorio(BaseModel):
     )
     
     pcd: Optional[bool] = Field(
-        None, 
+        None,
         description="Indica se há pessoa com deficiência"
+    )
+    
+    # ===== TERMOS JURÍDICOS (V2.4.0) =====
+    preferencial: Optional[bool] = Field(
+        None,
+        description="Indica se há pedido de preferência no processo (detectado via regex)"
+    )
+    
+    habilitacao_herdeiros: Optional[bool] = Field(
+        None,
+        description="Indica se há habilitação de herdeiros (detectado via regex)"
+    )
+    
+    cessao_credito: Optional[bool] = Field(
+        None,
+        description="Indica se há cessão de crédito ou direitos creditórios (detectado via regex)"
     )
     
     # ===== CONTROLE DE PROCESSAMENTO (V2) =====

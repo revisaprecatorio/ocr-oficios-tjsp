@@ -85,6 +85,13 @@ CREATE TABLE IF NOT EXISTS esaj_detalhe_processos (
     pcd BOOLEAN,
     
     -- ========================================================================
+    -- TERMOS JURÍDICOS (Detectados via Regex - v2.4.0)
+    -- ========================================================================
+    preferencial BOOLEAN DEFAULT FALSE,
+    habilitacao_herdeiros BOOLEAN DEFAULT FALSE,
+    cessao_credito BOOLEAN DEFAULT FALSE,
+    
+    -- ========================================================================
     -- CONTROLE DE PROCESSAMENTO
     -- ========================================================================
     rejeitado BOOLEAN,
@@ -121,3 +128,6 @@ COMMENT ON COLUMN esaj_detalhe_processos.numero_processo_cnj IS 'Número do proc
 COMMENT ON COLUMN esaj_detalhe_processos.process_diagnostico IS 'Flag para controle de processamento/diagnóstico (DEFAULT FALSE)';
 COMMENT ON COLUMN esaj_detalhe_processos.rejeitado IS 'Indica se o ofício foi rejeitado pelo DEPRE';
 COMMENT ON COLUMN esaj_detalhe_processos.timestamp_ingestao IS 'Data/hora da ingestão no banco';
+COMMENT ON COLUMN esaj_detalhe_processos.preferencial IS 'Indica se há pedido de preferência no processo (detectado via regex: preferência|preferencia)';
+COMMENT ON COLUMN esaj_detalhe_processos.habilitacao_herdeiros IS 'Indica se há habilitação de herdeiros no processo (detectado via regex: habilitação de herdeiros)';
+COMMENT ON COLUMN esaj_detalhe_processos.cessao_credito IS 'Indica se há cessão de crédito ou direitos creditórios (detectado via regex: cessão de crédito|cessão de direitos creditórios)';
