@@ -37,6 +37,13 @@ class DetectorOficio:
             "OFICIO REQUISITORIO"
         ]
         
+        # V2.4.4: Padrões de CPF para busca direta
+        self.cpf_patterns = [
+            r'CPF/CNPJ:\s*(\d{3}\.\d{3}\.\d{3}-\d{2})',
+            r'CPF/CNPJ/RNE:\s*(\d{3}\.\d{3}\.\d{3}-\d{2})',
+            r'CPF:\s*(\d{3}\.\d{3}\.\d{3}-\d{2})',
+        ]
+        
         # Critério 1B: Cabeçalho oficial obrigatório
         self.keywords_cabecalho = [
             "TRIBUNAL DE JUSTIÇA DO ESTADO DE SÃO PAULO",
@@ -329,7 +336,152 @@ class DetectorOficio:
             
             doc.close()
             return True
-            
         except Exception as e:
-            logger.error(f"Erro ao validar PDF {pdf_path}: {e}")
+            logger.error(f"Erro ao validar PDF: {str(e)}")
             return False
+    
+    def buscar_cpf_no_pdf(self, pdf_path: str, cpf_formatado: str, inicio: int = 0) -> int:
+        """
+        Busca CPF no PDF APÓS a página do ANEXO II.
+        Prioriza página com "Credor nº:" + CPF.
+        
+        V2.5.0: Mudanças importantes:
+        - Busca APENAS após página do ANEXO II (parâmetro inicio)
+        - Prioriza página com "Credor nº:" + CPF
+        - Retorna APENAS a página do credor (não lista)
+        - Valida que CPF é o mesmo da pasta (não aceita CPF diferente)
+        
+        Args:
+            pdf_path: Caminho do PDF
+            cpf_formatado: CPF formatado (XXX.XXX.XXX-XX)
+            inicio: Página do TÍTULO do ANEXO II (0-indexed)
+        
+        Returns:
+            Página do credor (0-indexed) ou -1 se não encontrado
+        """
+        logger.info(f"🔍 Buscando CPF {cpf_formatado} após ANEXO II (página {inicio + 1})...")
+        
+        try:
+            doc = pymupdf.open(pdf_path)
+            paginas_encontradas = []
+            
+            # Buscar APENAS após página do ANEXO II
+            for num_pagina in range(inicio, len(doc)):
+                page = doc.load_page(num_pagina)
+                texto = page.get_text()
+                
+                # Buscar CPF formatado
+                if cpf_formatado in texto:
+                    paginas_encontradas.append(num_pagina)
+                    logger.info(f"   ✅ CPF encontrado na página {num_pagina + 1}")
+                
+                # Para PDFs muito grandes, mostrar progresso
+                if len(doc) > 500 and (num_pagina + 1) % 100 == 0:
+                    logger.info(f"   📄 Processadas {num_pagina + 1}/{len(doc)} páginas...")
+            
+            if not paginas_encontradas:
+                logger.warning(f"⚠️ CPF {cpf_formatado} NÃO encontrado após ANEXO II")
+                doc.close()
+                return -1
+            
+            logger.info(f"✅ CPF encontrado em {len(paginas_encontradas)} página(s): {[p+1 for p in paginas_encontradas]}")
+            
+            # Priorizar página com "Credor nº:" + CPF
+            pagina_credor = None
+            for num_pag in paginas_encontradas:
+                page = doc.load_page(num_pag)
+                texto = page.get_text()
+                
+                # Verificar se tem "Credor nº:" ou "Credor n°.:"
+                if re.search(r'Credor\s+n[°º]\.?:\s*\d+', texto, re.IGNORECASE):
+                    logger.info(f"   🎯 Página {num_pag + 1} tem 'Credor nº:' + CPF - SELECIONADA!")
+                    pagina_credor = num_pag
+                    break
+            
+            # Se não encontrou com "Credor nº:", usar primeira ocorrência
+            if pagina_credor is None:
+                pagina_credor = paginas_encontradas[0]
+                logger.warning(f"   ⚠️ Nenhuma página com 'Credor nº:', usando primeira: {pagina_credor + 1}")
+            
+            doc.close()
+            return pagina_credor
+        
+        except Exception as e:
+            logger.error(f"❌ Erro ao buscar CPF: {str(e)}")
+            return -1
+    
+    def extrair_oficio_por_cpf(self, pdf_path: str, cpf_formatado: str, contexto_paginas: int = 2) -> Dict[str, Any]:
+        """
+        Extrai ofício buscando diretamente pelo CPF (para PDFs muito grandes).
+        
+        V2.4.4: Estratégia alternativa para PDFs com 100+ credores:
+        1. Buscar CPF diretamente em todas as páginas
+        2. Priorizar páginas com "Nome:" + CPF (ofício completo)
+        3. Extrair página do CPF + contexto (páginas antes/depois)
+        4. Retornar como "ofício" para processamento normal
+        
+        Args:
+            pdf_path: Caminho do PDF
+            cpf_formatado: CPF formatado (XXX.XXX.XXX-XX)
+            contexto_paginas: Número de páginas antes/depois para incluir (padrão: 2)
+        
+        Returns:
+            Dict com 'paginas' e 'texto' do ofício, ou None se não encontrado
+        """
+        logger.info(f"🎯 Extraindo ofício por busca direta de CPF (PDF grande)")
+        
+        # Buscar páginas com o CPF
+        paginas_cpf = self.buscar_cpf_no_pdf(pdf_path, cpf_formatado)
+        
+        if not paginas_cpf:
+            logger.error(f"❌ CPF não encontrado no PDF")
+            return None
+        
+        # V2.4.4: Priorizar páginas com "Nome:" + CPF (ofício completo)
+        doc = pymupdf.open(pdf_path)
+        pagina_principal = paginas_cpf[0]  # Default: primeira ocorrência
+        
+        for num_pag in paginas_cpf:
+            page = doc.load_page(num_pag)
+            texto = page.get_text()
+            
+            # Procurar por padrões de ofício completo
+            if re.search(r'Nome:\s*[^\n]+', texto, re.IGNORECASE) and cpf_formatado in texto:
+                logger.info(f"   ✅ Página {num_pag + 1} tem 'Nome:' + CPF - usando esta!")
+                pagina_principal = num_pag
+                break
+            elif re.search(r'Credor\s+n[°º]\.?:\s*\d+', texto, re.IGNORECASE) and cpf_formatado in texto:
+                logger.info(f"   ✅ Página {num_pag + 1} tem 'Credor nº:' + CPF - usando esta!")
+                pagina_principal = num_pag
+                break
+        
+        doc.close()
+        
+        # Definir range de páginas (página principal + contexto)
+        doc = pymupdf.open(pdf_path)
+        inicio = max(0, pagina_principal - contexto_paginas)
+        fim = min(len(doc) - 1, pagina_principal + contexto_paginas)
+        
+        paginas_oficio = list(range(inicio, fim + 1))
+        
+        logger.info(f"📄 Extraindo páginas {inicio + 1} a {fim + 1} (contexto de {contexto_paginas} páginas)")
+        
+        # Extrair texto das páginas
+        texto_completo = ""
+        for num_pagina in paginas_oficio:
+            page = doc.load_page(num_pagina)
+            texto_completo += f"\n\n=== PÁGINA {num_pagina + 1} ===\n\n"
+            texto_completo += page.get_text()
+        
+        doc.close()
+        
+        resultado = {
+            'paginas': paginas_oficio,
+            'texto': texto_completo,
+            'metodo': 'busca_direta_cpf',
+            'pagina_cpf': pagina_principal + 1
+        }
+        
+        logger.info(f"✅ Ofício extraído: {len(paginas_oficio)} páginas (método: busca direta CPF)")
+        
+        return resultado

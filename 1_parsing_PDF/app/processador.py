@@ -7,6 +7,7 @@ import os
 import json
 import logging
 import time
+import re
 from pathlib import Path
 from typing import Dict, Any, Optional
 from datetime import datetime
@@ -91,11 +92,20 @@ class ProcessadorOficio:
             cpf_formatado = self._formatar_cpf(cpf_numerico)
             logger.info(f"📋 CPF esperado: {cpf_formatado}")
             
-            # 2. Buscar TODOS os ofícios no PDF
+            # 1.1. V2.5.1: Detectar PDF antigo (formato 7xxxxxx-xx.20xx)
+            nome_arquivo = Path(pdf_path).name
+            processo_numero = nome_arquivo.replace('.pdf', '')
+            pdf_antigo = processo_numero.startswith('7')
+            
+            if pdf_antigo:
+                logger.warning(f"⚠️ PDF ANTIGO detectado: {processo_numero} (formato 7xxxxxx)")
+                logger.warning(f"⚠️ PDFs antigos podem ter estrutura diferente e menor taxa de sucesso")
+            
+            # 2. Buscar todos os ofícios no PDF
             todos_oficios = self.detector.buscar_todos_oficios(pdf_path)
             
             if not todos_oficios:
-                logger.warning("⚠️ Nenhum ofício encontrado no PDF")
+                logger.warning("⚠️ Nenhum ofício detectado no PDF")
                 return self._criar_resultado_erro(
                     cpf_numerico, 
                     pdf_path, 
@@ -104,7 +114,7 @@ class ProcessadorOficio:
             
             logger.info(f"📄 Encontrados {len(todos_oficios)} ofício(s) no PDF")
             
-            # 3. Encontrar ofício com CPF correto
+            # 3. Encontrar ofício com CPF correto (método tradicional)
             oficio_correto = None
             for idx, oficio in enumerate(todos_oficios, 1):
                 logger.info(f"🔍 Verificando ofício {idx}/{len(todos_oficios)} (páginas {oficio['paginas']})")
@@ -115,6 +125,20 @@ class ProcessadorOficio:
                     break
                 else:
                     logger.info(f"❌ CPF não encontrado no ofício {idx}")
+            
+            # V2.4.4: FALLBACK - Se não encontrou CPF em nenhum ofício E PDF tem 100+ credores
+            # Tentar busca direta por CPF (para casos onde ofício não foi detectado corretamente)
+            if not oficio_correto and len(todos_oficios) >= 100:
+                logger.warning(f"⚠️ CPF não encontrado nos {len(todos_oficios)} ofícios detectados")
+                logger.warning(f"⚠️ Tentando FALLBACK: busca direta por CPF no PDF...")
+                
+                oficio_por_cpf = self.detector.extrair_oficio_por_cpf(pdf_path, cpf_formatado, contexto_paginas=3)
+                
+                if oficio_por_cpf:
+                    logger.info(f"✅ FALLBACK bem-sucedido! Ofício encontrado na página {oficio_por_cpf['pagina_cpf']}")
+                    oficio_correto = oficio_por_cpf
+                else:
+                    logger.error(f"❌ FALLBACK falhou - CPF não encontrado mesmo com busca direta")
             
             if not oficio_correto:
                 logger.warning(f"⚠️ CPF {cpf_formatado} não encontrado em nenhum ofício")
@@ -139,8 +163,46 @@ class ProcessadorOficio:
             logger.info(f"📋 Termos encontrados: {termos_juridicos}")
             
             # 4. Detectar ANEXO II (após ofício correto)
+            # V2.5.0: Retorna também página do TÍTULO do ANEXO II
+            # FIX v2.4.2: Buscar ANEXO II a partir da última página do ofício selecionado
             ultima_pag_oficio = oficio_correto['paginas'][-1]
-            paginas_anexo, texto_anexo = self.detector_anexo.detectar_anexo_ii(pdf_path)
+            paginas_anexo, texto_anexo, pagina_titulo_anexo = self.detector_anexo.detectar_anexo_ii(
+                pdf_path, 
+                inicio=ultima_pag_oficio  # Buscar a partir do fim do ofício (0-indexed)
+            )
+            
+            logger.info(f"📌 Página do TÍTULO ANEXO II: {pagina_titulo_anexo + 1 if pagina_titulo_anexo >= 0 else 'N/A'}")
+            
+            # 4.1. V2.5.0: Buscar CPF APÓS ANEXO II e extrair seção focada
+            pagina_credor = -1
+            secao_credor = ""
+            
+            if pagina_titulo_anexo >= 0:
+                logger.info(f"🔍 Buscando CPF {cpf_formatado} após ANEXO II...")
+                pagina_credor = self.detector.buscar_cpf_no_pdf(
+                    pdf_path,
+                    cpf_formatado,
+                    inicio=pagina_titulo_anexo
+                )
+                
+                if pagina_credor >= 0:
+                    logger.info(f"✅ CPF encontrado na página {pagina_credor + 1}")
+                    
+                    # Extrair seção focada do credor
+                    secao_credor = self.detector_anexo.extrair_secao_credor_no_anexo(
+                        pdf_path,
+                        pagina_credor,
+                        cpf_formatado
+                    )
+                    
+                    if secao_credor:
+                        logger.info(f"✅ Seção do credor extraída ({len(secao_credor)} chars)")
+                        # Substituir texto_anexo pela seção focada
+                        texto_anexo = secao_credor
+                    else:
+                        logger.warning(f"⚠️ Não conseguiu extrair seção, usando ANEXO II completo")
+                else:
+                    logger.warning(f"⚠️ CPF não encontrado após ANEXO II")
             
             # 5. Tentar extrair número de ordem do TÍTULO do ofício (PDFs antigos)
             numero_ordem_titulo = self.detector_proc.extrair_numero_ordem_do_titulo(
@@ -239,19 +301,31 @@ class ProcessadorOficio:
             else:
                 texto_relevante = oficio_correto['texto']
             
+            # V2.5.0: Pré-extrair dados com regex (se temos seção focada)
+            dados_regex = {}
+            if texto_anexo and secao_credor:
+                logger.info(f"📋 Pré-extraindo dados com regex da seção focada...")
+                dados_regex = self.detector_anexo.pre_extrair_dados_com_regex(texto_anexo)
+                logger.info(f"✅ Pré-extraídos {len(dados_regex)} campos com regex")
+            
+            # Adicionar ANEXO II ao texto relevante
             if texto_anexo:
-                logger.info(f"📋 ANEXO II encontrado em {len(paginas_anexo)} página(s)")
                 texto_relevante += f"\n\n{'='*60}\n=== ANEXO II ===\n{'='*60}\n\n{texto_anexo}"
             else:
                 logger.warning("⚠️ ANEXO II não encontrado")
             
             if texto_proc:
+                # FIX v2.4.3: Filtrar campo "Requerente" do PROCESSAMENTO em PDFs multi-creditor
+                # O campo "Requerente" no PROCESSAMENTO refere-se ao requerente GERAL (todos os credores),
+                # não ao credor específico do ofício. Isso causa confusão no LLM.
+                texto_proc_filtrado = self._filtrar_requerente_processamento(texto_proc)
+                
                 if oficio_rejeitado:
                     logger.info(f"📋 NOTA DE REJEIÇÃO encontrada na página {pagina_proc}")
-                    texto_relevante += f"\n\n{'='*60}\n=== NOTA DE REJEIÇÃO ===\n{'='*60}\n\n{texto_proc}"
+                    texto_relevante += f"\n\n{'='*60}\n=== NOTA DE REJEIÇÃO ===\n{'='*60}\n\n{texto_proc_filtrado}"
                 else:
                     logger.info(f"📋 PROCESSAMENTO encontrado na página {pagina_proc}")
-                    texto_relevante += f"\n\n{'='*60}\n=== PROCESSAMENTO ===\n{'='*60}\n\n{texto_proc}"
+                    texto_relevante += f"\n\n{'='*60}\n=== PROCESSAMENTO ===\n{'='*60}\n\n{texto_proc_filtrado}"
             elif numero_ordem_titulo:
                 logger.info(f"📋 Número de ordem extraído do TÍTULO: {numero_ordem_titulo}")
             else:
@@ -288,12 +362,18 @@ class ProcessadorOficio:
                 
                 logger.info(f"📄 Texto reduzido: {len(texto_relevante):,} chars (60 páginas + anexos)")
             
+            # 8.5. Normalizar valores brasileiros ANTES de enviar ao LLM (BUG FIX)
+            logger.info("🔢 Normalizando valores monetários brasileiros...")
+            texto_normalizado = self._normalizar_valores_brasileiros(texto_relevante)
+            valores_encontrados = len(re.findall(r'R\$\s*\d+\.?\d*', texto_normalizado))
+            logger.info(f"   ✅ {valores_encontrados} valores normalizados (R$ XX.XXX,XX → R$ XXXXX.XX)")
+            
             # 9. Enviar ao LLM com Modo Híbrido (Gemini + OpenAI fallback)
-            logger.info(f"🤖 Enviando {len(texto_relevante):,} chars para LLM (modo híbrido)")
+            logger.info(f"🤖 Enviando {len(texto_normalizado):,} chars para LLM (modo híbrido)")
             logger.info(f"   Páginas enviadas: Ofício {oficio_correto['paginas']} + ANEXO II {paginas_anexo} + PROC {[pagina_proc] if pagina_proc else []}")
             
             dados_oficio = self._extrair_dados_llm_hibrido(
-                texto_relevante, 
+                texto_normalizado,  # Usar texto normalizado
                 tem_anexo_ii=bool(texto_anexo),
                 tem_processamento=bool(texto_proc),
                 numero_ordem_titulo=numero_ordem_titulo,
@@ -309,7 +389,46 @@ class ProcessadorOficio:
                     "Falha na extração LLM"
                 )
             
-            # 8. Validar com Pydantic (com fallback se necessário)
+            # V2.5.0: Mesclar dados regex com dados LLM (priorizar regex)
+            if dados_regex:
+                logger.info(f"🔀 Mesclando dados regex com dados LLM...")
+                dados_antes = len([k for k, v in dados_oficio.items() if v])
+                
+                # Dados regex sobrescrevem dados LLM (mais confiáveis)
+                for campo, valor in dados_regex.items():
+                    if valor:  # Só sobrescrever se regex encontrou valor
+                        dados_oficio[campo] = valor
+                        logger.info(f"   ✅ {campo}: usando valor regex")
+                
+                dados_depois = len([k for k, v in dados_oficio.items() if v])
+                logger.info(f"📊 Campos preenchidos: {dados_antes} → {dados_depois}")
+            
+            # 8. Validar CPF extraído vs CPF esperado (FIX v2.4.3)
+            cpf_extraido = dados_oficio.get('credor_cpf_cnpj', '')
+            if cpf_extraido:
+                # Normalizar ambos CPFs para comparação (remover formatação)
+                cpf_extraido_limpo = cpf_extraido.replace('.', '').replace('-', '')
+                cpf_esperado_limpo = cpf_numerico
+                
+                if cpf_extraido_limpo != cpf_esperado_limpo:
+                    logger.error(f"❌ CPF MISMATCH! LLM extraiu dados do credor ERRADO!")
+                    logger.error(f"   CPF esperado (pasta): {cpf_formatado} ({cpf_esperado_limpo})")
+                    logger.error(f"   CPF extraído (LLM): {cpf_extraido} ({cpf_extraido_limpo})")
+                    logger.error(f"   Nome extraído: {dados_oficio.get('requerente_caps', 'N/A')}")
+                    logger.warning("⚠️ Possível PDF multi-creditor com dados conflitantes")
+                    
+                    # Marcar como erro crítico
+                    return self._criar_resultado_erro(
+                        cpf_numerico,
+                        pdf_path,
+                        f"CPF mismatch: extraído {cpf_extraido} mas esperado {cpf_formatado} (PDF multi-creditor)"
+                    )
+                else:
+                    logger.info(f"✅ CPF validado: {cpf_extraido} corresponde ao esperado")
+            else:
+                logger.warning("⚠️ CPF não extraído pelo LLM (campo credor_cpf_cnpj vazio)")
+            
+            # 9. Validar com Pydantic (com fallback se necessário)
             try:
                 oficio_validado = OficioRequisitorio(**dados_oficio)
                 logger.info("✅ Dados validados com sucesso")
@@ -392,6 +511,45 @@ class ProcessadorOficio:
             oficio_validado.habilitacao_herdeiros = termos_juridicos['habilitacao_herdeiros']
             oficio_validado.cessao_credito = termos_juridicos['cessao_credito']
             logger.info(f"📜 Termos jurídicos adicionados aos dados validados")
+            
+            # 8.3. V2.5.1: Preencher observações e campos vazios com "ERRO"
+            observacoes_lista = []
+            campos_erro = []
+            
+            # Detectar PDF antigo
+            if pdf_antigo:
+                observacoes_lista.append("PDF antigo (formato 7xxxxxx) - estrutura diferente")
+            
+            # Detectar CPF não encontrado
+            if not oficio_validado.credor_cpf_cnpj:
+                campos_erro.append("credor_cpf_cnpj")
+                oficio_validado.credor_cpf_cnpj = "ERRO"
+            
+            # Detectar campos importantes vazios
+            campos_importantes = {
+                'requerente_caps': 'Nome do credor',
+                'valor_total_requisitado': 'Valor total',
+                'data_nascimento': 'Data de nascimento',
+                'banco': 'Banco',
+                'agencia': 'Agência',
+                'conta': 'Conta'
+            }
+            
+            for campo, descricao in campos_importantes.items():
+                valor = getattr(oficio_validado, campo, None)
+                if valor is None or valor == '' or valor == 0:
+                    campos_erro.append(campo)
+                    # Preencher com "ERRO" apenas campos de texto
+                    if campo in ['requerente_caps', 'banco', 'agencia', 'conta']:
+                        setattr(oficio_validado, campo, "ERRO")
+            
+            # Montar mensagem de observações
+            if campos_erro:
+                observacoes_lista.append(f"Campos não extraídos: {', '.join(campos_erro)}")
+            
+            if observacoes_lista:
+                oficio_validado.observacoes = " | ".join(observacoes_lista)
+                logger.warning(f"⚠️ Observações: {oficio_validado.observacoes}")
             
             # 9. Retornar resultado de sucesso
             logger.info("✅ Processamento V2 concluído com sucesso!")
@@ -483,6 +641,73 @@ class ProcessadorOficio:
             "tempo_processamento": 0,
             "num_oficios": 0
         }
+    
+    def _normalizar_valores_brasileiros(self, texto: str) -> str:
+        """
+        Normaliza valores monetários brasileiros para formato que LLM entende.
+        
+        Converte: R$ 62.606,38 → R$ 62606.38
+        
+        PROBLEMA: LLMs interpretam ponto (.) como decimal (formato americano)
+        SOLUÇÃO: Remover pontos de milhares e converter vírgula para ponto
+        
+        Args:
+            texto: Texto com valores no formato brasileiro
+            
+        Returns:
+            Texto com valores normalizados (formato americano)
+            
+        Exemplos:
+            "R$ 62.606,38" → "R$ 62606.38"
+            "R$ 1.234.567,89" → "R$ 1234567.89"
+            "R$ 73.431,66" → "R$ 73431.66"
+        """
+        # Pattern: R$ + espaços opcionais + número com pontos/vírgulas
+        # Captura: 1-3 dígitos, seguido de grupos de .XXX, terminando com ,XX
+        pattern = r'R\$\s*(\d{1,3}(?:\.\d{3})*(?:,\d{2})?)'
+        
+        def converter_match(match):
+            valor_br = match.group(1)
+            # Remove pontos (separador de milhares)
+            valor_sem_pontos = valor_br.replace('.', '')
+            # Substitui vírgula por ponto (separador decimal)
+            valor_normalizado = valor_sem_pontos.replace(',', '.')
+            return f"R$ {valor_normalizado}"
+        
+        texto_normalizado = re.sub(pattern, converter_match, texto)
+        return texto_normalizado
+    
+    def _filtrar_requerente_processamento(self, texto_processamento: str) -> str:
+        """
+        Filtra o campo "Requerente" do texto de PROCESSAMENTO para evitar confusão em PDFs multi-creditor.
+        
+        FIX v2.4.3: Em PDFs com múltiplos credores, o PROCESSAMENTO lista o "Requerente" GERAL
+        (ex: "Maria das Dores e outros"), que é diferente do credor específico do ofício
+        (ex: "Roberto Pereira da Cruz"). Isso causa confusão no LLM, que prioriza o campo
+        "Requerente" sobre o campo "Nome" do ofício.
+        
+        Args:
+            texto_processamento: Texto original do PROCESSAMENTO
+            
+        Returns:
+            Texto filtrado com campo "Requerente" substituído
+        """
+        # Padrões para detectar linha com "Requerente"
+        # Exemplos:
+        # "Requerente\nMaria das Dores Coutinho Silva e outros"
+        # "Requerente: Maria das Dores Coutinho Silva e outros"
+        # "Requerente Maria das Dores Coutinho Silva e outros"
+        
+        # Substituir linha completa do requerente
+        texto_filtrado = re.sub(
+            r'Requerente[:\s]*\n?[^\n]+',
+            'Requerente: [VIDE OFÍCIO PARA CREDOR ESPECÍFICO]',
+            texto_processamento,
+            flags=re.IGNORECASE
+        )
+        
+        logger.debug("🔧 Filtro aplicado: Campo 'Requerente' do PROCESSAMENTO substituído")
+        return texto_filtrado
     
     def _extrair_dados_llm_hibrido(
         self, 
@@ -670,6 +895,96 @@ ATENÇÃO - LÍQUIDO vs BRUTO:
 - Valor Principal LÍQUIDO = APÓS descontos (sempre ≤ bruto)
 - Valor Principal BRUTO = ANTES de descontos (sempre ≥ líquido)
 
+⚠️⚠️⚠️ ATENÇÃO CRÍTICA: PDFs MULTI-CREDITOR ⚠️⚠️⚠️
+
+REGRA FUNDAMENTAL: Este PDF pode conter MÚLTIPLOS CREDORES (até 52 credores em um único processo).
+
+🔴 PRIORIDADE MÁXIMA - IDENTIFICAÇÃO DO CREDOR CORRETO:
+
+1. O campo "Requerente" no PROCESSAMENTO refere-se ao REQUERENTE GERAL (todos os credores juntos)
+   Exemplo: "Requerente: Maria das Dores e outros" = Maria + 51 outros credores
+
+2. O campo "Nome:" no OFÍCIO refere-se ao CREDOR ESPECÍFICO que você deve extrair
+   Exemplo: "Nome: Roberto Pereira da Cruz" = credor #26 de 52
+
+3. SEMPRE use o campo "Nome:" do OFÍCIO para preencher `requerente_caps`
+   NUNCA use o campo "Requerente:" do PROCESSAMENTO
+
+4. Se encontrar "Credor n°: XX" ou "Credor nº: XX", esse é o credor específico
+
+EXEMPLO DE CONFUSÃO (NÃO FAÇA ISTO):
+```
+❌ ERRADO:
+Ofício: "Credor nº: 26, Nome: Roberto Pereira da Cruz"
+PROCESSAMENTO: "Requerente: Maria das Dores e outros"
+→ requerente_caps = "MARIA DAS DORES..." ← ERRADO!
+
+✅ CORRETO:
+Ofício: "Credor nº: 26, Nome: Roberto Pereira da Cruz"
+PROCESSAMENTO: "Requerente: [VIDE OFÍCIO PARA CREDOR ESPECÍFICO]"
+→ requerente_caps = "ROBERTO PEREIRA DA CRUZ" ← CORRETO!
+```
+
+⚠️⚠️⚠️ ATENÇÃO: DADOS BANCÁRIOS INLINE (SEM ANEXO II SEPARADO) ⚠️⚠️⚠️
+
+IMPORTANTE: Alguns ofícios contêm dados bancários INLINE (na mesma página do ofício),
+NÃO em ANEXO II separado. Isso é comum em PDFs multi-creditor.
+
+PROCURE POR ESTES PADRÕES NO TEXTO DO OFÍCIO:
+
+PADRÃO INLINE TÍPICO (PROCURE NO OFÍCIO):
+- "Credor n°: XX" ou "Credor nº: XX"
+- "Nome: [NOME COMPLETO]" ← USE ESTE PARA requerente_caps
+- "CPF/CNPJ: XXX.XXX.XXX-XX" ← EXTRAIA PARA credor_cpf_cnpj
+- "Data do nascimento: DD/MM/AAAA" ← EXTRAIA PARA data_nascimento (converta para AAAA-MM-DD)
+- "Banco: XXX" ou "Banco: [NOME DO BANCO]"
+- "Agência: XXXX" ou "Ag.: XXXX"
+- "Conta: XXXXX-X" ou "C/C: XXXXX-X"
+- "Valor requisitado: R$ X.XXX,XX"
+- "Valor total da condenação: R$ X.XXX,XX"
+
+🔴 ATENÇÃO ESPECIAL - CPF E DATA DE NASCIMENTO:
+Estes campos aparecem logo após "Nome:" no formato:
+```
+Nome: Roberto Pereira da Cruz
+CPF/CNPJ: 037.304.618-93
+Data do nascimento: 30/07/1960
+```
+
+SEMPRE extraia estes campos quando presentes no ofício!
+- CPF/CNPJ → campo credor_cpf_cnpj (mantenha formatação: XXX.XXX.XXX-XX)
+- Data do nascimento → campo data_nascimento (converta DD/MM/AAAA para AAAA-MM-DD)
+
+REGRAS PARA DADOS INLINE:
+1. Se há ANEXO II separado → use dados do ANEXO II (prioridade)
+2. Se NÃO há ANEXO II → procure dados inline no ofício
+3. SEMPRE use "Nome:" do ofício para requerente_caps (NUNCA "Requerente:" do PROCESSAMENTO)
+4. SEMPRE extraia CPF/CNPJ e Data do nascimento se presentes no ofício
+5. Extraia TODOS os campos disponíveis (banco, agência, conta, valores)
+6. Se encontrar "Credor n°: XX", extraia os dados desse credor específico
+
+EXEMPLO DE EXTRAÇÃO INLINE:
+```
+Texto: "Credor n°: 26
+Nome: Roberto Pereira da Cruz
+CPF/CNPJ: 037.304.618-93
+Banco: 001 - Banco do Brasil
+Agência: 1234-5
+Conta: 98765-4
+Valor requisitado: R$ 52.228,43"
+
+→ Extrair:
+{{
+  "requerente_caps": "ROBERTO PEREIRA DA CRUZ",  ← Use "Nome:" do ofício
+  "credor_nome": "ROBERTO PEREIRA DA CRUZ",
+  "credor_cpf_cnpj": "037.304.618-93",
+  "banco": "001",
+  "agencia": "1234-5",
+  "conta": "98765-4",
+  "valor_total_requisitado": 52228.43
+}}
+```
+
 === CAMPOS OPCIONAIS (nível raiz do JSON) ===
 
 DADOS BANCÁRIOS (ANEXO II):
@@ -782,6 +1097,11 @@ Retorne APENAS JSON FLAT válido:"""
 - Extraia o que for possível
 """
             
+            # 🔍 DEBUG: Log do texto enviado ao LLM
+            logger.info(f"📝 Texto enviado ao LLM: {len(texto_oficio)} caracteres")
+            logger.info(f"   📋 Primeiros 300 chars: {texto_oficio[:300]}")
+            logger.info(f"   📋 Últimos 300 chars: {texto_oficio[-300:]}")
+            
             # Prompt V2 otimizado
             prompt = f"""Você é um assistente especializado em extrair dados de Ofícios Requisitórios do TJSP.
 
@@ -835,6 +1155,96 @@ VERIFICAÇÃO OBRIGATÓRIA:
 ATENÇÃO - LÍQUIDO vs BRUTO:
 - Valor Principal LÍQUIDO = APÓS descontos (sempre ≤ bruto)
 - Valor Principal BRUTO = ANTES de descontos (sempre ≥ líquido)
+
+⚠️⚠️⚠️ ATENÇÃO CRÍTICA: PDFs MULTI-CREDITOR ⚠️⚠️⚠️
+
+REGRA FUNDAMENTAL: Este PDF pode conter MÚLTIPLOS CREDORES (até 52 credores em um único processo).
+
+🔴 PRIORIDADE MÁXIMA - IDENTIFICAÇÃO DO CREDOR CORRETO:
+
+1. O campo "Requerente" no PROCESSAMENTO refere-se ao REQUERENTE GERAL (todos os credores juntos)
+   Exemplo: "Requerente: Maria das Dores e outros" = Maria + 51 outros credores
+
+2. O campo "Nome:" no OFÍCIO refere-se ao CREDOR ESPECÍFICO que você deve extrair
+   Exemplo: "Nome: Roberto Pereira da Cruz" = credor #26 de 52
+
+3. SEMPRE use o campo "Nome:" do OFÍCIO para preencher `requerente_caps`
+   NUNCA use o campo "Requerente:" do PROCESSAMENTO
+
+4. Se encontrar "Credor n°: XX" ou "Credor nº: XX", esse é o credor específico
+
+EXEMPLO DE CONFUSÃO (NÃO FAÇA ISTO):
+```
+❌ ERRADO:
+Ofício: "Credor nº: 26, Nome: Roberto Pereira da Cruz"
+PROCESSAMENTO: "Requerente: Maria das Dores e outros"
+→ requerente_caps = "MARIA DAS DORES..." ← ERRADO!
+
+✅ CORRETO:
+Ofício: "Credor nº: 26, Nome: Roberto Pereira da Cruz"
+PROCESSAMENTO: "Requerente: [VIDE OFÍCIO PARA CREDOR ESPECÍFICO]"
+→ requerente_caps = "ROBERTO PEREIRA DA CRUZ" ← CORRETO!
+```
+
+⚠️⚠️⚠️ ATENÇÃO: DADOS BANCÁRIOS INLINE (SEM ANEXO II SEPARADO) ⚠️⚠️⚠️
+
+IMPORTANTE: Alguns ofícios contêm dados bancários INLINE (na mesma página do ofício),
+NÃO em ANEXO II separado. Isso é comum em PDFs multi-creditor.
+
+PROCURE POR ESTES PADRÕES NO TEXTO DO OFÍCIO:
+
+PADRÃO INLINE TÍPICO (PROCURE NO OFÍCIO):
+- "Credor n°: XX" ou "Credor nº: XX"
+- "Nome: [NOME COMPLETO]" ← USE ESTE PARA requerente_caps
+- "CPF/CNPJ: XXX.XXX.XXX-XX" ← EXTRAIA PARA credor_cpf_cnpj
+- "Data do nascimento: DD/MM/AAAA" ← EXTRAIA PARA data_nascimento (converta para AAAA-MM-DD)
+- "Banco: XXX" ou "Banco: [NOME DO BANCO]"
+- "Agência: XXXX" ou "Ag.: XXXX"
+- "Conta: XXXXX-X" ou "C/C: XXXXX-X"
+- "Valor requisitado: R$ X.XXX,XX"
+- "Valor total da condenação: R$ X.XXX,XX"
+
+🔴 ATENÇÃO ESPECIAL - CPF E DATA DE NASCIMENTO:
+Estes campos aparecem logo após "Nome:" no formato:
+```
+Nome: Roberto Pereira da Cruz
+CPF/CNPJ: 037.304.618-93
+Data do nascimento: 30/07/1960
+```
+
+SEMPRE extraia estes campos quando presentes no ofício!
+- CPF/CNPJ → campo credor_cpf_cnpj (mantenha formatação: XXX.XXX.XXX-XX)
+- Data do nascimento → campo data_nascimento (converta DD/MM/AAAA para AAAA-MM-DD)
+
+REGRAS PARA DADOS INLINE:
+1. Se há ANEXO II separado → use dados do ANEXO II (prioridade)
+2. Se NÃO há ANEXO II → procure dados inline no ofício
+3. SEMPRE use "Nome:" do ofício para requerente_caps (NUNCA "Requerente:" do PROCESSAMENTO)
+4. SEMPRE extraia CPF/CNPJ e Data do nascimento se presentes no ofício
+5. Extraia TODOS os campos disponíveis (banco, agência, conta, valores)
+6. Se encontrar "Credor n°: XX", extraia os dados desse credor específico
+
+EXEMPLO DE EXTRAÇÃO INLINE:
+```
+Texto: "Credor n°: 26
+Nome: Roberto Pereira da Cruz
+CPF/CNPJ: 037.304.618-93
+Banco: 001 - Banco do Brasil
+Agência: 1234-5
+Conta: 98765-4
+Valor requisitado: R$ 52.228,43"
+
+→ Extrair:
+{{
+  "requerente_caps": "ROBERTO PEREIRA DA CRUZ",  ← Use "Nome:" do ofício
+  "credor_nome": "ROBERTO PEREIRA DA CRUZ",
+  "credor_cpf_cnpj": "037.304.618-93",
+  "banco": "001",
+  "agencia": "1234-5",
+  "conta": "98765-4",
+  "valor_total_requisitado": 52228.43
+}}
+```
 
 === CAMPOS OPCIONAIS (nível raiz do JSON) ===
 

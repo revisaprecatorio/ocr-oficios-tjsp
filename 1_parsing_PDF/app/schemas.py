@@ -111,8 +111,8 @@ class OficioRequisitorio(BaseModel):
     # Aceita tanto estrutura aninhada quanto campos diretos
     banco: Optional[str] = Field(
         None,
-        description="Código do banco (ex: 001, 341)",
-        max_length=10
+        description="Código do banco (ex: 001, 341) ou informação completa",
+        max_length=100  # V2.5.0: Aumentado para aceitar texto completo do LLM
     )
 
     agencia: Optional[str] = Field(
