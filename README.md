@@ -546,7 +546,18 @@ cd ../3_streamlit
 - [x] **✅ CONCLUÍDO: 3 novos campos (obito, data_obito, cpf_sucessor)**
 - [x] **✅ CONCLUÍDO: Migration SQL executada na VPS**
 - [x] **✅ CONCLUÍDO: 34 testes unitários (88% sucesso)**
-- [ ] **⏳ PENDENTE: Validação com PDFs reais**
+- [x] **✅ CONCLUÍDO: Validação com 12 PDFs reais (15 ofícios processados)**
+
+#### 📂 **Amostra de PDFs V2.5.3**
+
+Os PDFs utilizados para validar a V2.5.3 estão disponíveis no Google Drive:
+
+**[📥 Download PDFs de Amostra (778MB)](https://drive.google.com/drive/folders/1v1uZvpVuuvKIqZb1kVtnZFc7xE2Ffixa?usp=sharing)**
+
+- **12 CPFs** diferentes
+- **15 processos** (ofícios requisitórios TJSP)
+- **Casos testados**: Habilitação de herdeiros, doença grave, idosos, preferencial
+- **Outputs processados**: Disponíveis em `1_parsing_PDF/outputs/lote_001/`, `lote_002/`, `lote_003/`
 
 ### **v2.6.0 - Validação e Refinamento (PRÓXIMO)**
 - [ ] Validar detecções V2.5.3 com PDFs reais
