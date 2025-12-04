@@ -19,6 +19,9 @@ from .detector import DetectorOficio
 from .detector_anexo import DetectorAnexoII
 from .detector_processamento import DetectorProcessamento
 from .detector_termos_juridicos import DetectorTermosJuridicos
+from .detector_saldo_final import DetectorSaldoFinal  # V2.5.2: Novo detector
+from .detector_habilitacao_herdeiros import DetectorHabilitacaoHerdeiros  # V2.5.3: Novo detector
+from .tracker_execucao import TrackerExecucao  # V2.5.3: Tracking completo
 from .schemas import OficioRequisitorio
 
 logger = logging.getLogger(__name__)
@@ -57,19 +60,23 @@ class ProcessadorOficio:
         self.detector_anexo = DetectorAnexoII()
         self.detector_proc = DetectorProcessamento()
         self.detector_termos = DetectorTermosJuridicos()  # V2.4.0
+        self.detector_saldo = DetectorSaldoFinal()  # V2.5.2: Novo detector
+        self.detector_habilitacao = DetectorHabilitacaoHerdeiros()  # V2.5.3: Novo detector
 
-        logger.info("ProcessadorOficio V2.4.0 inicializado")
+        logger.info("ProcessadorOficio V2.5.3 inicializado (com Saldo Final + Habilitação Herdeiros + Doença Grave)")
     
-    def processar_arquivo(self, pdf_path: str, cpf_numerico: str) -> Dict[str, Any]:
+    def processar_arquivo(self, pdf_path: str, cpf_numerico: str, tracker: Optional[TrackerExecucao] = None) -> Dict[str, Any]:
         """
         Processa um único arquivo PDF com validação de CPF.
-        
+
         V2: Busca todos os ofícios, valida CPF, processa apenas o correto.
-        
+        V2.5.3: Aceita tracker opcional para logging detalhado
+
         Args:
             pdf_path: Caminho para o arquivo PDF
             cpf_numerico: CPF esperado (apenas números)
-            
+            tracker: Tracker de execução opcional para logs em Markdown
+
         Returns:
             Dict com resultado do processamento
         """
@@ -77,20 +84,29 @@ class ProcessadorOficio:
         
         try:
             logger.info(f"🔄 Iniciando processamento V2: {pdf_path}")
-            
+
             # Validar arquivo PDF
             if not self.detector.validar_pdf(pdf_path):
                 logger.error(f"❌ PDF inválido: {pdf_path}")
+                if tracker:
+                    tracker.adicionar_erro("PDF inválido ou corrompido")
                 return None
-            
+
             # 1. Extrair CPF da pasta
             cpf_numerico = self._extrair_cpf_pasta(pdf_path)
             if not cpf_numerico:
                 logger.error(f"❌ CPF inválido na pasta: {Path(pdf_path).parent.name}")
+                if tracker:
+                    tracker.adicionar_erro(f"CPF inválido: {Path(pdf_path).parent.name}")
                 return None
-            
+
             cpf_formatado = self._formatar_cpf(cpf_numerico)
             logger.info(f"📋 CPF esperado: {cpf_formatado}")
+
+            # Tracker: Inicialização
+            if tracker:
+                tamanho_mb = Path(pdf_path).stat().st_size / (1024 * 1024)
+                tracker.iniciar(pdf_path, tamanho_mb)
             
             # 1.1. V2.5.1: Detectar PDF antigo (formato 7xxxxxx-xx.20xx)
             nome_arquivo = Path(pdf_path).name
@@ -102,29 +118,49 @@ class ProcessadorOficio:
                 logger.warning(f"⚠️ PDFs antigos podem ter estrutura diferente e menor taxa de sucesso")
             
             # 2. Buscar todos os ofícios no PDF
+            if tracker:
+                tracker.adicionar_secao("## 2. Detecção de Ofícios")
+                tracker.adicionar_item("Buscando todos os ofícios no PDF...", nivel=0, emoji="🔍")
+
             todos_oficios = self.detector.buscar_todos_oficios(pdf_path)
-            
+
             if not todos_oficios:
                 logger.warning("⚠️ Nenhum ofício detectado no PDF")
+                if tracker:
+                    tracker.adicionar_erro("Nenhum ofício detectado no PDF")
                 return self._criar_resultado_erro(
-                    cpf_numerico, 
-                    pdf_path, 
+                    cpf_numerico,
+                    pdf_path,
                     "Nenhum ofício detectado"
                 )
-            
+
             logger.info(f"📄 Encontrados {len(todos_oficios)} ofício(s) no PDF")
-            
+            if tracker:
+                for idx, oficio in enumerate(todos_oficios, 1):
+                    paginas_str = f"[{oficio['paginas'][0]}-{oficio['paginas'][-1]}]" if len(oficio['paginas']) > 1 else f"[{oficio['paginas'][0]}]"
+                    tracker.adicionar_resultado(f"Ofício {idx}: páginas {paginas_str}", sucesso=True, nivel=1)
+                tracker.adicionar_detalhes("Total", len(todos_oficios), nivel=0)
+                tracker.adicionar_linha_vazia()
+
             # 3. Encontrar ofício com CPF correto (método tradicional)
+            if tracker:
+                tracker.adicionar_secao("## 3. Validação de CPF")
+                tracker.adicionar_item(f"Buscando CPF `{cpf_formatado}` em cada ofício...", nivel=0, emoji="🔍")
+
             oficio_correto = None
             for idx, oficio in enumerate(todos_oficios, 1):
                 logger.info(f"🔍 Verificando ofício {idx}/{len(todos_oficios)} (páginas {oficio['paginas']})")
-                
+
                 if self.detector.validar_cpf_no_oficio(oficio['texto'], cpf_formatado):
                     logger.info(f"✅ CPF encontrado no ofício {idx}!")
+                    if tracker:
+                        tracker.adicionar_resultado(f"Ofício {idx}: **CPF ENCONTRADO!**", sucesso=True, nivel=1)
                     oficio_correto = oficio
                     break
                 else:
                     logger.info(f"❌ CPF não encontrado no ofício {idx}")
+                    if tracker:
+                        tracker.adicionar_resultado(f"Ofício {idx}: CPF não encontrado", sucesso=False, nivel=1)
             
             # V2.4.4: FALLBACK - Se não encontrou CPF em nenhum ofício E PDF tem 100+ credores
             # Tentar busca direta por CPF (para casos onde ofício não foi detectado corretamente)
@@ -149,60 +185,134 @@ class ProcessadorOficio:
                 )
             
             # 3.1. Detectar termos jurídicos no texto completo do PDF (V2.4.0)
+            if tracker:
+                tracker.adicionar_linha_vazia()
+                tracker.adicionar_secao("## 4. Detecção de Termos Jurídicos V2.5.2")
+                tracker.adicionar_item("Buscando termos no texto completo do PDF...", nivel=0, emoji="🔍")
+
             logger.info("🔍 Detectando termos jurídicos no PDF completo...")
-            
+
             # Extrair texto completo do PDF para detecção de termos
             doc = pymupdf.open(pdf_path)
             texto_completo_pdf = ""
             for pagina in doc:
                 texto_completo_pdf += pagina.get_text() + "\n"
             doc.close()
-            
-            # Detectar termos jurídicos
-            termos_juridicos = self.detector_termos.detectar_termos(texto_completo_pdf)
+
+            # Detectar termos jurídicos (V2.5.3: inclui doença grave)
+            termos_juridicos = self.detector_termos.detectar_termos(texto_completo_pdf, cpf_formatado)
             logger.info(f"📋 Termos encontrados: {termos_juridicos}")
-            
+
+            if tracker:
+                tracker.adicionar_subsecao("Resultados:", nivel=0)
+                tracker.adicionar_detalhes("Preferencial", termos_juridicos['preferencial'], nivel=1)
+                tracker.adicionar_detalhes("Habilitação Herdeiros", termos_juridicos['habilitacao_herdeiros'], nivel=1)
+                tracker.adicionar_detalhes("Cessão Crédito", termos_juridicos['cessao_credito'], nivel=1)
+                tracker.adicionar_detalhes("Doença Grave", termos_juridicos.get('doenca_grave', False), nivel=1)
+                tracker.adicionar_item("(Cessão de Crédito: DESATIVADO em v2.5.2)", nivel=1)
+                tracker.adicionar_linha_vazia()
+
+            # 3.2. Detecção avançada de Habilitação de Herdeiros (V2.5.3)
+            # Usa detector especializado com código 9270 + estrutura "Dados da Sucessão"
+            if tracker:
+                tracker.adicionar_linha_vazia()
+                tracker.adicionar_secao("## 4.5. Detecção Avançada de Habilitação de Herdeiros V2.5.3")
+                tracker.adicionar_item("Buscando código 9270 e estrutura 'Dados da Sucessão'...", nivel=0, emoji="🔍")
+
+            resultado_habilitacao = self.detector_habilitacao.detectar(texto_completo_pdf)
+            logger.info(f"📋 Habilitação detectada: {resultado_habilitacao}")
+
+            # Se detector especializado encontrou com alta/média confiança, sobrescrever
+            if resultado_habilitacao['nivel_confianca'] in ['ALTA', 'MÉDIA']:
+                logger.info(f"✅ Sobrescrevendo habilitacao_herdeiros com resultado do detector especializado (confiança: {resultado_habilitacao['nivel_confianca']})")
+                termos_juridicos['habilitacao_herdeiros'] = resultado_habilitacao['habilitacao_herdeiros']
+                # Armazenar dados extras para adicionar ao JSON final
+                dados_obito = {
+                    'obito': resultado_habilitacao['obito'],
+                    'data_obito': resultado_habilitacao['data_obito'],
+                    'cpf_sucessor': resultado_habilitacao['cpf_sucessor']
+                }
+            else:
+                # Detector especializado não encontrou nada ou baixa confiança
+                dados_obito = {'obito': False, 'data_obito': None, 'cpf_sucessor': None}
+
+            if tracker:
+                tracker.adicionar_subsecao("Resultados:", nivel=0)
+                tracker.adicionar_detalhes("Nível Confiança", resultado_habilitacao['nivel_confianca'] or 'N/A', nivel=1)
+                tracker.adicionar_detalhes("Habilitação Confirmada", resultado_habilitacao['habilitacao_herdeiros'], nivel=1)
+                tracker.adicionar_detalhes("Óbito Detectado", resultado_habilitacao['obito'], nivel=1)
+                if resultado_habilitacao['data_obito']:
+                    tracker.adicionar_detalhes("Data Óbito", resultado_habilitacao['data_obito'], nivel=1)
+                if resultado_habilitacao['cpf_sucessor']:
+                    tracker.adicionar_detalhes("CPF Sucessor", resultado_habilitacao['cpf_sucessor'], nivel=1)
+                tracker.adicionar_linha_vazia()
+
             # 4. Detectar ANEXO II (após ofício correto)
+            if tracker:
+                tracker.adicionar_secao("## 5. Detecção ANEXO II")
+                tracker.adicionar_item("Buscando ANEXO II a partir do fim do ofício...", nivel=0, emoji="🔍")
+
             # V2.5.0: Retorna também página do TÍTULO do ANEXO II
             # FIX v2.4.2: Buscar ANEXO II a partir da última página do ofício selecionado
             ultima_pag_oficio = oficio_correto['paginas'][-1]
             paginas_anexo, texto_anexo, pagina_titulo_anexo = self.detector_anexo.detectar_anexo_ii(
-                pdf_path, 
+                pdf_path,
                 inicio=ultima_pag_oficio  # Buscar a partir do fim do ofício (0-indexed)
             )
-            
+
             logger.info(f"📌 Página do TÍTULO ANEXO II: {pagina_titulo_anexo + 1 if pagina_titulo_anexo >= 0 else 'N/A'}")
-            
+
+            if pagina_titulo_anexo >= 0:
+                if tracker:
+                    tracker.adicionar_resultado(f"Título ANEXO II: página {pagina_titulo_anexo + 1}", sucesso=True, nivel=1)
+            else:
+                if tracker:
+                    tracker.adicionar_resultado("ANEXO II não encontrado", sucesso=False, nivel=1)
+
             # 4.1. V2.5.0: Buscar CPF APÓS ANEXO II e extrair seção focada
             pagina_credor = -1
             secao_credor = ""
-            
+
             if pagina_titulo_anexo >= 0:
                 logger.info(f"🔍 Buscando CPF {cpf_formatado} após ANEXO II...")
+                if tracker:
+                    tracker.adicionar_item(f"Buscando CPF `{cpf_formatado}` no ANEXO II...", nivel=1, emoji="🔍")
+
                 pagina_credor = self.detector.buscar_cpf_no_pdf(
                     pdf_path,
                     cpf_formatado,
                     inicio=pagina_titulo_anexo
                 )
-                
+
                 if pagina_credor >= 0:
                     logger.info(f"✅ CPF encontrado na página {pagina_credor + 1}")
-                    
+                    if tracker:
+                        tracker.adicionar_resultado(f"CPF encontrado: página {pagina_credor + 1}", sucesso=True, nivel=2)
+
                     # Extrair seção focada do credor
                     secao_credor = self.detector_anexo.extrair_secao_credor_no_anexo(
                         pdf_path,
                         pagina_credor,
                         cpf_formatado
                     )
-                    
+
                     if secao_credor:
                         logger.info(f"✅ Seção do credor extraída ({len(secao_credor)} chars)")
+                        if tracker:
+                            tracker.adicionar_resultado(f"Seção extraída: {len(secao_credor)} caracteres", sucesso=True, nivel=2)
                         # Substituir texto_anexo pela seção focada
                         texto_anexo = secao_credor
                     else:
                         logger.warning(f"⚠️ Não conseguiu extrair seção, usando ANEXO II completo")
+                        if tracker:
+                            tracker.adicionar_item("Usando ANEXO II completo (seção não extraída)", nivel=2, emoji="⚠️")
                 else:
                     logger.warning(f"⚠️ CPF não encontrado após ANEXO II")
+                    if tracker:
+                        tracker.adicionar_resultado("CPF não encontrado no ANEXO II", sucesso=False, nivel=2)
+
+            if tracker:
+                tracker.adicionar_linha_vazia()
             
             # 5. Tentar extrair número de ordem do TÍTULO do ofício (PDFs antigos)
             numero_ordem_titulo = self.detector_proc.extrair_numero_ordem_do_titulo(
@@ -210,12 +320,23 @@ class ProcessadorOficio:
             )
             
             # 6. Detectar PROCESSAMENTO (PDFs novos) - buscar em mais páginas
+            if tracker:
+                tracker.adicionar_secao("## 6. Detecção PROCESSAMENTO")
+                tracker.adicionar_item("Buscando página PROCESSAMENTO...", nivel=0, emoji="🔍")
+
             inicio_proc = paginas_anexo[-1] - 1 if paginas_anexo else ultima_pag_oficio - 1
             pagina_proc, texto_proc = self.detector_proc.detectar_processamento(
                 pdf_path,
                 inicio=inicio_proc,
                 limite=100  # Aumentar limite de busca
             )
+
+            if pagina_proc:
+                if tracker:
+                    tracker.adicionar_resultado(f"PROCESSAMENTO: página {pagina_proc}", sucesso=True, nivel=1)
+            else:
+                if tracker:
+                    tracker.adicionar_resultado("PROCESSAMENTO não encontrado", sucesso=False, nivel=1)
             
             # 6.1. Verificar se ofício foi REJEITADO (ANTES de validar!)
             # 🔴 REGRA CRÍTICA: Verificar ACEITAÇÃO primeiro (prioridade máxima)
@@ -369,9 +490,21 @@ class ProcessadorOficio:
             logger.info(f"   ✅ {valores_encontrados} valores normalizados (R$ XX.XXX,XX → R$ XXXXX.XX)")
             
             # 9. Enviar ao LLM com Modo Híbrido (Gemini + OpenAI fallback)
+            if tracker:
+                tracker.adicionar_linha_vazia()
+                tracker.adicionar_secao("## 7. Extração LLM (GPT-4o-mini)")
+                tracker.adicionar_item(f"Enviando {len(texto_normalizado):,} caracteres para LLM...", nivel=0, emoji="🤖")
+                paginas_str = f"Ofício {oficio_correto['paginas'][:3]}...{oficio_correto['paginas'][-3:]} ({len(oficio_correto['paginas'])} págs)"
+                tracker.adicionar_detalhes("Páginas incluídas", paginas_str, nivel=1)
+                if paginas_anexo:
+                    tracker.adicionar_detalhes("+ ANEXO II", f"páginas {paginas_anexo}", nivel=1)
+                if pagina_proc:
+                    tracker.adicionar_detalhes("+ PROCESSAMENTO", f"página {pagina_proc}", nivel=1)
+
             logger.info(f"🤖 Enviando {len(texto_normalizado):,} chars para LLM (modo híbrido)")
             logger.info(f"   Páginas enviadas: Ofício {oficio_correto['paginas']} + ANEXO II {paginas_anexo} + PROC {[pagina_proc] if pagina_proc else []}")
-            
+
+            tempo_llm_inicio = time.time()
             dados_oficio = self._extrair_dados_llm_hibrido(
                 texto_normalizado,  # Usar texto normalizado
                 tem_anexo_ii=bool(texto_anexo),
@@ -380,6 +513,10 @@ class ProcessadorOficio:
                 oficio_rejeitado=oficio_rejeitado,
                 motivo_rejeicao=motivo_rejeicao
             )
+            tempo_llm = time.time() - tempo_llm_inicio
+
+            if dados_oficio and tracker:
+                tracker.adicionar_resultado(f"Resposta recebida ({tempo_llm:.1f}s)", sucesso=True, nivel=1)
             
             if not dados_oficio:
                 logger.error("❌ Falha na extração LLM")
@@ -429,9 +566,18 @@ class ProcessadorOficio:
                 logger.warning("⚠️ CPF não extraído pelo LLM (campo credor_cpf_cnpj vazio)")
             
             # 9. Validar com Pydantic (com fallback se necessário)
+            if tracker:
+                tracker.adicionar_linha_vazia()
+                tracker.adicionar_secao("## 8. Validação Pydantic")
+                tracker.adicionar_item("Validando dados extraídos...", nivel=0, emoji="🔍")
+
             try:
                 oficio_validado = OficioRequisitorio(**dados_oficio)
                 logger.info("✅ Dados validados com sucesso")
+                if tracker:
+                    tracker.adicionar_resultado("Dados validados com sucesso", sucesso=True, nivel=1)
+                    campos_preenchidos = len([k for k, v in dados_oficio.items() if v])
+                    tracker.adicionar_detalhes("Campos preenchidos", campos_preenchidos, nivel=1)
             except Exception as e:
                 # FINDING 08: Se validação falhar, tentar fallback para OpenAI
                 from pydantic import ValidationError
@@ -491,26 +637,88 @@ class ProcessadorOficio:
                     }
             
             # 8.1. Calcular flag IDOSO automaticamente
+            if tracker:
+                tracker.adicionar_linha_vazia()
+                tracker.adicionar_secao("## 9. Cálculos V2.5.2")
+
             if oficio_validado.data_nascimento:
                 from datetime import date
                 hoje = date.today()
                 idade = hoje.year - oficio_validado.data_nascimento.year
-                
+
                 # Ajustar se ainda não fez aniversário este ano
                 if (hoje.month, hoje.day) < (oficio_validado.data_nascimento.month, oficio_validado.data_nascimento.day):
                     idade -= 1
-                
+
                 # Atualizar flag idoso
                 oficio_validado.idoso = (idade >= 60)
                 logger.info(f"🎂 Idade calculada: {idade} anos → idoso={oficio_validado.idoso}")
+                if tracker:
+                    tracker.adicionar_detalhes("Idade", f"{idade} anos", nivel=0)
+                    tracker.adicionar_detalhes("Idoso (≥60)", oficio_validado.idoso, nivel=0)
             else:
                 logger.debug("⚠️ data_nascimento não disponível, flag idoso não calculada")
-            
-            # 8.2. Adicionar termos jurídicos detectados (V2.4.0)
+                if tracker:
+                    tracker.adicionar_item("Data nascimento indisponível, flag idoso não calculada", nivel=0, emoji="⚠️")
+
+            # 8.2. Adicionar termos jurídicos detectados (V2.4.0 / V2.5.3)
             oficio_validado.preferencial = termos_juridicos['preferencial']
             oficio_validado.habilitacao_herdeiros = termos_juridicos['habilitacao_herdeiros']
-            oficio_validado.cessao_credito = termos_juridicos['cessao_credito']
+            oficio_validado.cessao_credito = termos_juridicos['cessao_credito']  # Sempre False em v2.5.2
+            oficio_validado.doenca_grave = termos_juridicos.get('doenca_grave', False)  # V2.5.3: Novo campo
             logger.info(f"📜 Termos jurídicos adicionados aos dados validados")
+
+            # 8.2.1. V2.5.3: Adicionar dados de óbito e sucessão
+            oficio_validado.obito = dados_obito['obito']
+            oficio_validado.cpf_sucessor = dados_obito['cpf_sucessor']
+
+            # Converter data_obito de DD/MM/YYYY para date object (ISO)
+            if dados_obito['data_obito']:
+                try:
+                    from datetime import datetime
+                    data_obito_str = dados_obito['data_obito']
+                    data_obj = datetime.strptime(data_obito_str, '%d/%m/%Y').date()
+                    oficio_validado.data_obito = data_obj
+                    logger.info(f"📅 Data de óbito convertida: {data_obito_str} → {data_obj}")
+                except ValueError as e:
+                    logger.warning(f"⚠️ Erro ao converter data de óbito '{data_obito_str}': {e}")
+                    oficio_validado.data_obito = None
+            else:
+                oficio_validado.data_obito = None
+
+            logger.info(f"✅ Campos V2.5.3 adicionados: obito={oficio_validado.obito}, "
+                       f"doenca_grave={oficio_validado.doenca_grave}, "
+                       f"data_obito={oficio_validado.data_obito}, "
+                       f"cpf_sucessor={oficio_validado.cpf_sucessor}")
+
+            if tracker:
+                tracker.adicionar_subsecao("Campos V2.5.3:", nivel=0)
+                tracker.adicionar_detalhes("Doença Grave", oficio_validado.doenca_grave, nivel=1)
+                tracker.adicionar_detalhes("Óbito", oficio_validado.obito, nivel=1)
+                tracker.adicionar_detalhes("Data Óbito", oficio_validado.data_obito or "N/A", nivel=1)
+                tracker.adicionar_detalhes("CPF Sucessor", oficio_validado.cpf_sucessor or "N/A", nivel=1)
+
+            # 8.2.1. V2.5.2: Detectar saldo final com fallback
+            if not oficio_validado.saldo_final:
+                # Tentar detectar saldo final via regex no texto completo
+                saldo_detectado = self.detector_saldo.extrair_saldo_final(texto_completo_pdf)
+                if saldo_detectado:
+                    oficio_validado.saldo_final = saldo_detectado
+                    logger.info(f"💰 Saldo Final detectado via regex: R$ {saldo_detectado:,.2f}")
+                    if tracker:
+                        tracker.adicionar_detalhes("Saldo Final", saldo_detectado, nivel=0)
+                        tracker.adicionar_item("(detectado via regex)", nivel=1)
+                elif oficio_validado.valor_total_requisitado:
+                    # Fallback: usar valor_total_requisitado
+                    oficio_validado.saldo_final = oficio_validado.valor_total_requisitado
+                    logger.info(f"📊 Saldo Final (fallback): R$ {oficio_validado.saldo_final:,.2f} (= valor_total_requisitado)")
+                    if tracker:
+                        tracker.adicionar_detalhes("Saldo Final (fallback)", oficio_validado.saldo_final, nivel=0)
+                        tracker.adicionar_item("(= valor_total_requisitado)", nivel=1)
+                else:
+                    logger.warning("⚠️ Saldo Final não detectado e valor_total_requisitado ausente")
+                    if tracker:
+                        tracker.adicionar_item("Saldo Final não detectado", nivel=0, emoji="⚠️")
             
             # 8.3. V2.5.1: Preencher observações e campos vazios com "ERRO"
             observacoes_lista = []
@@ -553,13 +761,23 @@ class ProcessadorOficio:
             
             # 9. Retornar resultado de sucesso
             logger.info("✅ Processamento V2 concluído com sucesso!")
+
+            # Tracker: Finalizar com conclusão V2.5.2
+            tempo_total = time.time() - inicio
+            if tracker:
+                tracker.finalizar(
+                    sucesso=True,
+                    tempo_total=tempo_total,
+                    dados=oficio_validado.model_dump()
+                )
+
             return {
                 "cpf": cpf_numerico,
                 "pdf": Path(pdf_path).name,
                 "sucesso": True,
                 "cpf_validado": True,
                 "dados": oficio_validado.model_dump(),
-                "tempo_processamento": time.time() - inicio,
+                "tempo_processamento": tempo_total,
                 "num_oficios": len(todos_oficios)
             }
             
@@ -567,13 +785,20 @@ class ProcessadorOficio:
             logger.error(f"❌ Erro no processamento V2: {e}")
             import traceback
             traceback.print_exc()
+
+            # Tracker: Finalizar com erro
+            tempo_total = time.time() - inicio
+            if tracker:
+                tracker.adicionar_erro(str(e))
+                tracker.finalizar(sucesso=False, tempo_total=tempo_total)
+
             return {
                 "cpf": cpf_numerico,
                 "pdf": Path(pdf_path).name,
                 "sucesso": False,
                 "cpf_validado": False,
                 "erro": str(e),
-                "tempo_processamento": time.time() - inicio,
+                "tempo_processamento": tempo_total,
                 "num_oficios": 0
             }
     

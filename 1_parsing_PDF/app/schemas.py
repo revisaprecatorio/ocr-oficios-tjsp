@@ -163,9 +163,15 @@ class OficioRequisitorio(BaseModel):
         None,
         description="Valor total requisitado (sem R$, sem pontos de milhar). Opcional para ofícios rejeitados."
     )
-    
+
+    # V2.5.2: NOVO CAMPO - Saldo final após pagamento parcial
+    saldo_final: Optional[Decimal] = Field(
+        None,
+        description="Saldo final após pagamento parcial. Se não houver pagamento parcial, igual a valor_total_requisitado. Campo detectado via regex ou LLM."
+    )
+
     contrib_previdenciaria_iprem: Optional[Decimal] = Field(
-        None, 
+        None,
         description="Contribuição previdenciária IPREM (sem R$, sem pontos de milhar)"
     )
     
@@ -205,7 +211,24 @@ class OficioRequisitorio(BaseModel):
         None,
         description="Indica se há cessão de crédito ou direitos creditórios (detectado via regex)"
     )
-    
+
+    # ===== ÓBITO E SUCESSÃO (V2.5.3) =====
+    obito: Optional[bool] = Field(
+        None,
+        description="Indica se o requerente faleceu (detectado via Detector de Habilitação de Herdeiros)"
+    )
+
+    data_obito: Optional[date] = Field(
+        None,
+        description="Data do óbito do requerente (formato ISO: YYYY-MM-DD)"
+    )
+
+    cpf_sucessor: Optional[str] = Field(
+        None,
+        description="CPF do herdeiro/sucessor habilitado (formato: XXX.XXX.XXX-XX)",
+        max_length=14
+    )
+
     # ===== CONTROLE DE PROCESSAMENTO (V2) =====
     rejeitado: Optional[bool] = Field(
         None,
@@ -315,6 +338,7 @@ class OficioRequisitorio(BaseModel):
         'valor_principal_bruto',
         'juros_moratorios',
         'valor_total_requisitado',
+        'saldo_final',  # V2.5.2: Novo campo
         'contrib_previdenciaria_iprem',
         'contrib_previdenciaria_hspm',
         'valor_compensado',
@@ -483,7 +507,7 @@ class OficioRequisitorio(BaseModel):
         
         return v
     
-    @field_validator('credor_cpf_cnpj', 'cpf_titular_conta', mode='before')
+    @field_validator('credor_cpf_cnpj', 'cpf_titular_conta', 'cpf_sucessor', mode='before')
     @classmethod
     def validar_cpf_cnpj(cls, v: Optional[str]) -> Optional[str]:
         """

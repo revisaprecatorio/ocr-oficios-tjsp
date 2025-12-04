@@ -83,20 +83,22 @@ def main():
         "duplicados": 0
     }
     
-    # Query de INSERT com UPSERT
+    # Query de INSERT com UPSERT (V2.5.3: inclui obito, data_obito, cpf_sucessor)
     insert_query = """
         INSERT INTO esaj_detalhe_processos (
             cpf, numero_processo_cnj, processo_origem, requerente_caps,
             numero_ordem, vara, processo_execucao, processo_conhecimento,
             data_ajuizamento, data_transito_julgado, data_base_atualizacao, data_nascimento,
             advogado_nome, advogado_oab, credor_nome, credor_cpf_cnpj, devedor_ente,
-            banco, agencia, conta, conta_tipo, tipo_levantamento, 
+            banco, agencia, conta, conta_tipo, tipo_levantamento,
             dados_bancarios_advogado, cpf_titular_conta,
             valor_principal_liquido, valor_principal_bruto, juros_moratorios,
-            valor_total_requisitado, contrib_previdenciaria_iprem, contrib_previdenciaria_hspm,
-            valor_compensado, contribuicao_social, salario_pericial, 
+            valor_total_requisitado, saldo_final, contrib_previdenciaria_iprem, contrib_previdenciaria_hspm,
+            valor_compensado, contribuicao_social, salario_pericial,
             assist_tecnico, custas, despesas, multas,
             idoso, doenca_grave, pcd,
+            preferencial, habilitacao_herdeiros, cessao_credito,
+            obito, data_obito, cpf_sucessor,
             rejeitado, motivo_rejeicao, observacoes, anomalia, descricao_anomalia,
             process_diagnostico, caminho_pdf, timestamp_ingestao
         ) VALUES (
@@ -107,36 +109,71 @@ def main():
             %(banco)s, %(agencia)s, %(conta)s, %(conta_tipo)s, %(tipo_levantamento)s,
             %(dados_bancarios_advogado)s, %(cpf_titular_conta)s,
             %(valor_principal_liquido)s, %(valor_principal_bruto)s, %(juros_moratorios)s,
-            %(valor_total_requisitado)s, %(contrib_previdenciaria_iprem)s, %(contrib_previdenciaria_hspm)s,
+            %(valor_total_requisitado)s, %(saldo_final)s, %(contrib_previdenciaria_iprem)s, %(contrib_previdenciaria_hspm)s,
             %(valor_compensado)s, %(contribuicao_social)s, %(salario_pericial)s,
             %(assist_tecnico)s, %(custas)s, %(despesas)s, %(multas)s,
             %(idoso)s, %(doenca_grave)s, %(pcd)s,
+            %(preferencial)s, %(habilitacao_herdeiros)s, %(cessao_credito)s,
+            %(obito)s, %(data_obito)s, %(cpf_sucessor)s,
             %(rejeitado)s, %(motivo_rejeicao)s, %(observacoes)s, %(anomalia)s, %(descricao_anomalia)s,
             %(process_diagnostico)s, %(caminho_pdf)s, %(timestamp_ingestao)s
         )
-        ON CONFLICT (cpf, numero_processo_cnj) 
+        ON CONFLICT (cpf, numero_processo_cnj)
         DO UPDATE SET
             processo_origem = EXCLUDED.processo_origem,
             requerente_caps = EXCLUDED.requerente_caps,
             numero_ordem = EXCLUDED.numero_ordem,
             vara = EXCLUDED.vara,
             data_nascimento = EXCLUDED.data_nascimento,
+            saldo_final = EXCLUDED.saldo_final,
+            preferencial = EXCLUDED.preferencial,
+            habilitacao_herdeiros = EXCLUDED.habilitacao_herdeiros,
+            cessao_credito = EXCLUDED.cessao_credito,
+            obito = EXCLUDED.obito,
+            data_obito = EXCLUDED.data_obito,
+            cpf_sucessor = EXCLUDED.cpf_sucessor,
             timestamp_ingestao = EXCLUDED.timestamp_ingestao;
     """
     
     # Processar JSONs
     print(f"\n📋 Processando JSONs...")
-    
+    print("="*80)
+
     for json_file in tqdm(json_files, desc="Ingerindo"):
         try:
             # Extrair CPF e processo
             cpf, numero_processo = extrair_cpf_processo(json_file)
-            
+
+            print(f"\n📄 Lendo JSON: {json_file.name}")
+            print(f"   └─ CPF: {cpf}")
+            print(f"   └─ Processo: {numero_processo}")
+
             # Ler JSON
             with open(json_file, 'r', encoding='utf-8') as f:
                 data = json.load(f)
+
+            # Log dos campos principais V2.5.3
+            print(f"   └─ Requerente: {data.get('requerente_caps', 'N/A')[:50]}")
+            valor_total = data.get('valor_total_requisitado', 0)
+            saldo_final = data.get('saldo_final', 0)
+            print(f"   └─ Valor Total: {valor_total}")
+            print(f"   └─ Saldo Final: {saldo_final}")
+            print(f"   └─ Preferencial: {data.get('preferencial', False)}")
+            print(f"   └─ Habilitação: {data.get('habilitacao_herdeiros', False)}")
+            print(f"   └─ Óbito: {data.get('obito', False)}")
+            print(f"   └─ Doença Grave: {data.get('doenca_grave', False)}")
             
-            # Preparar valores
+            # Preparar valores (V2.5.3: inclui obito, data_obito, cpf_sucessor)
+            # Extrair apenas código do banco (primeiros 3 dígitos) se necessário
+            banco_raw = data.get('banco')
+            banco = None
+            if banco_raw:
+                # Se banco vier como "001 - Agência: ...", extrair apenas "001"
+                if ' - ' in banco_raw or 'Agência' in banco_raw:
+                    banco = banco_raw.split()[0].strip()
+                else:
+                    banco = banco_raw[:10]  # Limitar a 10 chars
+
             valores = {
                 'cpf': cpf,
                 'numero_processo_cnj': numero_processo,
@@ -155,7 +192,7 @@ def main():
                 'credor_nome': data.get('credor_nome'),
                 'credor_cpf_cnpj': data.get('credor_cpf_cnpj'),
                 'devedor_ente': data.get('devedor_ente'),
-                'banco': data.get('banco'),
+                'banco': banco,
                 'agencia': data.get('agencia'),
                 'conta': data.get('conta'),
                 'conta_tipo': data.get('conta_tipo'),
@@ -166,6 +203,7 @@ def main():
                 'valor_principal_bruto': data.get('valor_principal_bruto'),
                 'juros_moratorios': data.get('juros_moratorios'),
                 'valor_total_requisitado': data.get('valor_total_requisitado'),
+                'saldo_final': data.get('saldo_final'),
                 'contrib_previdenciaria_iprem': data.get('contrib_previdenciaria_iprem'),
                 'contrib_previdenciaria_hspm': data.get('contrib_previdenciaria_hspm'),
                 'valor_compensado': data.get('valor_compensado'),
@@ -178,6 +216,12 @@ def main():
                 'idoso': data.get('idoso', False),
                 'doenca_grave': data.get('doenca_grave', False),
                 'pcd': data.get('pcd', False),
+                'preferencial': data.get('preferencial', False),
+                'habilitacao_herdeiros': data.get('habilitacao_herdeiros', False),
+                'cessao_credito': data.get('cessao_credito', False),
+                'obito': data.get('obito', False),  # V2.5.3: Novo campo
+                'data_obito': data.get('data_obito'),  # V2.5.3: Novo campo (ISO format)
+                'cpf_sucessor': data.get('cpf_sucessor'),  # V2.5.3: Novo campo
                 'rejeitado': data.get('rejeitado', False),
                 'motivo_rejeicao': data.get('motivo_rejeicao'),
                 'observacoes': data.get('observacoes'),
@@ -189,13 +233,16 @@ def main():
             }
             
             # Executar INSERT
+            print(f"   └─ Inserindo/atualizando no banco...")
             cursor.execute(insert_query, valores)
             conn.commit()
-            
+
             stats["sucesso"] += 1
-            
+            print(f"   └─ ✅ Sucesso!")
+
         except Exception as e:
             stats["erros"] += 1
+            print(f"   └─ ❌ ERRO: {str(e)[:100]}")
             logger.error(f"❌ {json_file.name}: {str(e)[:100]}")
             conn.rollback()
     
