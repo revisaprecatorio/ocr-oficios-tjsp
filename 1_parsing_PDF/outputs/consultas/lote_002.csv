@@ -1,0 +1,9 @@
+pdf,cpf,sucesso,tempo_s,oficios_encontrados,cpf_validado,rejeitado,motivo_rejeicao,anomalia,descricao_anomalia,processo_origem,requerente_caps,numero_ordem,valor_principal_liquido,valor_principal_bruto,juros_moratorios,valor_total,banco,agencia,conta,conta_tipo,vara,contrib_iprem,contrib_hspm,data_nascimento,data_base,idoso,doenca_grave,pcd,anomalias
+0137428-42.2024.8.26.0500.pdf,11147105804,✓,25.2,21,✓,✗,,✗,,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✗,✗,✗,✗,✓,✗,✓,✓,✗,OK
+0137634-56.2024.8.26.0500.pdf,13725004803,✓,9.4,26,✓,✗,,✗,,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✗,✗,✗,✗,✓,✓,✗,✓,✗,OK
+0136921-81.2024.8.26.0500.pdf,16313887891,✓,13.9,11,✓,✗,,✗,,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✗,✗,✓,✗,✓,✗,✓,✓,✗,OK
+0015170-98.2022.8.26.0500.pdf,28455260831,✓,7.3,7,✓,⚠️,Irregularidade(s) passível(eis) de REJEIÇÃO sem pr...,✗,,✓,✓,✗,✓,✓,✓,✓,✓,✓,✓,✗,✗,✗,✗,✓,✗,✗,✓,✗,OK
+0078236-81.2024.8.26.0500.pdf,28455260831,✗,5.8,162,✓,✗,,✗,,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,"Validação falhou: ValidationError: 1 validation error for OficioRequisitorio
+numero_ordem
+  String should match pattern '^\d{1,6}/\d{4}$' [type=string_pattern_mismatch, input_value='19053/202', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/string_pattern_mismatch"
