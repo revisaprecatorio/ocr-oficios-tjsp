@@ -102,3 +102,7 @@ output_*
 *.tar.gz
 1_parsing_PDF/outputs/lote_*.csv
 deploy/
+
+# Exclude large PDF test files
+4_UAT_refinamento/**/*.pdf
+5_revisao_termos/04_amostras_pdf/**/*.pdf

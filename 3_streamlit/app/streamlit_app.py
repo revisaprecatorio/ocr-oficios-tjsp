@@ -92,16 +92,16 @@ def carregar_todos_dados():
             
             # Query para buscar TODOS os dados de uma vez
             query = """
-                SELECT 
+                SELECT
                     id, cpf, numero_processo_cnj, processo_origem, requerente_caps,
                     numero_ordem, vara, processo_execucao, processo_conhecimento,
                     data_ajuizamento, data_transito_julgado, data_base_atualizacao, data_nascimento,
                     advogado_nome, advogado_oab, credor_nome, credor_cpf_cnpj, devedor_ente,
-                    banco, agencia, conta, conta_tipo, tipo_levantamento, 
+                    banco, agencia, conta, conta_tipo, tipo_levantamento,
                     dados_bancarios_advogado, cpf_titular_conta,
                     valor_principal_liquido, valor_principal_bruto, juros_moratorios,
-                    valor_total_requisitado, contrib_previdenciaria_iprem, contrib_previdenciaria_hspm,
-                    valor_compensado, contribuicao_social, salario_pericial, 
+                    valor_total_requisitado, saldo_final, contrib_previdenciaria_iprem, contrib_previdenciaria_hspm,
+                    valor_compensado, contribuicao_social, salario_pericial,
                     assist_tecnico, custas, despesas, multas,
                     idoso, doenca_grave, pcd,
                     preferencial, habilitacao_herdeiros, cessao_credito,

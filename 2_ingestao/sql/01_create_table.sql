@@ -67,6 +67,7 @@ CREATE TABLE IF NOT EXISTS esaj_detalhe_processos (
     valor_principal_bruto NUMERIC(15,2),
     juros_moratorios NUMERIC(15,2),
     valor_total_requisitado NUMERIC(15,2),
+    saldo_final NUMERIC(15,2),
     contrib_previdenciaria_iprem NUMERIC(15,2),
     contrib_previdenciaria_hspm NUMERIC(15,2),
     valor_compensado NUMERIC(15,2),
@@ -129,5 +130,6 @@ COMMENT ON COLUMN esaj_detalhe_processos.process_diagnostico IS 'Flag para contr
 COMMENT ON COLUMN esaj_detalhe_processos.rejeitado IS 'Indica se o ofício foi rejeitado pelo DEPRE';
 COMMENT ON COLUMN esaj_detalhe_processos.timestamp_ingestao IS 'Data/hora da ingestão no banco';
 COMMENT ON COLUMN esaj_detalhe_processos.preferencial IS 'Indica se há pedido de preferência no processo (detectado via regex: preferência|preferencia)';
-COMMENT ON COLUMN esaj_detalhe_processos.habilitacao_herdeiros IS 'Indica se há habilitação de herdeiros no processo (detectado via regex: habilitação de herdeiros)';
-COMMENT ON COLUMN esaj_detalhe_processos.cessao_credito IS 'Indica se há cessão de crédito ou direitos creditórios (detectado via regex: cessão de crédito|cessão de direitos creditórios)';
+COMMENT ON COLUMN esaj_detalhe_processos.habilitacao_herdeiros IS 'Indica se há habilitação de herdeiros no processo (V2.5.2: validado por CPF via código 9270)';
+COMMENT ON COLUMN esaj_detalhe_processos.cessao_credito IS 'Indica se há cessão de crédito (V2.5.2: DESATIVADO - sempre FALSE)';
+COMMENT ON COLUMN esaj_detalhe_processos.saldo_final IS 'Saldo final após pagamento parcial. Se não houver, igual a valor_total_requisitado (V2.5.2)';

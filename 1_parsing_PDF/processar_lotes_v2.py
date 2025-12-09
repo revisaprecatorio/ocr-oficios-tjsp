@@ -19,6 +19,7 @@ from tqdm import tqdm  # Barra de progresso
 sys.path.insert(0, str(Path(__file__).parent))
 
 from app.processador import ProcessadorOficio
+from app.tracker_execucao import TrackerExecucao
 
 # Carregar variáveis de ambiente
 load_dotenv(Path(__file__).parent.parent / ".env")
@@ -151,8 +152,8 @@ def gerar_csv_lote(resultados: List[Dict[str, Any]], lote_num: int, output_dir: 
     return csv_path
 
 
-def processar_pdf(pdf_path: Path, processador: ProcessadorOficio) -> Dict[str, Any]:
-    """Processa um único PDF"""
+def processar_pdf(pdf_path: Path, processador: ProcessadorOficio, logs_dir: Path) -> Dict[str, Any]:
+    """Processa um único PDF com tracking completo"""
     resultado = {
         "pdf": pdf_path.name,
         "cpf": pdf_path.parent.name,
@@ -163,22 +164,41 @@ def processar_pdf(pdf_path: Path, processador: ProcessadorOficio) -> Dict[str, A
         "dados": None,
         "tempo_processamento": 0
     }
-    
+
     try:
-        # Processar com V2 - retorna dict direto
+        # Extrair CPF e número do processo do nome do arquivo
         cpf = pdf_path.parent.name  # CPF da pasta
-        resultado = processador.processar_arquivo(str(pdf_path), cpf)
-        
+        processo = pdf_path.stem  # Número do processo sem .pdf
+
+        # Criar tracker para este CPF
+        tracker = TrackerExecucao(cpf=cpf, processo=processo)
+
+        # Processar com V2 + tracker
+        resultado = processador.processar_arquivo(str(pdf_path), cpf, tracker=tracker)
+
+        # Salvar Markdown
+        if tracker:
+            try:
+                tracker.salvar(str(logs_dir))
+                logger.info(f"📄 Markdown salvo: {cpf}_{processo}_execution.md")
+            except Exception as e_save:
+                logger.error(f"❌ Erro ao salvar Markdown: {e_save}")
+
     except Exception as e:
         resultado["erro"] = str(e)
         logger.error(f"Erro ao processar {pdf_path.name}: {e}")
-    
+
     return resultado
 
 
 def processar_em_lotes(pdfs: List[Path], output_dir: Path, inicio_lote: int = 1):
     """Processa PDFs em lotes de 5"""
-    
+
+    # Criar diretório de logs
+    logs_dir = output_dir / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    print(f"📁 Logs Markdown: {logs_dir}")
+
     # Criar processador
     db_config = {
         "host": os.getenv("DB_HOST", "localhost"),
@@ -187,7 +207,7 @@ def processar_em_lotes(pdfs: List[Path], output_dir: Path, inicio_lote: int = 1)
         "user": os.getenv("DB_USER", "postgres"),
         "password": os.getenv("DB_PASSWORD", "")
     }
-    
+
     processador = ProcessadorOficio(OPENAI_API_KEY, db_config)
     
     # Processar em lotes
@@ -229,7 +249,7 @@ def processar_em_lotes(pdfs: List[Path], output_dir: Path, inicio_lote: int = 1)
             
             # Barra de progresso do lote
             for pdf in tqdm(lote_pdfs, desc=f"  Lote {lote_num}", unit="PDF", leave=False):
-                resultado = processar_pdf(pdf, processador)
+                resultado = processar_pdf(pdf, processador, logs_dir)
                 resultados_lote.append(resultado)
                 
                 # Atualizar estatísticas
