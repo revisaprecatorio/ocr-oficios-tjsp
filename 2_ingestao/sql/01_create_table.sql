@@ -1,8 +1,12 @@
 -- ============================================================================
 -- TABELA: esaj_detalhe_processos
 -- Descrição: Armazena dados extraídos de Ofícios Requisitórios do TJSP
--- Versão: 1.0.0
--- Data: 14/10/2025
+-- Versão: 2.6.0
+-- Data: 09/12/2025
+-- Changelog:
+--   V2.5.2 (04/12/2025): + saldo_final
+--   V2.5.3 (04/12/2025): + obito, data_obito, cpf_sucessor
+--   V2.6.0 (09/12/2025): Schema consolidado com todas as colunas
 -- ============================================================================
 
 CREATE TABLE IF NOT EXISTS esaj_detalhe_processos (
@@ -52,7 +56,7 @@ CREATE TABLE IF NOT EXISTS esaj_detalhe_processos (
     -- ========================================================================
     -- DADOS BANCÁRIOS (ANEXO II)
     -- ========================================================================
-    banco VARCHAR(10),
+    banco VARCHAR(100),  -- V2.6.0: Aumentado de 10 para 100 (fix schema mismatch)
     agencia VARCHAR(20),
     conta VARCHAR(30),
     conta_tipo VARCHAR(20),
@@ -91,7 +95,14 @@ CREATE TABLE IF NOT EXISTS esaj_detalhe_processos (
     preferencial BOOLEAN DEFAULT FALSE,
     habilitacao_herdeiros BOOLEAN DEFAULT FALSE,
     cessao_credito BOOLEAN DEFAULT FALSE,
-    
+
+    -- ========================================================================
+    -- ÓBITO E SUCESSÃO (V2.5.3 - Detector de Habilitação de Herdeiros)
+    -- ========================================================================
+    obito BOOLEAN DEFAULT FALSE,  -- V2.5.3: Indica se requerente faleceu
+    data_obito DATE,  -- V2.5.3: Data do óbito do requerente
+    cpf_sucessor VARCHAR(14),  -- V2.5.3: CPF do herdeiro/sucessor habilitado
+
     -- ========================================================================
     -- CONTROLE DE PROCESSAMENTO
     -- ========================================================================
@@ -130,6 +141,9 @@ COMMENT ON COLUMN esaj_detalhe_processos.process_diagnostico IS 'Flag para contr
 COMMENT ON COLUMN esaj_detalhe_processos.rejeitado IS 'Indica se o ofício foi rejeitado pelo DEPRE';
 COMMENT ON COLUMN esaj_detalhe_processos.timestamp_ingestao IS 'Data/hora da ingestão no banco';
 COMMENT ON COLUMN esaj_detalhe_processos.preferencial IS 'Indica se há pedido de preferência no processo (detectado via regex: preferência|preferencia)';
-COMMENT ON COLUMN esaj_detalhe_processos.habilitacao_herdeiros IS 'Indica se há habilitação de herdeiros no processo (V2.5.2: validado por CPF via código 9270)';
-COMMENT ON COLUMN esaj_detalhe_processos.cessao_credito IS 'Indica se há cessão de crédito (V2.5.2: DESATIVADO - sempre FALSE)';
+COMMENT ON COLUMN esaj_detalhe_processos.habilitacao_herdeiros IS 'Indica se há habilitação de herdeiros no processo (V2.5.3: detectado via código 9270 e termos jurídicos)';
+COMMENT ON COLUMN esaj_detalhe_processos.cessao_credito IS 'Indica se há cessão de crédito (V2.4.0: detectado via regex)';
 COMMENT ON COLUMN esaj_detalhe_processos.saldo_final IS 'Saldo final após pagamento parcial. Se não houver, igual a valor_total_requisitado (V2.5.2)';
+COMMENT ON COLUMN esaj_detalhe_processos.obito IS 'Indica se o requerente faleceu (V2.5.3: detectado via Detector de Habilitação de Herdeiros)';
+COMMENT ON COLUMN esaj_detalhe_processos.data_obito IS 'Data do óbito do requerente (V2.5.3)';
+COMMENT ON COLUMN esaj_detalhe_processos.cpf_sucessor IS 'CPF do herdeiro/sucessor habilitado (V2.5.3: formato XXX.XXX.XXX-XX)';

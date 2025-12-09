@@ -1,7 +1,23 @@
 #!/usr/bin/env python
 """
-Processador de Ofícios em Lotes V2
-Versão 2.1 - Com validação de CPF, extração seletiva e barra de progresso
+Pipeline Consolidado de Processamento de Ofícios Requisitórios - V2.6.0
+
+Script principal para processar PDFs de ofícios em lotes.
+Utiliza ProcessadorOficio V2.6.0 com data quality aprimorada.
+
+Funcionalidades:
+- Processamento em lotes com tamanho configurável
+- Validação de CPF e extração seletiva
+- Barra de progresso (tqdm)
+- Geração de CSVs e JSONs
+- Tracking completo de execução
+
+Uso:
+    python3 processar_pipeline.py                    # Processar todos os lotes
+    python3 processar_pipeline.py --lotes 4,5,6,7    # Processar lotes específicos
+    python3 processar_pipeline.py --all --force      # Reprocessar tudo
+
+Versão: V2.6.0 (consolidado de processar_lotes_v2.py + melhorias)
 """
 
 import os

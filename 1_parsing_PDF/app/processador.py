@@ -1,6 +1,17 @@
 """
-ProcessadorOficio V2 - Pipeline otimizado com validação de CPF e extração seletiva.
-Versão 2.0 - Processa apenas páginas relevantes, valida CPF, extrai número de ordem
+ProcessadorOficio V2.6.0 - Pipeline consolidado com data quality aprimorada.
+
+V2.6.0 = V2.5.3 + Melhorias Críticas:
+1. ✅ Exemplos explícitos no prompt (valores brasileiros) - já em V2.5.3
+2. ✅ Verificação rigorosa de tipos de dados (NOVO)
+3. ✅ Validação de sanidade de valores (NOVO)
+
+Histórico:
+- V2.5.3: Detecção de habilitação de herdeiros, óbito, doença grave
+- V2.5.2: Detecção de saldo final
+- V2.6.0: Consolidação com data quality aprimorada (unificação com V3)
+
+Meta: Taxa de sucesso ≥98% (vs 96.1% em V2.5.1)
 """
 
 import os
@@ -9,8 +20,9 @@ import logging
 import time
 import re
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from datetime import datetime
+from decimal import Decimal
 
 import pymupdf
 from openai import OpenAI
@@ -63,7 +75,13 @@ class ProcessadorOficio:
         self.detector_saldo = DetectorSaldoFinal()  # V2.5.2: Novo detector
         self.detector_habilitacao = DetectorHabilitacaoHerdeiros()  # V2.5.3: Novo detector
 
-        logger.info("ProcessadorOficio V2.5.3 inicializado (com Saldo Final + Habilitação Herdeiros + Doença Grave)")
+        logger.info("=" * 80)
+        logger.info("🚀 ProcessadorOficio V2.6.0 inicializado")
+        logger.info("=" * 80)
+        logger.info("✅ V2.5.2: Detector Saldo Final")
+        logger.info("✅ V2.5.3: Detector Habilitação Herdeiros + Doença Grave + Óbito")
+        logger.info("✅ V2.6.0: Verificação de tipos + Validação de sanidade")
+        logger.info("=" * 80)
     
     def processar_arquivo(self, pdf_path: str, cpf_numerico: str, tracker: Optional[TrackerExecucao] = None) -> Dict[str, Any]:
         """
@@ -564,11 +582,31 @@ class ProcessadorOficio:
                     logger.info(f"✅ CPF validado: {cpf_extraido} corresponde ao esperado")
             else:
                 logger.warning("⚠️ CPF não extraído pelo LLM (campo credor_cpf_cnpj vazio)")
-            
+
+            # 8.5. V2.6.0: Validação de sanidade de valores
+            alertas_sanidade = self._validar_sanidade_valores(
+                dados_oficio,
+                cpf_formatado,
+                dados_oficio.get('processo_origem', '')
+            )
+
+            if alertas_sanidade:
+                logger.warning("=" * 80)
+                logger.warning("🚨 ALERTAS DE SANIDADE DETECTADOS (V2.6.0):")
+                for alerta in alertas_sanidade:
+                    logger.warning(f"   {alerta}")
+                logger.warning("=" * 80)
+
+                if tracker:
+                    tracker.adicionar_linha_vazia()
+                    tracker.adicionar_secao("## 8. Alertas de Sanidade (V2.6.0)")
+                    for alerta in alertas_sanidade:
+                        tracker.adicionar_item(alerta, nivel=0, emoji="⚠️")
+
             # 9. Validar com Pydantic (com fallback se necessário)
             if tracker:
                 tracker.adicionar_linha_vazia()
-                tracker.adicionar_secao("## 8. Validação Pydantic")
+                tracker.adicionar_secao("## 9. Validação Pydantic")
                 tracker.adicionar_item("Validando dados extraídos...", nivel=0, emoji="🔍")
 
             try:
@@ -1001,6 +1039,10 @@ class ProcessadorOficio:
                 provider=self.llm_provider_enum.GEMINI
             )
             logger.info("✅ Gemini: Extração bem-sucedida!")
+
+            # V2.6.0: Aplicar verificação de tipos
+            dados = self._verificar_e_corrigir_tipos(dados)
+
             return dados
         
         except Exception as e:
@@ -1024,8 +1066,12 @@ class ProcessadorOficio:
                 provider=self.llm_provider_enum.OPENAI
             )
             logger.info("✅ OpenAI: Extração bem-sucedida (fallback)!")
+
+            # V2.6.0: Aplicar verificação de tipos
+            dados = self._verificar_e_corrigir_tipos(dados)
+
             return dados
-        
+
         except Exception as e:
             logger.error(f"❌ Ambos LLMs falharam! Último erro (OpenAI): {e}")
             return None
@@ -1620,7 +1666,165 @@ Retorne APENAS JSON FLAT válido:"""
         except Exception as e:
             logger.error(f"Erro na chamada LLM: {e}")
             return None
-    
+
+    def _verificar_e_corrigir_tipos(self, dados: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        V2.6.0 - MELHORIA #2: Verifica e corrige tipos de dados (especialmente valores monetários).
+
+        Garante que:
+        - Valores monetários são numbers (não strings)
+        - Strings numéricas são convertidas para float
+        - Valores None/null são preservados
+
+        Args:
+            dados: Dicionário com dados extraídos do LLM
+
+        Returns:
+            Dados com tipos corrigidos
+        """
+        campos_monetarios = [
+            'valor_principal_liquido',
+            'valor_principal_bruto',
+            'juros_moratorios',
+            'valor_total_requisitado',
+            'saldo_final',
+            'contrib_previdenciaria_iprem',
+            'contrib_previdenciaria_hspm',
+            'valor_compensado',
+            'contribuicao_social',
+            'salario_pericial',
+            'assist_tecnico',
+            'custas',
+            'despesas',
+            'multas'
+        ]
+
+        for campo in campos_monetarios:
+            if campo in dados and dados[campo] is not None:
+                valor = dados[campo]
+
+                # Se for string, tentar converter
+                if isinstance(valor, str):
+                    logger.warning(f"🔧 V2.6.0: {campo} retornado como STRING: '{valor}' - convertendo...")
+
+                    try:
+                        # Limpar e converter
+                        valor_limpo = valor.replace('R$', '').replace(' ', '').strip()
+
+                        # Formato brasileiro: trocar . por nada e , por .
+                        if ',' in valor_limpo:
+                            valor_limpo = valor_limpo.replace('.', '').replace(',', '.')
+
+                        valor_convertido = float(valor_limpo)
+                        dados[campo] = valor_convertido
+                        logger.info(f"   ✅ Convertido para: {valor_convertido}")
+
+                    except (ValueError, AttributeError) as e:
+                        logger.error(f"   ❌ Erro ao converter '{valor}': {e}")
+                        dados[campo] = None
+
+                # Se for int, converter para float
+                elif isinstance(valor, int):
+                    dados[campo] = float(valor)
+
+        return dados
+
+    def _validar_sanidade_valores(
+        self,
+        dados: Dict[str, Any],
+        cpf: str,
+        processo: str
+    ) -> List[str]:
+        """
+        V2.6.0 - MELHORIA #3: Validação de sanidade para detectar parsing incorreto.
+
+        Verifica:
+        1. Valores muito baixos (< R$ 100 ou < R$ 1.000)
+        2. Inversão líquido/bruto
+        3. Inconsistência entre total declarado e calculado
+        4. Valores zerados em campos obrigatórios
+
+        Args:
+            dados: Dicionário com dados extraídos
+            cpf: CPF do processo (para logging)
+            processo: Número do processo (para logging)
+
+        Returns:
+            Lista de alertas de sanidade
+        """
+        alertas = []
+
+        # Extrair valores
+        liquido = dados.get('valor_principal_liquido') or 0
+        bruto = dados.get('valor_principal_bruto') or 0
+        juros = dados.get('juros_moratorios') or 0
+        total = dados.get('valor_total_requisitado') or 0
+
+        # 1. Verificar valores muito baixos (possível parsing incorreto)
+        if liquido > 0 and liquido < 100:
+            alertas.append(
+                f"🚨 CRÍTICO: Valor líquido R$ {liquido:,.2f} < R$ 100 "
+                f"(possível parsing incorreto! Ex: 73.431,66 → 73,43)"
+            )
+        elif liquido > 0 and liquido < 1000:
+            alertas.append(
+                f"⚠️  SUSPEITO: Valor líquido R$ {liquido:,.2f} < R$ 1.000 "
+                f"(revisar se não foi truncado)"
+            )
+
+        if bruto > 0 and bruto < 100:
+            alertas.append(
+                f"🚨 CRÍTICO: Valor bruto R$ {bruto:,.2f} < R$ 100 "
+                f"(possível parsing incorreto!)"
+            )
+        elif bruto > 0 and bruto < 1000:
+            alertas.append(
+                f"⚠️  SUSPEITO: Valor bruto R$ {bruto:,.2f} < R$ 1.000 "
+                f"(revisar se não foi truncado)"
+            )
+
+        if total > 0 and total < 100:
+            alertas.append(
+                f"🚨 CRÍTICO: Valor total R$ {total:,.2f} < R$ 100 "
+                f"(possível parsing incorreto!)"
+            )
+        elif total > 0 and total < 1000:
+            alertas.append(
+                f"⚠️  SUSPEITO: Valor total R$ {total:,.2f} < R$ 1.000"
+            )
+
+        # 2. Verificar inversão líquido/bruto
+        if liquido > 0 and bruto > 0 and liquido > bruto:
+            alertas.append(
+                f"🚨 INVERSÃO DETECTADA: Líquido (R$ {liquido:,.2f}) > Bruto (R$ {bruto:,.2f}) "
+                f"- CAMPOS INVERTIDOS!"
+            )
+
+        # 3. Verificar consistência de totais (com tolerância de R$ 500)
+        if total > 0 and bruto > 0:
+            total_calculado = bruto + juros
+            diferenca = abs(total - total_calculado)
+
+            if diferenca > 500:
+                alertas.append(
+                    f"⚠️  INCONSISTÊNCIA: Total declarado (R$ {total:,.2f}) vs "
+                    f"calculado (R$ {total_calculado:,.2f}) - diferença: R$ {diferenca:,.2f}"
+                )
+
+        # 4. Verificar valores zerados em campos importantes
+        if liquido == 0 and bruto == 0:
+            alertas.append(
+                f"🚨 CRÍTICO: Valores principal líquido e bruto ZERADOS "
+                f"(possível falha na extração!)"
+            )
+
+        if total == 0:
+            alertas.append(
+                f"⚠️  ATENÇÃO: Valor total requisitado ZERADO"
+            )
+
+        return alertas
+
     def salvar_postgres(self, resultado: Dict[str, Any]) -> bool:
         """
         Salva dados no PostgreSQL (upsert).
