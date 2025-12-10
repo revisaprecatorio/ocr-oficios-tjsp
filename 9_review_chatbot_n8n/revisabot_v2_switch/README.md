@@ -88,3 +88,36 @@ revisabot_v2_switch/
 ### Workflow ID
 
 - **Produção**: `bXqi8RykpGxXMBGE`
+
+---
+
+## Padrão de Gerenciamento de Sessão (CPF 00000000000)
+
+### Como funciona
+
+O `Update State` node usa CPF `00000000000` como um **registro de sessão por usuário**, NÃO um registro global compartilhado.
+
+A constraint UNIQUE é em `(whatsapp_from, cpf)`, significando:
+- Usuário A: `(5511941455345, 00000000000)` → registro único
+- Usuário B: `(5511999999999, 00000000000)` → registro separado único
+
+### Segurança Multi-usuário
+
+| Cenário | Seguro? | Motivo |
+|---------|---------|--------|
+| Múltiplos usuários simultâneos | ✅ Sim | Cada usuário tem seu próprio `whatsapp_from` |
+| Execuções paralelas no n8n | ✅ Sim | PostgreSQL UPSERT é atômico |
+| Conflito de dados | ✅ Não há | Constraint UNIQUE garante isolamento |
+
+### Estrutura de Dados Atual (Fragmentada)
+
+```
+Usuário 5511941455345:
+├── Registro 1: cpf=00000000000, email=..., code=..., state=AWAITING_PAYMENT (dados de sessão)
+├── Registro 2: cpf=57629080891, nome=Elio Rodrigues, processos=5 (dados da consulta)
+└── Registro 3: cpf=08212993876, nome=Maria Lucia, processos=1 (dados da consulta)
+```
+
+### Melhoria Futura
+
+Consolidar dados de sessão e consulta em um único registro por consulta, atualizando o registro mais recente em vez de usar o placeholder CPF `00000000000`.
