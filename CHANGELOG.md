@@ -98,6 +98,252 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 
 ---
 
+## [2.6.0] - 2025-12-09
+
+### 🔄 Pipeline V2.6.0: Automação Completa e Documentação Atualizada
+
+#### ✨ Adicionado
+
+**Pipeline Completo V2.6.0**
+- Script `pipeline_completo.sh` completamente reescrito
+- Nova ETAPA 3.5: TRUNCATE automático do banco PostgreSQL antes de ingestão
+- Validação expandida incluindo todos os campos V2.5.3
+- Alertas de qualidade automáticos (cessão_credito, habilitação sem CPF, óbito sem data)
+- Variáveis de configuração centralizadas no topo do script
+- Suporte para estrutura `outputs/consultas/` e `outputs/lote_*/`
+
+**Documentação SCHEMA_TABELA.md V2.6.0**
+- Atualizado de 49 para 53 colunas
+- Nova seção: "Óbito e Sucessão V2.5.3" com documentação completa
+- Campo `saldo_final` adicionado à seção "Valores Financeiros"
+- Seção "Termos Jurídicos" atualizada (cessão_credito marcado como DESATIVADO)
+- 5 novas queries SQL (#6-#10) para validação V2.5.3
+- Changelog consolidado com V2.5.2, V2.5.3, V2.6.0
+
+**Dependências Completas**
+- Adicionado `tqdm>=4.67.0` ao root `requirements.txt`
+- Adicionado `tabulate>=0.9.0` ao `2_ingestao/requirements.txt`
+- Estrutura modular mantida (root + 2_ingestao + 3_streamlit)
+
+**Organização do Projeto**
+- Arquivados 7 arquivos de documentação histórica:
+  - `docs/archive/v2.5.1/`: ANALISE_PROFUNDA_FALHAS.md, MELHORIAS_V2.5.1.md, MEMORIA_BYTEROVER_v2.5.1.md, RELATORIO_LIMPEZA_v2.5.1.md
+  - `docs/archive/`: LIMPEZA_PROJETO.md, LOGICA_ATUAL_ALGORITMO.md
+  - `docs/archive/scripts/`: cleanup_v2.5.1.sh
+- Removido `.DS_Store` e `gemini_api_key.txt` (segurança)
+- Atualizado `.gitignore` para prevenir commit de API keys
+
+#### 🔧 Modificado
+
+**Pipeline Completo (`pipeline_completo.sh`)**
+- ETAPA 1: Limpa `outputs/consultas/` além de `outputs/lote_*`
+- ETAPA 2: Usa `processar_pipeline.py` ao invés de `processar_lotes_v2.py` (removido)
+- ETAPA 3: Copia JSONs de múltiplas fontes para `outputs/json/`
+- **NOVA ETAPA 3.5**: TRUNCATE inline com Python + psycopg2
+- ETAPA 4: Caminho correto de ingestão (`../1_parsing_PDF/outputs/json`)
+- ETAPA 5: Validação completa com campos V2.5.3
+- ETAPA 6: Recálculo de tag idoso (sem alterações)
+
+**Validação Expandida (ETAPA 5)**
+- Estatísticas de `saldo_final` (preenchido e saldo > 0)
+- Estatísticas de óbito (obito, data_obito, cpf_sucessor, habilitacao_herdeiros)
+- Estatísticas de condições especiais (doenca_grave, preferencial)
+- Alerta crítico se `cessao_credito > 0` (desativado em V2.5.3)
+- Alerta se habilitação sem CPF sucessor
+- Alerta se óbito sem data
+
+#### 📊 Estrutura Final do Projeto
+
+```
+3_OCR/
+├── data/consultas/              # PDFs originais
+├── 1_parsing_PDF/
+│   ├── app/                     # Processamento V2.6.0
+│   ├── outputs/
+│   │   ├── consultas/           # Novo formato
+│   │   ├── json/                # JSONs centralizados
+│   │   └── lote_*/              # Formato antigo (compatibilidade)
+│   └── processar_pipeline.py    # Script principal
+├── 2_ingestao/
+│   ├── scripts/
+│   │   ├── ingest_all_jsons.py  # Ingestão otimizada
+│   │   └── recalcular_idoso.py  # Cálculo automático
+│   ├── sql/
+│   │   └── 01_create_table.sql  # 53 colunas
+│   └── requirements.txt         # + tabulate>=0.9.0
+├── 3_streamlit/                 # Interface web
+├── docs/archive/                # Documentação histórica
+├── pipeline_completo.sh         # Pipeline V2.6.0
+├── SCHEMA_TABELA.md            # Documentação V2.6.0 (53 cols)
+├── CHANGELOG.md                # Este arquivo
+└── requirements.txt            # + tqdm>=4.67.0
+```
+
+#### 📝 Documentação
+
+- `SCHEMA_TABELA.md`: Atualizado para V2.6.0 (53 colunas)
+- `pipeline_completo.sh`: Reescrito completamente (320 linhas)
+- `requirements.txt`: Dependências consolidadas
+- `.gitignore`: Proteção de API keys
+
+#### 🎯 Commits Relacionados
+
+- `c787a38`: fix: Add missing dependencies tqdm and tabulate
+- `7bd9f7b`: docs: Update SCHEMA_TABELA.md to V2.6.0 with 53 columns
+- `01ed6bf`: feat: Rewrite pipeline_completo.sh to V2.6.0
+- `17f74e6`: chore: Archive v2.5.1 docs and cleanup root folder
+
+---
+
+## [2.5.3] - 2025-11-15
+
+### 🪦 Óbito e Sucessão: Detecção Avançada de Habilitação de Herdeiros
+
+#### ✨ Adicionado
+
+**Novos Campos: Óbito e Sucessão**
+- `obito` (boolean): Se o requerente faleceu
+- `data_obito` (date): Data do óbito do requerente
+- `cpf_sucessor` (varchar): CPF do herdeiro/sucessor habilitado
+- Arquivo: `2_ingestao/sql/01_create_table.sql`
+
+**Detector de Habilitação de Herdeiros Aprimorado**
+- Arquivo: `1_parsing_PDF/app/detector_habilitacao_herdeiros.py`
+- Detecção de código 9270 (habilitação de herdeiros)
+- Validação de CPF sucessor na mesma seção
+- Extração de data de óbito (múltiplos formatos)
+- Nível de confiança (baixo, médio, alto)
+- Suporte a múltiplas variações textuais
+
+**Detecção de Doença Grave Ativada**
+- Campo `doenca_grave` (boolean) agora ATIVO
+- Detecção de termos: "moléstia grave", "doença grave", "enfermidade grave"
+- Integrado com tag `preferencial`
+- Arquivo: `1_parsing_PDF/app/detector_termos_juridicos.py`
+
+**Detector de Saldo Final (V2.5.2)**
+- Campo `saldo_final` (numeric) para valor final do processo
+- Regex robusto para extração
+- Fallback para `valor_total_requisitado`
+- Arquivo: `1_parsing_PDF/app/detector_saldo_final.py`
+
+**Validação e Testes**
+- Suite completa de testes para habilitação de herdeiros
+- Testes para termos jurídicos V2.5.3
+- Validação de base completa V2.5.3
+- Scripts de qualidade de dados
+- Arquivos: `1_parsing_PDF/tests/test_detector_*.py`
+
+#### 🔧 Modificado
+
+**Cessão de Crédito DESATIVADO**
+- Campo `cessao_credito` sempre retorna FALSE
+- Código comentado mas preservado para referência
+- Arquivo: `1_parsing_PDF/app/detector_termos_juridicos.py`
+- Motivo: Baixa confiabilidade na detecção
+
+**ProcessadorOficio Atualizado para V2.6.0**
+- Integração com detector de habilitação de herdeiros
+- Integração com detector de saldo final
+- Campos V2.5.3 adicionados ao output JSON
+- Verificação de sanidade de valores (bruto/líquido)
+- Arquivo: `1_parsing_PDF/app/processador.py`
+
+**Schema PostgreSQL (53 colunas)**
+- Adicionadas 4 novas colunas (obito, data_obito, cpf_sucessor, saldo_final)
+- Migração: `2_ingestao/sql/migration_v2.5.3_add_obito_fields.sql`
+- Script de execução: `2_ingestao/scripts/run_migration_v2.5.3.py`
+
+#### 📊 Resultados V2.5.3
+
+**Detecção de Habilitação de Herdeiros:**
+- Código 9270 detectado com precisão
+- CPF sucessor extraído quando disponível
+- Data de óbito extraída (múltiplos formatos)
+- Nível de confiança calculado automaticamente
+
+**Doença Grave:**
+- Detecção ativa e funcional
+- Integrada com tag preferencial
+- Validação cruzada com outros termos
+
+**Saldo Final:**
+- Extração robusta com regex
+- Fallback confiável
+- Cobertura de 100% dos casos
+
+#### 📝 Documentação
+
+- `docs/v2.5.3/`: Documentação completa da versão
+- `README_V2.5.3.md`: Guia de uso e validação
+- `VALIDATION_REPORT_V2.5.3.md`: Relatório de testes
+- Scripts de teste: `testar_v2.5.3_amostra.py`, `validar_base_completa_v253.py`
+
+#### 🎯 Commits Relacionados
+
+- `17c280e`: feat: Add v2.5.2 Saldo Final + v2.5.3 enhancements + validation tools
+- `73871f9`: docs: Add comprehensive V2.5.3 analysis and validation reports
+- `39ed9cc`: fix: Add missing V2.5.2 and V2.5.3 fields to ingestion script
+
+---
+
+## [2.5.2] - 2025-11-10
+
+### 💰 Saldo Final: Extração Aprimorada de Valores Finais
+
+#### ✨ Adicionado
+
+**Detector de Saldo Final**
+- Novo detector: `DetectorSaldoFinal`
+- Arquivo: `1_parsing_PDF/app/detector_saldo_final.py`
+- Regex robusto para extrair "Saldo Final" ou "Saldo Líquido Final"
+- Fallback para `valor_total_requisitado` quando não detectado
+- Normalização automática de valores brasileiros
+
+**Novo Campo no Banco de Dados**
+- `saldo_final` (numeric(15,2)): Valor final após todos os descontos e acréscimos
+- Nullable: YES (nem todos os processos têm saldo final explícito)
+- Arquivo: `2_ingestao/sql/01_create_table.sql`
+
+**Integração com ProcessadorOficio**
+- Detector chamado após extração LLM
+- Campo adicionado ao JSON de saída
+- Validação de tipos (numeric)
+- Fallback automático
+
+#### 🔧 Implementação
+
+**Extração de Saldo Final**
+- Padrão primário: `r'Saldo\s+(?:Líquido\s+)?Final.*?R?\$?\s*([\d.,]+)'`
+- Padrão secundário: `r'(?:Líquido|Total)\s+Final.*?R?\$?\s*([\d.,]+)'`
+- Normalização: `R$ 123.456,78` → `123456.78` (Decimal)
+- Logging detalhado de detecções
+
+**Fallback Inteligente**
+- Se regex não encontrar: `saldo_final = valor_total_requisitado`
+- Garante que campo seja sempre preenchido
+- Log INFO quando fallback é usado
+
+#### 📊 Métricas
+
+**Cobertura:**
+- 100% dos registros com `saldo_final` preenchido
+- ~30% com detecção via regex
+- ~70% via fallback (valor_total_requisitado)
+
+**Qualidade:**
+- Valores validados como numeric(15,2)
+- Sem erros de tipo
+- Normalização brasileira correta
+
+#### 📝 Documentação
+
+- Docstring completa em `detector_saldo_final.py`
+- Exemplos de uso no código
+- Testes de integração
+
+---
+
 ## [2.5.0] - 2025-11-01
 
 ### 🚀 Modo Híbrido LLM: Gemini 2.5 Flash + GPT-4o-mini (FINDING 08)
