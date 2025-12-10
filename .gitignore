@@ -34,6 +34,11 @@ env/
 !**/.env.example
 config_db.env
 
+# API Keys (sensitive)
+gemini_api_key.txt
+*_api_key.txt
+*.key
+
 # IDE
 .vscode/
 .idea/
