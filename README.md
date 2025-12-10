@@ -40,14 +40,16 @@ graph LR
 
 ### **Métricas da Versão Atual (v2.6.0)**
 
-```mermaid
-%%{init: {'theme':'base'}}%%
-xychart-beta
-    title "Taxa de Sucesso por Lote - V2.6.0"
-    x-axis ["Lote 1" , "Lote 2", "Lote 3", "Média"]
-    y-axis "Taxa de Sucesso (%)" 0 --> 100
-    bar [100, 80, 40, 73.3]
-```
+**Taxa de Sucesso por Lote:**
+
+| Lote | PDFs | Sucesso | Taxa |
+|------|------|---------|------|
+| **Lote 1** | 5 | 5 | 🟢 **100%** |
+| **Lote 2** | 5 | 4 | 🟡 **80%** |
+| **Lote 3** | 5 | 2 | 🔴 **40%** |
+| **TOTAL** | **15** | **11** | **73.3%** |
+
+**Comparativo com Versão Anterior:**
 
 | Métrica | V2.5.3 | V2.6.0 | Status |
 |---------|---------|---------|--------|
