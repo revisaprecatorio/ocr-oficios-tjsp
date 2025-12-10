@@ -1,16 +1,17 @@
 # 📋 Schema Completo da Tabela `esaj_detalhe_processos`
 
-Documentação completa de todas as 49 colunas da tabela PostgreSQL.
+Documentação completa de todas as 53 colunas da tabela PostgreSQL.
 
 ---
 
 ## 📊 **Resumo**
 
 - **Tabela:** `esaj_detalhe_processos`
-- **Total de colunas:** 49
+- **Total de colunas:** 53
 - **Primary Key:** `id` (auto-increment)
 - **Unique Constraint:** `(cpf, numero_processo_cnj)`
 - **Banco:** PostgreSQL na VPS (72.60.62.124:5432)
+- **Versão:** V2.6.0 (09/12/2025)
 
 ---
 
@@ -154,6 +155,7 @@ Documentação completa de todas as 49 colunas da tabela PostgreSQL.
 | `valor_principal_bruto` | numeric | YES | Valor principal bruto |
 | `juros_moratorios` | numeric | YES | Juros moratórios |
 | `valor_total_requisitado` | numeric | YES | Valor total requisitado |
+| `saldo_final` | numeric | YES | **V2.5.2:** Saldo final após pagamento parcial |
 | `contrib_previdenciaria_iprem` | numeric | YES | Contribuição previdenciária IPREM |
 | `contrib_previdenciaria_hspm` | numeric | YES | Contribuição previdenciária HSPM |
 | `valor_compensado` | numeric | YES | Valor compensado |
@@ -166,6 +168,11 @@ Documentação completa de todas as 49 colunas da tabela PostgreSQL.
 
 **Formato:** `DECIMAL(15,2)` - Valores em reais (R$)
 
+**Saldo Final (V2.5.2):**
+- Detectado via regex em demonstrativos DEPRE
+- Padrões: "Saldo final após pagamento", "Saldo Final"
+- **Fallback**: Se não detectado, `saldo_final = valor_total_requisitado`
+
 **Exemplo:**
 ```json
 {
@@ -173,6 +180,7 @@ Documentação completa de todas as 49 colunas da tabela PostgreSQL.
   "valor_principal_bruto": 180000.00,
   "juros_moratorios": 30000.00,
   "valor_total_requisitado": 210000.00,
+  "saldo_final": 175000.00,
   "contrib_previdenciaria_iprem": 5000.00,
   "contrib_previdenciaria_hspm": 3000.00,
   "valor_compensado": 0.00,
@@ -192,11 +200,12 @@ Documentação completa de todas as 49 colunas da tabela PostgreSQL.
 | Coluna | Tipo | Nullable | Descrição |
 |--------|------|----------|-----------|
 | `idoso` | boolean | YES | Se o requerente é idoso (≥60 anos) |
-| `doenca_grave` | boolean | YES | Se o requerente tem doença grave |
+| `doenca_grave` | boolean | YES | **V2.5.3:** Se o requerente tem doença grave |
 | `pcd` | boolean | YES | Se o requerente é PCD |
 
 **Cálculo automático:**
 - `idoso`: Calculado a partir de `data_nascimento` (idade ≥ 60 anos)
+- `doenca_grave`: Detectado via regex (termos: "doença grave", "moléstia grave", "laudo médico")
 
 **Exemplo:**
 ```json
@@ -209,25 +218,94 @@ Documentação completa de todas as 49 colunas da tabela PostgreSQL.
 
 ---
 
-## 📜 **Termos Jurídicos (v2.4.0)**
+## 📜 **Termos Jurídicos (V2.5.3)**
 
 | Coluna | Tipo | Nullable | Default | Descrição |
 |--------|------|----------|---------|-----------|
 | `preferencial` | boolean | YES | FALSE | Pedido de preferência detectado |
-| `habilitacao_herdeiros` | boolean | YES | FALSE | Habilitação de herdeiros detectada |
-| `cessao_credito` | boolean | YES | FALSE | Cessão de crédito detectada |
+| `habilitacao_herdeiros` | boolean | YES | FALSE | Habilitação de herdeiros detectada (código 9270) |
+| `cessao_credito` | boolean | YES | FALSE | ⚠️ **DESATIVADO** em V2.5.3 (sempre FALSE) |
 
-**Detecção via Regex (case-insensitive):**
-- `preferencial`: Busca "preferência" ou "preferencia"
-- `habilitacao_herdeiros`: Busca "habilitação de herdeiros"
-- `cessao_credito`: Busca "cessão de crédito" ou "cessão de direitos creditórios"
+**Detecção (V2.5.3):**
+
+### **`preferencial`**
+- Busca "preferência" ou "preferencia" (case-insensitive)
+- Pattern: `prefer[eê]ncia`
+
+### **`habilitacao_herdeiros`**
+- **V2.5.3**: Lógica avançada com validação de CPF
+- Busca código **9270 - Habilitação de Herdeiro de Precatório**
+- Valida estrutura "Dados da Sucessão"
+- Valida que CPF do sucessor = CPF objeto
+- **Níveis de confiança:**
+  - ALTA: Código 9270 + estrutura completa
+  - MÉDIA: 2+ indicadores sem código
+  - BAIXA: 1 indicador apenas
+
+### **`cessao_credito`** ⚠️
+- **DESATIVADO em V2.5.3** (sempre retorna FALSE)
+- Removido a pedido do cliente
+- Pattern comentado no código para histórico
+- **⚠️ ALERTA**: Se houver registros com `cessao_credito=TRUE`, há erro no processamento!
 
 **Exemplo:**
 ```json
 {
   "preferencial": true,
-  "habilitacao_herdeiros": false,
-  "cessao_credito": true
+  "habilitacao_herdeiros": true,
+  "cessao_credito": false
+}
+```
+
+---
+
+## 🪦 **Óbito e Sucessão (V2.5.3)**
+
+| Coluna | Tipo | Nullable | Default | Descrição |
+|--------|------|----------|---------|-----------|
+| `obito` | boolean | YES | FALSE | Se o requerente faleceu |
+| `data_obito` | date | YES | NULL | Data do óbito do requerente |
+| `cpf_sucessor` | varchar(14) | YES | NULL | CPF do herdeiro/sucessor habilitado |
+
+**Detecção via Detector de Habilitação de Herdeiros V1.0:**
+- Busca código **9270** no TERMO DE DECLARAÇÃO do e-SAJ
+- Valida estrutura "Dados da Sucessão"
+- Extrai informações:
+  - Data de óbito (formato DD/MM/YYYY)
+  - CPF do sucessor (formato XXX.XXX.XXX-XX)
+- **Níveis de confiança**: ALTA, MÉDIA, BAIXA
+
+**Padrões de detecção de óbito:**
+- `óbito`, `falecimento`, `falecido`, `de cujus`
+- `autor falecido`, `requerente falecido`
+
+**Exemplo (Com Óbito e Habilitação):**
+```json
+{
+  "obito": true,
+  "data_obito": "2023-05-15",
+  "cpf_sucessor": "123.456.789-00",
+  "habilitacao_herdeiros": true
+}
+```
+
+**Exemplo (Óbito sem Habilitação):**
+```json
+{
+  "obito": true,
+  "data_obito": null,
+  "cpf_sucessor": null,
+  "habilitacao_herdeiros": false
+}
+```
+
+**Exemplo (Sem Óbito):**
+```json
+{
+  "obito": false,
+  "data_obito": null,
+  "cpf_sucessor": null,
+  "habilitacao_herdeiros": false
 }
 ```
 
@@ -285,7 +363,7 @@ Documentação completa de todas as 49 colunas da tabela PostgreSQL.
 ```json
 {
   "caminho_pdf": "../data/consultas/02174781824/0035938-67.2018.8.26.0053.pdf",
-  "timestamp_ingestao": "2025-10-16T00:24:02.123456"
+  "timestamp_ingestao": "2025-12-09T21:40:11.123456"
 }
 ```
 
@@ -297,7 +375,7 @@ Documentação completa de todas as 49 colunas da tabela PostgreSQL.
 
 ```sql
 SELECT column_name, data_type, is_nullable
-FROM information_schema.columns 
+FROM information_schema.columns
 WHERE table_name = 'esaj_detalhe_processos'
 ORDER BY ordinal_position;
 ```
@@ -307,7 +385,7 @@ ORDER BY ordinal_position;
 ```sql
 SELECT cpf, numero_processo_cnj, numero_ordem, rejeitado
 FROM esaj_detalhe_processos
-WHERE numero_ordem IS NOT NULL 
+WHERE numero_ordem IS NOT NULL
   AND rejeitado = TRUE;
 ```
 
@@ -316,7 +394,7 @@ WHERE numero_ordem IS NOT NULL
 ### **3. Estatísticas por status**
 
 ```sql
-SELECT 
+SELECT
   COUNT(*) as total,
   COUNT(CASE WHEN rejeitado = TRUE THEN 1 END) as rejeitados,
   COUNT(CASE WHEN numero_ordem IS NOT NULL THEN 1 END) as com_numero_ordem,
@@ -331,8 +409,8 @@ FROM esaj_detalhe_processos;
 SELECT cpf, numero_processo_cnj, requerente_caps,
        banco, agencia, conta, conta_tipo
 FROM esaj_detalhe_processos
-WHERE banco IS NOT NULL 
-  AND agencia IS NOT NULL 
+WHERE banco IS NOT NULL
+  AND agencia IS NOT NULL
   AND conta IS NOT NULL;
 ```
 
@@ -344,6 +422,79 @@ SELECT cpf, numero_processo_cnj, requerente_caps,
 FROM esaj_detalhe_processos
 ORDER BY timestamp_ingestao DESC
 LIMIT 10;
+```
+
+### **6. Análise de Saldo Final (V2.5.2)**
+
+```sql
+SELECT
+  COUNT(*) as total,
+  COUNT(CASE WHEN saldo_final IS NOT NULL THEN 1 END) as com_saldo_final,
+  COUNT(CASE WHEN saldo_final > 0 THEN 1 END) as saldo_positivo,
+  ROUND(AVG(saldo_final), 2) as media_saldo,
+  ROUND(SUM(saldo_final), 2) as soma_saldo
+FROM esaj_detalhe_processos;
+```
+
+### **7. Análise de Óbito e Sucessão (V2.5.3)**
+
+```sql
+SELECT
+  COUNT(CASE WHEN obito = TRUE THEN 1 END) as com_obito,
+  COUNT(CASE WHEN data_obito IS NOT NULL THEN 1 END) as com_data_obito,
+  COUNT(CASE WHEN cpf_sucessor IS NOT NULL THEN 1 END) as com_cpf_sucessor,
+  COUNT(CASE WHEN habilitacao_herdeiros = TRUE THEN 1 END) as habilitacoes_confirmadas
+FROM esaj_detalhe_processos;
+```
+
+### **8. Validação de Cessão de Crédito (V2.5.3)**
+
+```sql
+-- ⚠️ Esperado: 0 registros (cessão foi desativada em V2.5.3)
+SELECT cpf, numero_processo_cnj, requerente_caps, cessao_credito
+FROM esaj_detalhe_processos
+WHERE cessao_credito = TRUE;
+```
+
+**Se retornar registros:** Há erro no processamento! Cessão foi desativada.
+
+### **9. Condições Especiais Agregadas (V2.5.3)**
+
+```sql
+SELECT
+  COUNT(CASE WHEN idoso = TRUE THEN 1 END) as idosos,
+  COUNT(CASE WHEN doenca_grave = TRUE THEN 1 END) as doenca_grave,
+  COUNT(CASE WHEN pcd = TRUE THEN 1 END) as pcds,
+  COUNT(CASE WHEN preferencial = TRUE THEN 1 END) as preferenciais,
+  COUNT(CASE WHEN habilitacao_herdeiros = TRUE THEN 1 END) as habilitacoes,
+  COUNT(CASE WHEN obito = TRUE THEN 1 END) as obitos
+FROM esaj_detalhe_processos;
+```
+
+### **10. Validação Completa V2.5.3**
+
+```sql
+SELECT
+  -- Básico
+  COUNT(*) as total,
+  COUNT(CASE WHEN numero_ordem IS NOT NULL THEN 1 END) as com_ordem,
+
+  -- Saldo Final (V2.5.2)
+  COUNT(CASE WHEN saldo_final IS NOT NULL THEN 1 END) as com_saldo_final,
+  COUNT(CASE WHEN saldo_final > 0 THEN 1 END) as saldo_positivo,
+
+  -- Óbito e Sucessão (V2.5.3)
+  COUNT(CASE WHEN obito = TRUE THEN 1 END) as com_obito,
+  COUNT(CASE WHEN data_obito IS NOT NULL THEN 1 END) as com_data_obito,
+  COUNT(CASE WHEN cpf_sucessor IS NOT NULL THEN 1 END) as com_cpf_sucessor,
+
+  -- Termos Jurídicos (V2.5.3)
+  COUNT(CASE WHEN doenca_grave = TRUE THEN 1 END) as com_doenca_grave,
+  COUNT(CASE WHEN habilitacao_herdeiros = TRUE THEN 1 END) as com_habilitacao,
+  COUNT(CASE WHEN preferencial = TRUE THEN 1 END) as com_preferencial,
+  COUNT(CASE WHEN cessao_credito = TRUE THEN 1 END) as com_cessao  -- Esperado: 0
+
+FROM esaj_detalhe_processos;
 ```
 
 ---
@@ -359,6 +510,7 @@ Todas as colunas são validadas pelo schema `OficioRequisitorio` em `1_parsing_P
 - ✅ Datas no formato ISO (YYYY-MM-DD)
 - ✅ Valores numéricos sem formatação (sem R$, sem pontos de milhar)
 - ✅ Requerente sempre em MAIÚSCULAS
+- ✅ **V2.5.3**: Validação de `numero_ordem` com normalização de ano
 
 ### **2. Constraints PostgreSQL**
 
@@ -381,31 +533,50 @@ requerente_caps NOT NULL
 - ✅ Se `numero_ordem` existe → `rejeitado = FALSE`
 - ✅ Se `rejeitado = TRUE` → `numero_ordem = NULL`
 - ✅ `idoso` calculado automaticamente a partir de `data_nascimento`
-
----
-
-## 📊 **Estatísticas Atuais (16/10/2025)**
-
-```
-Total de registros: 50
-Com número de ordem: 26
-Rejeitados: 16
-Falsos rejeitados: 0 ✅
-Taxa de correção: 100%
-```
+- ✅ **V2.5.2**: `saldo_final` com fallback para `valor_total_requisitado`
+- ✅ **V2.5.3**: `habilitacao_herdeiros` validada por CPF (código 9270)
+- ✅ **V2.5.3**: `cessao_credito` sempre FALSE (desativado)
 
 ---
 
 ## 🔄 **Histórico de Mudanças**
 
+### **V2.6.0 (09/12/2025)**
+- ✅ Schema consolidado com 53 colunas
+- ✅ Validação de data quality aprimorada
+- ✅ Correção de quebra de linha em `numero_ordem`
+- ✅ Campo `banco` expandido para VARCHAR(100)
+- ✅ Detector de inversão de valores (líquido vs bruto)
+- ✅ Pipeline completo atualizado com TRUNCATE automático
+
+### **V2.5.3 (04/12/2025)**
+- ✅ Adicionados campos de óbito e sucessão:
+  - `obito` (BOOLEAN DEFAULT FALSE)
+  - `data_obito` (DATE)
+  - `cpf_sucessor` (VARCHAR(14))
+- ✅ **Detector de Habilitação de Herdeiros V1.0:**
+  - Busca código 9270 no TERMO DE DECLARAÇÃO
+  - Valida estrutura "Dados da Sucessão"
+  - Extrai CPF do sucessor e valida com CPF objeto
+  - Níveis de confiança: ALTA, MÉDIA, BAIXA
+- ✅ Detector de Doença Grave ativado
+- ✅ **Cessão de Crédito DESATIVADO** (sempre FALSE)
+- ✅ Habilitação validada por CPF (evita falsos positivos)
+
+### **V2.5.2 (04/12/2025)**
+- ✅ Adicionado campo `saldo_final` (NUMERIC(15,2))
+- ✅ Detector de Saldo Final após pagamento parcial
+- ✅ Padrões: "Saldo final após pagamento", "Saldo Final"
+- ✅ Fallback automático: `saldo_final = valor_total_requisitado`
+
 ### **v2.2.0 (16/10/2025)**
 - ✅ Adicionadas 11 colunas faltantes no Streamlit
 - ✅ Correção de falsos rejeitados (0 casos)
-- ✅ Documentação completa do schema
+- ✅ Documentação completa do schema (49 colunas)
 
 ### **v2.1.0 (14/10/2025)**
 - ✅ Interface Streamlit otimizada
-- ✅ Todas as 49 colunas disponíveis
+- ✅ Todas as 49 colunas disponíveis na interface
 
 ---
 
@@ -416,8 +587,13 @@ Taxa de correção: 100%
 3. **Valores Financeiros:** Sempre em formato decimal sem formatação (ex: 150000.00)
 4. **Datas:** Sempre no formato ISO (YYYY-MM-DD)
 5. **Requerente:** Sempre em MAIÚSCULAS conforme padrão TJSP
+6. **Saldo Final (V2.5.2):** Se não detectado, usa `valor_total_requisitado` como fallback
+7. **Habilitação de Herdeiros (V2.5.3):** Validação rigorosa com código 9270 + CPF
+8. **Cessão de Crédito (V2.5.3):** DESATIVADO - sempre FALSE
+9. **Óbito (V2.5.3):** Pode ser detectado mesmo sem habilitação de herdeiros
 
 ---
 
-**Última atualização:** 16/10/2025  
-**Versão:** 2.2.0
+**Última atualização:** 09/12/2025
+**Versão:** V2.6.0
+**Total de colunas:** 53
