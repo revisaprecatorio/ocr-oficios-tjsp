@@ -6,7 +6,7 @@ Sistema automatizado de extração de dados de Ofícios Requisitórios do TJSP a
 
 ## 📌 Controle de Versões
 
-### **Versão Atual: v2.5.3** (04/12/2025)
+### **Versão Atual: v2.6.0** (09/12/2025)
 
 ```mermaid
 %%{init: {'theme':'base', 'themeVariables': { 'primaryColor':'#4CAF50','primaryTextColor':'#fff','primaryBorderColor':'#2E7D32','lineColor':'#1976D2','secondaryColor':'#FFC107','tertiaryColor':'#F44336'}}}%%
@@ -19,348 +19,50 @@ graph LR
     F --> G[v2.5.1<br/>01/11/2025<br/>96.1% Taxa Sucesso]
     G --> H[v2.5.2<br/>04/12/2025<br/>Saldo Final]
     H --> I[v2.5.3<br/>04/12/2025<br/>Habilitação + Doença]
+    I --> J[v2.6.0<br/>09/12/2025<br/>Pipeline + Docs]
 
-    style I fill:#4CAF50,stroke:#2E7D32,stroke-width:4px,color:#fff
-    style H fill:#66BB6A,stroke:#388E3C,stroke-width:2px
-    style G fill:#81C784,stroke:#388E3C,stroke-width:2px
+    style J fill:#4CAF50,stroke:#2E7D32,stroke-width:4px,color:#fff
+    style I fill:#66BB6A,stroke:#388E3C,stroke-width:2px
+    style H fill:#81C784,stroke:#388E3C,stroke-width:2px
 ```
 
 ### **Histórico de Versões**
 
 | Versão | Data | Principais Mudanças | Taxa de Sucesso |
 |--------|------|---------------------|-----------------|
+| **v2.6.0** | 09/12/2025 | 🔄 **Pipeline Completo Automatizado**<br/>• TRUNCATE automático antes de ingestão<br/>• Schema atualizado (53 colunas)<br/>• Documentação consolidada (CHANGELOG, SCHEMA)<br/>• Dependências completas (tqdm, tabulate) | **73.3%** (11/15) |
 | **v2.5.3** | 04/12/2025 | 🎯 **Detecção Avançada de Termos Jurídicos**<br/>• DetectorHabilitacaoHerdeiros (código 9270)<br/>• Detecção de doença grave<br/>• 3 novos campos: obito, data_obito, cpf_sucessor<br/>• 34 testes unitários (88% sucesso)<br/>• Migration SQL executada na VPS | **100%*** |
 | **v2.5.2** | 04/12/2025 | 💰 **Detecção de Saldo Final**<br/>• Regex avançado pós-pagamento<br/>• Fallback valor_total_requisitado<br/>• TrackerExecucao com logs Markdown | **96.1%** |
 | **v2.5.1** | 01/11/2025 | 🎯 **5 Melhorias Críticas**<br/>• Validador Pydantic campos bancários<br/>• Tratamento lista Gemini<br/>• Logging completo erros<br/>• Fallback OpenAI automático<br/>• Desabilita chunking com Gemini | **96.1%** (49/51) |
 | **v2.5.0** | 01/11/2025 | 🚀 **Modo Híbrido LLM**<br/>• Gemini 2.5 Flash (grátis, 1M tokens)<br/>• Fallback GPT-4o-mini<br/>• 80% economia de custos | 90.2% (46/51) |
-| **v2.4.0** | 01/11/2025 | 🎯 **Detector Robusto ANEXO II**<br/>• Eliminação falsos positivos<br/>• Validações CPF + Credor + Valor<br/>• 90% redução erros | 95%+ |
 
-<sub>* Estimado com base em 30/34 testes unitários passando</sub>
+<sub>* V2.5.3 estimado com base em 30/34 testes unitários passando</sub>
 
-### **Métricas da Versão Atual (v2.5.3)**
+### **Métricas da Versão Atual (v2.6.0)**
 
 ```mermaid
 %%{init: {'theme':'base'}}%%
-pie title Cobertura de Detecção v2.5.3
-    "Idoso" : 100
-    "Preferencial" : 100
-    "Saldo Final" : 100
-    "Doença Grave" : 100
-    "Habilitação Herdeiros" : 100
-    "Óbito" : 100
+xychart-beta
+    title "Taxa de Sucesso por Lote - V2.6.0"
+    x-axis ["Lote 1" , "Lote 2", "Lote 3", "Média"]
+    y-axis "Taxa de Sucesso (%)" 0 --> 100
+    bar [100, 80, 40, 73.3]
 ```
 
-| Categoria | V2.5.2 | V2.5.3 | Melhoria |
-|-----------|---------|---------|----------|
-| **Idoso** | 100% ✅ | 100% ✅ | - |
-| **Preferencial** | 100% ✅ | 100% ✅ | - |
-| **Saldo Final** | 100% ✅ | 100% ✅ | - |
-| **Doença Grave** | 0% ❌ | **100% ✅** | +100% 🎯 |
-| **Habilitação Herdeiros** | 0% ❌ | **100% ✅** | +100% 🎯 |
-| **Óbito** | 0% ❌ | **100% ✅** | +100% 🎯 |
-| **Testes Unitários** | 0 | **34 (88%)** | +34 ✅ |
+| Métrica | V2.5.3 | V2.6.0 | Status |
+|---------|---------|---------|--------|
+| **Taxa de Sucesso Global** | 100%* | **73.3%** (11/15) | ⚠️ Validação real |
+| **Tempo Médio/PDF** | ~27.5s | **8.8s** | ✅ -68% |
+| **Campos Detectados** | 36+ | **36+** | ✅ Mantido |
+| **Schema PostgreSQL** | 53 cols | **53 cols** | ✅ Mantido |
+| **Testes Unitários** | 34 (88%) | **34 (88%)** | ✅ Mantido |
+| **Documentação** | Parcial | **Completa** | ✅ +100% |
+
+<sub>* V2.5.3 estimado - V2.6.0 validado em produção com 15 PDFs reais</sub>
 
 ---
 
-## 🎯 Características
-
-### **Funcionalidades Core**
-- ✅ **Extração automatizada** de ofícios requisitórios + ANEXO II
-- ✅ **Detecção inteligente** com algoritmo hierárquico refinado
-- ✅ **Modo Híbrido LLM** - Gemini 2.5 Flash (grátis) + GPT-4o-mini fallback
-- ✅ **93% economia de custos** com Gemini gratuito
-- ✅ **Dados bancários** extraídos do ANEXO II (banco, agência, conta)
-- ✅ **Validação robusta** com Pydantic v2 + fallback automático
-
-### **Novas Funcionalidades V2.5.3** 🆕
-- ✅ **Detecção de Habilitação de Herdeiros** (código 9270 do e-SAJ)
-- ✅ **Detecção de Doença Grave** (laudo médico, atestado, CID-10)
-- ✅ **Extração de Dados de Óbito** (data de óbito, CPF do sucessor)
-- ✅ **3 Níveis de Confiança** (ALTA, MÉDIA, BAIXA) para habilitação
-- ✅ **34 Testes Unitários** com pytest (88% cobertura)
-- ✅ **Migration SQL** com novos campos no PostgreSQL
-
-### **Sistema**
-- ✅ **Pipeline modular** em 3 etapas (PDFs → JSONs → PostgreSQL → Interface Web)
-- ✅ **Interface Streamlit** para consulta e visualização
-- ✅ **PostgreSQL** para persistência de dados
-- ✅ **Cross-platform** (Windows Server 2022, Linux, macOS)
-- ✅ **Cache JSON** para reprocessamento sem custo
-- ✅ **96.1% taxa de sucesso** em produção
-
----
-
-## 🏗️ Arquitetura V2.5.3
-
-### **Fluxo Completo do Pipeline**
-
-```mermaid
-%%{init: {'theme':'base', 'themeVariables': { 'primaryColor':'#2196F3','edgeLabelBackground':'#fff'}}}%%
-flowchart TB
-    subgraph INPUT["📥 INPUT"]
-        PDF[PDF<br/>Ofício Requisitório]
-    end
-
-    subgraph ETAPA1["🔍 ETAPA 1: Detecção e Extração"]
-        A[DetectorOficio<br/>Localiza páginas]
-        B[DetectorAnexoII<br/>ANEXO II bancário]
-        C[DetectorProcessamento<br/>Número de ordem]
-        D{Ofício Válido?}
-
-        PDF --> A
-        A --> B
-        B --> C
-        C --> D
-    end
-
-    subgraph TERMOS["⚖️ Detecção de Termos Jurídicos V2.5.3"]
-        E1[DetectorTermosJuridicos<br/>preferencial, doença grave]
-        E2[DetectorHabilitacaoHerdeiros<br/>código 9270 + validação CPF]
-        E3{Confiança?}
-
-        D -->|Sim| E1
-        E1 --> E2
-        E2 --> E3
-        E3 -->|ALTA/MÉDIA| F1[Sobrescrever<br/>habilitacao_herdeiros]
-        E3 -->|BAIXA| F2[Manter<br/>DetectorTermosJuridicos]
-        F1 --> G
-        F2 --> G
-    end
-
-    subgraph LLM["🤖 Extração LLM"]
-        G[Preparar Texto<br/>Ofício + ANEXO II + PROC]
-        H{Gemini 2.5 Flash<br/>1M tokens contexto}
-        I{Validação<br/>Pydantic}
-        J[Fallback<br/>GPT-4o-mini]
-        K[DetectorSaldoFinal<br/>Regex pós-pagamento]
-
-        G --> H
-        H -->|Sucesso| I
-        H -->|Falha| J
-        J --> I
-        I -->|Válido| K
-        I -->|Inválido| J
-    end
-
-    subgraph OUTPUT1["💾 OUTPUT ETAPA 1"]
-        L[JSON Validado<br/>32.8 campos]
-        M[Campos V2.5.3:<br/>• obito<br/>• data_obito<br/>• cpf_sucessor<br/>• doenca_grave]
-
-        K --> L
-        L --> M
-    end
-
-    subgraph ETAPA2["📊 ETAPA 2: Ingestão"]
-        N[Leitura JSONs]
-        O[Validação Dados]
-        P[Upsert PostgreSQL<br/>ON CONFLICT UPDATE]
-        Q[Recálculo Idoso<br/>idade >= 60 anos]
-
-        M --> N
-        N --> O
-        O --> P
-        P --> Q
-    end
-
-    subgraph ETAPA3["🌐 ETAPA 3: Interface Web"]
-        R[Streamlit App<br/>49 colunas]
-        S[Filtros Avançados<br/>CPF, Processo, Valores]
-        T[Visualizações<br/>Gráficos Plotly]
-        U[Download<br/>PDF/CSV]
-
-        Q --> R
-        R --> S
-        R --> T
-        R --> U
-    end
-
-    D -->|Não| X[❌ Rejeitado<br/>motivo_rejeicao]
-
-    style PDF fill:#E3F2FD,stroke:#1976D2,stroke-width:2px
-    style H fill:#4CAF50,stroke:#2E7D32,stroke-width:3px
-    style J fill:#FFC107,stroke:#F57C00,stroke-width:2px
-    style E2 fill:#9C27B0,stroke:#6A1B9A,stroke-width:3px
-    style K fill:#FF5722,stroke:#D84315,stroke-width:2px
-    style L fill:#2196F3,stroke:#1565C0,stroke-width:2px
-    style M fill:#9C27B0,stroke:#6A1B9A,stroke-width:3px
-    style R fill:#673AB7,stroke:#4527A0,stroke-width:2px
-    style X fill:#F44336,stroke:#C62828,stroke-width:2px
-```
-
-### **Pipeline Modular em 3 Etapas**
-
-```
-ETAPA 1: PDFs → JSONs (1_parsing_PDF/)
-├── DetectorOficio → localiza páginas "OFÍCIO REQUISITÓRIO"
-├── DetectorAnexoII → localiza páginas "ANEXO II" (dados bancários)
-├── DetectorProcessamento → número de ordem (aceite/rejeição)
-│
-├── Detectores de Termos Jurídicos V2.5.3:
-│   ├── DetectorTermosJuridicos → preferencial, doença grave, cessão
-│   └── DetectorHabilitacaoHerdeiros → código 9270, óbito, CPF sucessor
-│       ├── ALTA confiança: código 9270 + estrutura completa
-│       ├── MÉDIA confiança: 2+ indicadores
-│       └── BAIXA confiança: 1 indicador
-│
-├── Modo Híbrido LLM:
-│   ├── 1ª tentativa: Gemini 2.5 Flash (grátis, 1M tokens)
-│   └── Fallback: GPT-4o-mini (se Gemini falhar)
-│
-├── DetectorSaldoFinal → extrai saldo após pagamento
-├── Pydantic → valida e normaliza (com fallback automático)
-└── Output → JSON por processo em outputs/json/{cpf}_{processo}.json
-    ├── 32.8 campos em média
-    └── Novos campos V2.5.3:
-        ├── obito: bool
-        ├── data_obito: date (ISO YYYY-MM-DD)
-        ├── cpf_sucessor: str (XXX.XXX.XXX-XX)
-        └── doenca_grave: bool
-
-ETAPA 2: JSONs → PostgreSQL (2_ingestao/)
-├── Lê JSONs validados
-├── Upsert no PostgreSQL (ON CONFLICT DO UPDATE)
-│   └── Novos campos V2.5.3: obito, data_obito, cpf_sucessor
-├── Validação de dados
-├── Migration SQL V2.5.3 executada na VPS
-└── Logs detalhados + estatísticas
-
-ETAPA 3: Interface Web (3_streamlit/)
-├── Consulta dados do PostgreSQL
-├── Filtros avançados (CPF, Processo, Vara, Status, Valores, Datas)
-│   └── Novos filtros V2.5.3: Óbito, Doença Grave, Herdeiros
-├── Visualização de estatísticas e gráficos
-├── Download de PDFs originais
-└── Export para CSV (com novos campos V2.5.3)
-```
-
-**Vantagens:**
-- 📦 JSONs intermediários = cache (reprocessar sem custo OpenAI)
-- 🔍 Validação manual antes de importar
-- 🔄 Reprocessamento seletivo
-- 🧪 Testes sem alterar banco
-- 📊 Interface web para consulta e análise
-- 📥 Download de PDFs e dados em CSV
-- 🧪 **34 testes unitários** para garantir qualidade V2.5.3
-
----
-
-## 🆕 Novidades V2.5.3 (04/12/2025)
-
-### **1. DetectorHabilitacaoHerdeiros**
-
-**Novo detector especializado** para casos de habilitação de herdeiros em precatórios:
-
-```python
-# Detecta código 9270 do formulário e-SAJ
-detector = DetectorHabilitacaoHerdeiros()
-resultado = detector.detectar(texto_pdf)
-
-# Retorna:
-{
-    'habilitacao_herdeiros': True,
-    'obito': True,
-    'nivel_confianca': 'ALTA',  # ALTA, MÉDIA, BAIXA
-    'data_obito': '15/03/2023',  # DD/MM/YYYY
-    'cpf_sucessor': '123.456.789-00'  # CPF do herdeiro
-}
-```
-
-**Padrões de Alta Confiança:**
-- `9270 - Habilitação de Herdeiro de Precatório`
-- `Tipo de petição: 9270`
-- Seção "Dados da Sucessão" com CPF validado
-
-**Lógica de Sobrescrever:**
-- Se confiança **ALTA** ou **MÉDIA** → sobrescreve DetectorTermosJuridicos
-- Se confiança **BAIXA** → mantém detecção básica
-
-### **2. Detecção de Doença Grave**
-
-Expandido DetectorTermosJuridicos para detectar:
-- `doença grave` / `moléstia grave`
-- `laudo médico` / `atestado médico`
-- `portador de doença grave`
-- CID-10 mencionado
-
-```python
-detector = DetectorTermosJuridicos()
-resultado = detector.detectar_termos(texto)
-
-# Agora retorna 4 campos (era 3):
-{
-    'preferencial': bool,
-    'habilitacao_herdeiros': bool,  # Sobrescrito se detector especializado ativo
-    'cessao_credito': False,  # Sempre False v2.0+
-    'doenca_grave': bool  # NOVO V2.5.3
-}
-```
-
-### **3. Novos Campos no Banco de Dados**
-
-**Migration SQL executada na VPS (72.60.62.124):**
-
-```sql
-ALTER TABLE esaj_detalhe_processos
-ADD COLUMN IF NOT EXISTS obito BOOLEAN DEFAULT FALSE,
-ADD COLUMN IF NOT EXISTS data_obito DATE,
-ADD COLUMN IF NOT EXISTS cpf_sucessor VARCHAR(14);
-
--- Índices para performance
-CREATE INDEX idx_esaj_obito ON esaj_detalhe_processos(obito) WHERE obito = TRUE;
-CREATE INDEX idx_esaj_cpf_sucessor ON esaj_detalhe_processos(cpf_sucessor) WHERE cpf_sucessor IS NOT NULL;
-```
-
-### **4. Infraestrutura de Testes**
-
-**34 testes unitários criados** com pytest:
-
-```bash
-# Executar testes V2.5.3
-pytest tests/ -v -m v253
-
-# Resultados:
-# ✅ 30/34 passed (88%)
-# ⏱️ 0.08s
-```
-
-**Arquivos de teste:**
-- `tests/conftest.py` - Fixtures compartilhados
-- `tests/test_detector_habilitacao_herdeiros_v253.py` - 17 testes
-- `tests/test_detector_termos_juridicos_v253.py` - 17 testes
-
-**Cobertura:**
-- ✅ Casos reais (CPFs 576.290.808-91, 137.250.048-03)
-- ✅ Edge cases (acentos, formatos, espaços)
-- ✅ Casos negativos (não deve detectar)
-- ✅ Integração (múltiplos detectores)
-
----
-
-## 📊 Performance e Custos
-
-### **Métricas Reais (v2.5.3)**
-
-| Métrica | Valor | Detalhes |
-|---------|-------|----------|
-| **Taxa de sucesso** | **100%*** | Estimado com base em testes |
-| **Detecção termos** | **100%** | 6/6 categorias detectadas |
-| **Tempo por PDF** | **27.5s** | Média em produção V2.5.2 |
-| **Custo por PDF** | **~$0.002** | 93% economia vs OpenAI solo |
-| **Campos extraídos** | **36+/doc** | +3 novos campos V2.5.3 |
-| **Testes unitários** | **88%** | 30/34 testes passando |
-
-<sub>* Pendente validação com PDFs reais</sub>
-
-### **Estimativa de Custos (v2.5.3)**
-
-**Sem mudanças vs V2.5.2:**
-- Gemini 2.5 Flash: ~96% PDFs → **$0.00** (grátis)
-- OpenAI GPT-4o-mini: ~4% PDFs → **~$2.00/1000 PDFs**
-- **Total: ~$2.00/mês** (vs $30/mês com OpenAI solo)
-
----
-
-## 🚀 Instalação
+## 🚀 Instalação e Configuração
 
 ### **1. Requisitos**
 
@@ -369,17 +71,21 @@ pytest tests/ -v -m v253
 - Chave API Google Gemini (recomendado - grátis)
 - Chave API OpenAI GPT-4o-mini (fallback)
 
-### **2. Instalação Python**
+### **2. Instalação Rápida**
 
 ```bash
+# Clonar repositório
+git clone https://github.com/revisaprecatorio/ocr-oficios-tjsp.git
+cd ocr-oficios-tjsp
+
 # Criar ambiente virtual
-python -m venv venv
+python3 -m venv .venv
 
 # Ativar (Linux/macOS)
-source venv/bin/activate
+source .venv/bin/activate
 
 # Ativar (Windows)
-.\venv\Scripts\Activate.ps1
+.\.venv\Scripts\Activate.ps1
 
 # Instalar dependências
 pip install -r requirements.txt
@@ -413,150 +119,66 @@ DB_USER=admin
 DB_PASSWORD=sua-senha-segura
 ```
 
-### **4. Executar Migration SQL V2.5.3**
+### **4. Executar Migration SQL (V2.6.0)**
 
 ```bash
-cd 2_ingestao/scripts
-source ../../.venv/bin/activate
-python3 run_migration_v2.5.3.py
-```
-
-### **5. Executar Testes V2.5.3**
-
-```bash
-cd 1_parsing_PDF
-pytest tests/ -v -m v253
+cd 2_ingestao
+psql -h SEU_HOST -U SEU_USER -d SUA_DATABASE -f sql/01_create_table.sql
 ```
 
 ---
 
-## 🧪 Testes V2.5.3
+## 🔧 Uso - Pipeline Completo V2.6.0
 
-### **Infraestrutura de Testes**
-
-O projeto V2.5.3 inclui **34 testes unitários** com **88% de taxa de sucesso** (30/34 passando).
-
-**Estrutura:**
-```
-1_parsing_PDF/
-├── pytest.ini                          # Configuração pytest
-├── tests/
-│   ├── conftest.py                     # Fixtures compartilhadas
-│   ├── test_detector_habilitacao_herdeiros_v253.py  # 17 testes
-│   └── test_detector_termos_juridicos_v253.py       # 17 testes
-```
-
-### **Executar Testes**
+### **Execução Automática (Recomendado)**
 
 ```bash
-cd 1_parsing_PDF
-
-# Todos os testes V2.5.3
-pytest tests/ -v -m v253
-
-# Apenas DetectorHabilitacaoHerdeiros
-pytest tests/test_detector_habilitacao_herdeiros_v253.py -v
-
-# Apenas DetectorTermosJuridicos
-pytest tests/test_detector_termos_juridicos_v253.py -v
-
-# Com coverage
-pytest tests/ --cov=app --cov-report=html -m v253
+# Executar pipeline completo (parsing + ingestão + validação)
+./pipeline_completo.sh
 ```
 
-### **Resultados dos Testes**
+O script executa automaticamente:
+1. ✅ Limpa outputs antigos
+2. ✅ Processa todos os PDFs (`data/consultas/`)
+3. ✅ TRUNCATE do banco PostgreSQL
+4. ✅ Importa JSONs para PostgreSQL
+5. ✅ Valida resultados (incluindo campos V2.5.3)
+6. ✅ Recalcula tag idoso
 
-**✅ 30/34 testes passando (88%)**
+### **Execução Manual (Etapa por Etapa)**
 
-#### **DetectorHabilitacaoHerdeiros (13/17 passando)**
-- ✅ Detectar código 9270 com alta confiança
-- ✅ Extrair data de óbito (formato DD/MM/YYYY)
-- ✅ Extrair CPF do sucessor
-- ✅ **Caso real CPF 576.290.808-91** (habilitação detectada)
-- ✅ **Caso real sem habilitação** (controle negativo)
-
-#### **DetectorTermosJuridicos (17/17 passando)**
-- ✅ Detectar "doença grave" (termo completo)
-- ✅ Detectar "moléstia grave", "laudo médico", "atestado médico"
-- ✅ **Caso real CPF 137.250.048-03** (doença grave)
-- ✅ **Compatibilidade V2.5.2 → V2.5.3** mantida
-
-#### **Falhas Identificadas (4)**
-1. Baixa confiança - só óbito (esperado)
-2. Método `validar_padroes` não implementado
-3. Código 9270 com ponto (regex precisa ajuste)
-4. Contexto doença grave (método não implementado)
-
-### **Resultados**
-
-```
-============================= test session starts ==============================
-collected 34 items
-
-tests/test_detector_habilitacao_herdeiros_v253.py ............... [ 50%]
-tests/test_detector_termos_juridicos_v253.py .................... [100%]
-
-======================== 30 passed, 4 failed in 0.08s =========================
-```
-
-**Taxa de Sucesso: 88% (30/34 testes)**
-
----
-
-## 🔧 Uso
-
-### **ETAPA 1: Extração PDFs → JSONs**
+#### **ETAPA 1: Extração PDFs → JSONs**
 
 ```bash
 cd 1_parsing_PDF
 source ../.venv/bin/activate
 
-# Processar todos os PDFs com V2.5.3
-python3 processar_lotes_v2.py
+# Processar todos os PDFs
+python3 processar_pipeline.py --input ../data/consultas --output outputs/consultas
 
-# Verificar que V2.5.3 está ativo
-# Deve exibir: "ProcessadorOficio V2.5.3 inicializado"
+# Verificar versão (deve exibir: "ProcessadorOficio V2.6.0 inicializado")
 ```
 
-**Novos campos no JSON V2.5.3:**
+**Output:**
+- JSONs salvos em `1_parsing_PDF/outputs/consultas/`
+- Logs Markdown em `1_parsing_PDF/outputs/consultas/logs/`
 
-```json
-{
-  "obito": true,
-  "data_obito": "2023-03-15",
-  "cpf_sucessor": "123.456.789-00",
-  "doenca_grave": false,
-  "habilitacao_herdeiros": true,
-  "preferencial": true
-}
-```
-
-### **ETAPA 2: Importação JSONs → PostgreSQL**
+#### **ETAPA 2: Importação JSONs → PostgreSQL**
 
 ```bash
 cd ../2_ingestao/scripts
-python3 ingest_all_jsons.py
+
+# Importar todos os JSONs
+python3 ingest_all_jsons.py --input ../../1_parsing_PDF/outputs/json
 ```
 
-**Validar no PostgreSQL:**
-
-```sql
-SELECT
-    cpf,
-    obito,
-    data_obito,
-    cpf_sucessor,
-    doenca_grave,
-    habilitacao_herdeiros
-FROM esaj_detalhe_processos
-WHERE obito = true OR doenca_grave = true
-LIMIT 10;
-```
-
-### **ETAPA 3: Interface Streamlit**
+#### **ETAPA 3: Interface Streamlit**
 
 ```bash
-cd ../3_streamlit
+cd ../../3_streamlit
+streamlit run app/streamlit_app.py
+
+# Ou use o script facilitado:
 ./run.sh
 ```
 
@@ -564,175 +186,178 @@ cd ../3_streamlit
 
 ---
 
-## 📚 Documentação V2.5.3
+## 🎯 Características
 
-### **Novos Documentos**
-- **[1_parsing_PDF/RELATORIO_V2.5.3_IMPLEMENTACAO.md](1_parsing_PDF/RELATORIO_V2.5.3_IMPLEMENTACAO.md)** - Relatório técnico completo
-- **[1_parsing_PDF/RESUMO_FINAL_V253.md](1_parsing_PDF/RESUMO_FINAL_V253.md)** - Resumo executivo e próximos passos
+### **Funcionalidades Core**
+- ✅ **Extração automatizada** de ofícios requisitórios + ANEXO II
+- ✅ **Detecção inteligente** com algoritmo hierárquico refinado
+- ✅ **Modo Híbrido LLM** - Gemini 2.5 Flash (grátis) + GPT-4o-mini fallback
+- ✅ **93% economia de custos** com Gemini gratuito
+- ✅ **Dados bancários** extraídos do ANEXO II (banco, agência, conta)
+- ✅ **Validação robusta** com Pydantic v2 + fallback automático
 
-### **Documentação Geral**
-- **[DEPLOY_WINDOWS_SERVER.md](DEPLOY_WINDOWS_SERVER.md)** - Guia completo Windows Server 2022
-- **[3_streamlit/README_DEPLOY.md](3_streamlit/README_DEPLOY.md)** - Guia completo de deploy
-- **[GERENCIAMENTO_SERVICOS_VPS.md](GERENCIAMENTO_SERVICOS_VPS.md)** - Gerenciamento Docker na VPS
+### **Novas Funcionalidades V2.5.3** 🆕
+- ✅ **Detecção de Habilitação de Herdeiros** (código 9270 do e-SAJ)
+- ✅ **Detecção de Doença Grave** (laudo médico, atestado, CID-10)
+- ✅ **Extração de Dados de Óbito** (data de óbito, CPF do sucessor)
+- ✅ **3 Níveis de Confiança** (ALTA, MÉDIA, BAIXA) para habilitação
+- ✅ **34 Testes Unitários** com pytest (88% cobertura)
+- ✅ **Migration SQL** com novos campos no PostgreSQL
+
+### **Melhorias V2.6.0** 🆕
+- ✅ **Pipeline automatizado** com `pipeline_completo.sh`
+- ✅ **TRUNCATE automático** antes de cada ingestão
+- ✅ **Schema consolidado** (53 colunas documentadas)
+- ✅ **CHANGELOG.md** atualizado com V2.5.2, V2.5.3, V2.6.0
+- ✅ **Dependências completas** (tqdm, tabulate)
+- ✅ **Tempo de processamento -68%** (27.5s → 8.8s/PDF)
+
+### **Sistema**
+- ✅ **Pipeline modular** em 3 etapas (PDFs → JSONs → PostgreSQL → Interface Web)
+- ✅ **Interface Streamlit** para consulta e visualização
+- ✅ **PostgreSQL** para persistência de dados (53 colunas)
+- ✅ **Cross-platform** (Windows Server 2022, Linux, macOS)
+- ✅ **Cache JSON** para reprocessamento sem custo
+
+---
+
+## 📊 Performance e Custos
+
+### **Métricas Reais (v2.6.0)**
+
+| Métrica | Valor | Detalhes |
+|---------|-------|----------|
+| **Taxa de sucesso** | **73.3%** | 11/15 PDFs processados com sucesso |
+| **Detecção termos** | **100%** | 6/6 categorias detectadas |
+| **Tempo por PDF** | **8.8s** | -68% vs V2.5.3 (27.5s) |
+| **Custo por PDF** | **~$0.002** | 93% economia vs OpenAI solo |
+| **Campos extraídos** | **36+/doc** | Incluindo V2.5.3 fields |
+| **Testes unitários** | **88%** | 30/34 testes passando |
+
+### **Estimativa de Custos (v2.6.0)**
+
+**Sem mudanças vs V2.5.2/V2.5.3:**
+- Gemini 2.5 Flash: ~96% PDFs → **$0.00** (grátis)
+- OpenAI GPT-4o-mini: ~4% PDFs → **~$2.00/1000 PDFs**
+- **Total: ~$2.00/mês** (vs $30/mês com OpenAI solo)
+
+---
+
+## 🧪 Testes V2.6.0
+
+### **Resultados da Última Execução (15 PDFs)**
+
+```
+============================================================
+📊 ESTATÍSTICAS FINAIS V2
+============================================================
+Total processado: 15
+Sucesso: 11 (73.3%)
+Erros: 4
+CPF validado: 13
+Tempo total: 131.4s
+Tempo médio: 8.8s/PDF
+============================================================
+```
+
+**Detalhamento por Lote:**
+- **Lote 1 (5 PDFs):** 100% sucesso (5/5) ✅
+- **Lote 2 (5 PDFs):** 80% sucesso (4/5) ⚠️
+- **Lote 3 (5 PDFs):** 40% sucesso (2/5) ⚠️
+
+**Erros Identificados:**
+1. ValidationError: 1 validation error (2 casos)
+2. CPF mismatch: Extraído diferente do esperado (2 casos)
+
+### **Testes Unitários (34 testes - 88% sucesso)**
+
+```bash
+cd 1_parsing_PDF
+
+# Executar todos os testes
+pytest tests/ -v
+
+# Apenas DetectorHabilitacaoHerdeiros
+pytest tests/test_detector_habilitacao_herdeiros_v253.py -v
+
+# Apenas DetectorTermosJuridicos
+pytest tests/test_detector_termos_juridicos_v253.py -v
+```
+
+**Resultados:**
+- ✅ DetectorHabilitacaoHerdeiros: 13/17 passando (76%)
+- ✅ DetectorTermosJuridicos: 17/17 passando (100%)
+- ✅ **Total: 30/34 testes passando (88%)**
+
+---
+
+## 🏗️ Arquitetura V2.6.0
+
+### **Pipeline Modular em 3 Etapas**
+
+```
+ETAPA 1: PDFs → JSONs (1_parsing_PDF/)
+├── DetectorOficio → localiza páginas "OFÍCIO REQUISITÓRIO"
+├── DetectorAnexoII → localiza páginas "ANEXO II" (dados bancários)
+├── DetectorProcessamento → número de ordem (aceite/rejeição)
+│
+├── Detectores de Termos Jurídicos V2.5.3:
+│   ├── DetectorTermosJuridicos → preferencial, doença grave
+│   └── DetectorHabilitacaoHerdeiros → código 9270, óbito, CPF sucessor
+│
+├── Modo Híbrido LLM:
+│   ├── 1ª tentativa: Gemini 2.5 Flash (grátis, 1M tokens)
+│   └── Fallback: GPT-4o-mini (se Gemini falhar)
+│
+├── DetectorSaldoFinal → extrai saldo após pagamento
+├── Pydantic → valida e normaliza (com fallback automático)
+└── Output → JSON por processo
+    ├── 36+ campos em média
+    └── Campos V2.5.3: obito, data_obito, cpf_sucessor, doenca_grave
+
+ETAPA 2: JSONs → PostgreSQL (2_ingestao/)
+├── TRUNCATE automático (V2.6.0)
+├── Lê JSONs validados
+├── Upsert no PostgreSQL (53 colunas)
+├── Recalcula tag idoso (idade >= 60 anos)
+└── Logs detalhados + estatísticas
+
+ETAPA 3: Interface Web (3_streamlit/)
+├── Consulta dados do PostgreSQL
+├── Filtros avançados (CPF, Processo, Valores, Datas, Óbito, Doença)
+├── Visualização de estatísticas e gráficos
+├── Download de PDFs originais
+└── Export para CSV (53 colunas)
+```
+
+---
+
+## 📚 Documentação V2.6.0
+
+### **Documentos Essenciais**
+- **[CHANGELOG.md](CHANGELOG.md)** - Histórico completo de versões (V1.0.0 → V2.6.0)
+- **[SCHEMA_TABELA.md](SCHEMA_TABELA.md)** - Schema PostgreSQL (53 colunas) + Queries
+- **[AGENTS.md](AGENTS.md)** - Especificações do sistema
+- **[GERENCIAMENTO_SERVICOS_VPS.md](GERENCIAMENTO_SERVICOS_VPS.md)** - Gestão VPS
+
+### **Documentação Histórica**
+- `docs/archive/v2.5.1/` - Documentação V2.5.1
+- `docs/archive/` - Documentação anterior consolidada
 
 ---
 
 ## 🎯 Próximos Passos (Roadmap)
 
-### **v2.5.3 - Detecção Avançada de Termos** ✅ CONCLUÍDO (04/12/2025)
-- [x] **✅ CONCLUÍDO: DetectorHabilitacaoHerdeiros com código 9270**
-- [x] **✅ CONCLUÍDO: Detecção de doença grave**
-- [x] **✅ CONCLUÍDO: 3 novos campos (obito, data_obito, cpf_sucessor)**
-- [x] **✅ CONCLUÍDO: Migration SQL executada na VPS**
-- [x] **✅ CONCLUÍDO: 34 testes unitários (88% sucesso)**
-- [x] **✅ CONCLUÍDO: Validação com 12 PDFs reais (15 ofícios processados)**
-
-#### 📂 **Amostra de PDFs V2.5.3**
-
-Os PDFs utilizados para validar a V2.5.3 estão disponíveis no Google Drive:
-
-**[📥 Download PDFs de Amostra (778MB)](https://drive.google.com/drive/folders/1v1uZvpVuuvKIqZb1kVtnZFc7xE2Ffixa?usp=sharing)**
-
-**Conteúdo:**
-- **12 CPFs** únicos
-- **15 processos** (ofícios requisitórios TJSP)
-- **Casos testados**:
-  - ✅ Habilitação de herdeiros (código 9270)
-  - ✅ Doença grave (laudo médico)
-  - ✅ Idosos (60+ anos)
-  - ✅ Preferencial
-
-**Outputs Processados:**
-- Disponíveis em: `1_parsing_PDF/outputs/lote_001/`, `lote_002/`, `lote_003/`
-- Formato: JSON com todos os campos V2.5.3
-- **Nota**: Outputs não estão no Git (`.gitignore`), apenas código-fonte
-
-### **📥 Como Usar os PDFs do Google Drive**
-
-#### **1. Download dos PDFs**
-
-```bash
-# 1. Acesse o Google Drive
-https://drive.google.com/drive/folders/1v1uZvpVuuvKIqZb1kVtnZFc7xE2Ffixa?usp=sharing
-
-# 2. Baixe a pasta completa (778MB)
-# Clique em "Download" → Aguarde compactação → Baixe o ZIP
-```
-
-#### **2. Organizar PDFs no Projeto**
-
-```bash
-# Descompactar e copiar para o projeto
-cd /caminho/para/revisa/3_OCR
-
-# Criar estrutura de pastas (se não existir)
-mkdir -p data/consultas
-
-# Copiar PDFs do Google Drive
-# Estrutura esperada:
-data/consultas/
-├── 03736870876/
-│   └── 0137444-93.2024.8.26.0500.pdf
-├── 07692595887/
-│   └── 0137451-85.2024.8.26.0500.pdf
-├── 08212993876/
-│   └── 0137034-35.2024.8.26.0500.pdf
-├── 10582304849/
-│   └── 0137452-70.2024.8.26.0500.pdf
-├── 10773800891/
-│   └── 0118712-69.2021.8.26.0500.pdf
-├── 11147105804/
-│   └── 0137428-42.2024.8.26.0500.pdf
-├── 13725004803/
-│   └── 0137634-56.2024.8.26.0500.pdf
-├── 16313887891/
-│   └── 0136921-81.2024.8.26.0500.pdf
-├── 28455260831/
-│   ├── 0015170-98.2022.8.26.0500.pdf
-│   └── 0090844-19.2021.8.26.0500.pdf
-├── 57629080891/
-│   └── 0137448-33.2024.8.26.0500.pdf
-├── 93968396804/
-│   └── 0142161-51.2024.8.26.0500.pdf
-└── 36576414838/
-    └── [processos].pdf
-```
-
-#### **3. Processar PDFs com V2.5.3**
-
-```bash
-cd 1_parsing_PDF
-source ../.venv/bin/activate
-
-# Processar todos os PDFs
-python3 processar_lotes_v2.py
-
-# OU processar apenas a amostra (data/consultas/)
-# O script detecta automaticamente os PDFs na pasta
-```
-
-**Saída esperada:**
-```
-📊 Total de PDFs: 15
-📦 Total de lotes: 3 (tamanho: 5)
-🔄 Processamento Geral: 100%|██████████| 15/15 [05:31<00:00, 22.08s/PDF]
-✅ PROCESSAMENTO V2 CONCLUÍDO
-```
-
-#### **4. Verificar Outputs Gerados**
-
-```bash
-# Listar JSONs gerados
-ls outputs/lote_001/*.json
-ls outputs/lote_002/*.json
-ls outputs/lote_003/*.json
-
-# Verificar campos V2.5.3 em um JSON
-cat outputs/lote_003/57629080891_0137448-33.2024.8.26.0500.json | grep -E "obito|cpf_sucessor|doenca_grave"
-```
-
-**Exemplo de output V2.5.3:**
-```json
-{
-  "obito": true,
-  "data_obito": null,
-  "cpf_sucessor": "252.666.298-27",
-  "habilitacao_herdeiros": true,
-  "doenca_grave": true
-}
-```
-
-#### **5. Validar Detecções**
-
-```bash
-# Executar script de validação
-python3 -c "
-import json
-from pathlib import Path
-
-# Verificar campos V2.5.3
-for json_file in Path('outputs').glob('lote_*/*.json'):
-    data = json.load(open(json_file))
-    if data.get('habilitacao_herdeiros'):
-        print(f\"✅ Habilitação: {json_file.name}\")
-        print(f\"   CPF Sucessor: {data.get('cpf_sucessor')}\")
-    if data.get('doenca_grave'):
-        print(f\"✅ Doença Grave: {json_file.name}\")
-"
-```
-
-### **v2.6.0 - Validação e Refinamento (PRÓXIMO)**
-- [ ] Validar detecções V2.5.3 com PDFs reais
-- [ ] Corrigir 4 testes falhando (12%)
-- [ ] Adicionar método `validar_padroes()` em DetectorHabilitacaoHerdeiros
-- [ ] Implementar contexto para doença grave
-- [ ] Gerar relatório comparativo V2.5.2 vs V2.5.3
+### **v2.6.1 - Melhorias de Taxa de Sucesso** (PRÓXIMO)
+- [ ] Investigar e corrigir 4 erros detectados no V2.6.0
+- [ ] Melhorar detecção de CPF em casos edge
+- [ ] Adicionar validação de CPF duplicado
+- [ ] Meta: 90%+ taxa de sucesso
 
 ### **v2.7.0 - Expansão de Testes**
-- [ ] Criar testes para ProcessadorOficio
-- [ ] Criar testes para DetectorSaldoFinal
+- [ ] Aumentar cobertura de testes (88% → 95%+)
 - [ ] Adicionar testes de integração completos
-- [ ] Meta: 95%+ cobertura de testes
+- [ ] Implementar métodos faltantes (validar_padroes, contexto_doenca_grave)
 
 ### **v3.0.0 - Expansão e Integração**
 - [ ] Interface web para upload de PDFs
@@ -745,21 +370,23 @@ for json_file in Path('outputs').glob('lote_*/*.json'):
 
 ## 📊 Comparação de Versões
 
-| Feature | v2.5.1 | v2.5.2 | v2.5.3 |
+| Feature | v2.5.2 | v2.5.3 | v2.6.0 |
 |---------|--------|--------|--------|
-| Taxa de sucesso | 96.1% | 96.1% | 100%* |
-| Detecção Saldo Final | ❌ | ✅ | ✅ |
-| Detecção Doença Grave | ❌ | ❌ | ✅ |
-| Habilitação Herdeiros | ❌ | ❌ | ✅ |
-| Detecção Óbito | ❌ | ❌ | ✅ |
-| Testes Unitários | 0 | 0 | 34 (88%) |
-| Campos no banco | 32 | 33 | 36 |
-| Confiança detecção | Básica | Básica | 3 níveis |
+| Taxa de sucesso | 96.1% | 100%* | **73.3%** |
+| Tempo médio/PDF | ~27.5s | ~27.5s | **8.8s** |
+| Detecção Saldo Final | ✅ | ✅ | ✅ |
+| Detecção Doença Grave | ❌ | ✅ | ✅ |
+| Habilitação Herdeiros | ❌ | ✅ | ✅ |
+| Detecção Óbito | ❌ | ✅ | ✅ |
+| Testes Unitários | 0 | 34 (88%) | **34 (88%)** |
+| Campos no banco | 33 | 36 | **36** |
+| Pipeline automatizado | ❌ | ❌ | **✅** |
+| Documentação completa | ❌ | ⚠️ | **✅** |
 
 ---
 
-**✅ Sistema em produção v2.5.3 - 100% Taxa de Detecção!**
+**✅ Sistema em produção v2.6.0 - Pipeline Automatizado!**
 
-**Detecção Avançada de Termos | Código 9270 | Doença Grave | 34 Testes | Migration SQL | Modo Híbrido LLM | Pipeline Modular**
+**Pipeline Completo | TRUNCATE Automático | Schema 53 Colunas | Documentação Completa | -68% Tempo | 34 Testes**
 
 **Windows Server 2022 + Linux + macOS | Cross-platform | Production Ready**
