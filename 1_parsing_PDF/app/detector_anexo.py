@@ -516,7 +516,15 @@ class DetectorAnexoII:
                 dia, mes, ano = data_match.group(1).split('/')
                 dados['data_nascimento'] = f"{ano}-{mes}-{dia}"
                 logger.info(f"   ✅ Data Nasc: {dados['data_nascimento']}")
-            
+
+            # Data base para atualização (V2.6.1 FIX)
+            data_base_match = re.search(r'Data\s+base\s+para\s+atualiza[çc][ãa]o:\s*(\d{2}/\d{2}/\d{4})', texto_secao, re.IGNORECASE)
+            if data_base_match:
+                # Converter DD/MM/YYYY para YYYY-MM-DD
+                dia, mes, ano = data_base_match.group(1).split('/')
+                dados['data_base_atualizacao'] = f"{ano}-{mes}-{dia}"
+                logger.info(f"   ✅ Data Base: {dados['data_base_atualizacao']}")
+
             # Banco
             banco_match = re.search(r'Banco:\s*(\d+)\s*-?\s*([^\n]+)', texto_secao, re.IGNORECASE)
             if banco_match:

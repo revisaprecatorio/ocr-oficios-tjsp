@@ -1,5 +1,5 @@
 pdf,cpf,sucesso,tempo_s,oficios_encontrados,cpf_validado,rejeitado,motivo_rejeicao,anomalia,descricao_anomalia,processo_origem,requerente_caps,numero_ordem,valor_principal_liquido,valor_principal_bruto,juros_moratorios,valor_total,banco,agencia,conta,conta_tipo,vara,contrib_iprem,contrib_hspm,data_nascimento,data_base,idoso,doenca_grave,pcd,anomalias
 7001791-93.2007.8.26.0500.pdf,28455260831,✗,0.0,0,✗,✗,,✗,,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,✗,CPF mismatch: extraído 288.018.948-99 mas esperado 284.552.608-31 (PDF multi-creditor)
-0078238-51.2024.8.26.0500.pdf,36576414838,✓,5.9,9,✓,✗,,✗,,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✗,✗,✓,✓,✓,✓,✗,✓,✗,OK
-0137448-33.2024.8.26.0500.pdf,57629080891,✓,8.3,15,✓,✗,,✗,,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✗,✗,✗,✗,✓,✗,✓,✓,✗,OK
-0142161-51.2024.8.26.0500.pdf,93968396804,✓,4.6,25,✓,✗,,✗,,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✗,✗,✗,✗,✓,✗,✓,✓,✗,OK
+0078238-51.2024.8.26.0500.pdf,36576414838,✓,5.5,9,✓,✗,,✗,,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✗,✗,✗,✗,✓,✓,✗,✓,✗,OK
+0137448-33.2024.8.26.0500.pdf,57629080891,✓,11.3,15,✓,✗,,✗,,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✗,✗,✗,✗,✓,✓,✓,✓,✗,OK
+0142161-51.2024.8.26.0500.pdf,93968396804,✓,4.6,25,✓,✗,,✗,,✓,✓,✓,✓,✓,✓,✓,✓,✓,✓,✗,✗,✗,✗,✓,✓,✓,✓,✗,OK
