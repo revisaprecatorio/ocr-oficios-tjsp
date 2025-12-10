@@ -1,8 +1,8 @@
 # Plano de Implantação - Integração Mercado Pago
 
 **Data:** 2025-12-10  
-**Versão:** 1.0  
-**Status:** Análise e Planejamento
+**Versão:** 2.0  
+**Status:** ✅ IMPLEMENTADO E TESTADO EM SANDBOX
 
 ---
 
@@ -332,34 +332,36 @@ Digite menu para voltar ao início.
 
 ### 9.1 Pré-requisitos
 
-- [ ] Credenciais MP de produção obtidas
-- [ ] Webhook URL configurada no painel MP
-- [ ] Colunas adicionadas no PostgreSQL
-- [ ] Backup do workflow atual
+- [x] Credenciais MP de teste obtidas
+- [x] Webhook URL configurada no painel MP
+- [x] Colunas adicionadas no PostgreSQL
+- [x] Backup do workflow atual
 
 ### 9.2 Desenvolvimento
 
-- [ ] Criar credencial Header Auth no n8n
-- [ ] Criar webhook separado para MP
-- [ ] Implementar node Create MP Preference
-- [ ] Implementar node Process MP Notification
-- [ ] Implementar node Get Payment Status
-- [ ] Modificar Validate Code para gerar link
-- [ ] Adicionar rotas para novos estados
-- [ ] Implementar Response nodes para cada status
+- [x] Criar credencial Header Auth no n8n
+- [x] Criar webhook separado para MP (unificado em um workflow)
+- [x] Implementar node Create MP Preference (Generate Payment Link)
+- [x] Implementar node Process MP Notification
+- [x] Implementar node Get Payment Status
+- [x] Modificar Validate Code para gerar link
+- [x] Adicionar rotas para novos estados
+- [x] Implementar Response nodes para cada status
 
 ### 9.3 Testes
 
-- [ ] Teste em sandbox: pagamento aprovado
+- [x] Teste em sandbox: pagamento aprovado
 - [ ] Teste em sandbox: pagamento recusado
 - [ ] Teste em sandbox: pagamento pendente
 - [ ] Teste de timeout do webhook
 - [ ] Teste de retry do webhook
-- [ ] Teste end-to-end completo
+- [x] Teste end-to-end completo
 
 ### 9.4 Produção
 
 - [ ] Trocar credenciais para produção
+- [ ] Atualizar link de sandbox_init_point para init_point
+- [ ] Remover instruções de teste da mensagem WhatsApp
 - [ ] Monitorar primeiras 10 transações
 - [ ] Verificar logs de erro
 - [ ] Confirmar recebimento de webhooks
@@ -392,12 +394,12 @@ Em caso de problemas críticos:
 ## 12. Próximos Passos
 
 1. ✅ Análise de impacto (este documento)
-2. ⏳ Aprovação do plano
-3. ⏳ Executar migrations no PostgreSQL
-4. ⏳ Criar credencial MP no n8n
-5. ⏳ Implementar em ambiente de teste
-6. ⏳ Testes com sandbox
-7. ⏳ Deploy em produção
+2. ✅ Aprovação do plano
+3. ✅ Executar migrations no PostgreSQL
+4. ✅ Criar credencial MP no n8n
+5. ✅ Implementar em ambiente de teste
+6. ✅ Testes com sandbox (2025-12-10 03:45 UTC-3)
+7. ⏳ Deploy em produção (aguardando aprovação)
 
 ---
 

@@ -2,7 +2,7 @@
 
 Bot de WhatsApp para consulta de precatórios no sistema e-SAJ do TJSP.
 
-## Versão Atual: Stable 2025-12-09
+## Versão Atual: Stable 2025-12-10
 
 ### Funcionalidades
 - ✅ Consulta de precatórios por CPF no e-SAJ
@@ -10,6 +10,8 @@ Bot de WhatsApp para consulta de precatórios no sistema e-SAJ do TJSP.
 - ✅ Listagem de processos encontrados
 - ✅ Fluxo de verificação de email com código
 - ✅ Máquina de estados para controle de conversação
+- ✅ **Integração Mercado Pago** - Geração de link de pagamento
+- ✅ **Webhook de notificações** - Recebe status de pagamento
 
 ### Arquitetura
 
@@ -37,7 +39,11 @@ WhatsApp → Webhook → Process Input → Get User State → Merge State → Ro
 | `AWAITING_CONFIRMATION` | Aguardando "sim" ou "não" após consulta CPF | 30 min |
 | `AWAITING_EMAIL` | Aguardando email do usuário | 30 min |
 | `AWAITING_CODE` | Aguardando código de verificação | 15 min |
-| `AWAITING_PAYMENT` | Aguardando confirmação de pagamento | 60 min |
+| `GENERATING_PAYMENT` | Gerando link de pagamento | - |
+| `AWAITING_PAYMENT` | Link gerado, aguardando pagamento | 24h |
+| `PAYMENT_APPROVED` | Pagamento confirmado ✅ | - |
+| `PAYMENT_REJECTED` | Pagamento recusado ❌ | - |
+| `PAYMENT_PENDING` | Pagamento em análise ⏳ | 48h |
 
 ### Nodes Principais
 
@@ -84,10 +90,22 @@ revisabot_v2_switch/
 - **Postgres account** (`b0F0gRzrpEq6BR3M`)
 - **WhatsApp account** (`ejhZtEKHF0Kh9HeQ`)
 - **SMTP** (para envio de emails)
+- **Mercado Pago API** (`KytrAZe3o5ngsDTa`) - Header Auth com Bearer token
 
-### Workflow ID
+### Workflows
 
-- **Produção**: `bXqi8RykpGxXMBGE`
+| Workflow | ID | Função |
+|----------|-----|--------|
+| **revisabot_v2_switch** | `bXqi8RykpGxXMBGE` | Workflow principal do bot |
+| **Mercado Pago Unified** | `6COT3ubybyI8QhYT` | Geração de links e notificações de pagamento |
+
+### Webhooks
+
+| Endpoint | Workflow | Função |
+|----------|----------|--------|
+| `/webhook/whatsapp-beta-agent` | revisabot_v2_switch | Recebe mensagens WhatsApp |
+| `/webhook/generate-payment-link` | Mercado Pago Unified | Gera link de pagamento |
+| `/webhook/mercadopago-notification` | Mercado Pago Unified | Recebe notificações do MP |
 
 ---
 
