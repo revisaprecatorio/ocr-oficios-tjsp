@@ -222,7 +222,59 @@ class DetectorProcessamento:
         except Exception as e:
             logger.error(f"Erro ao extrair número do título: {e}")
             return None
-    
+
+    def _limpar_quebras_linha_numero_ordem(self, texto: str) -> str:
+        """
+        Remove quebras de linha indesejadas em números de ordem.
+
+        Problema: PDF pode quebrar "19053/2025" em duas linhas:
+        Linha 1: "Nº de Ordem: 19053/202"
+        Linha 2: "5"
+
+        Solução: Juntar quando detectar padrão XXX/YYY seguido de dígito isolado.
+
+        Args:
+            texto: Texto da seção PROCESSAMENTO
+
+        Returns:
+            Texto com números de ordem corrigidos
+
+        Example:
+            >>> texto = "Nº de Ordem: 19053/202\\n5\\nData: 21/02/2024"
+            >>> detector._limpar_quebras_linha_numero_ordem(texto)
+            "Nº de Ordem: 19053/2025\\nData: 21/02/2024"
+        """
+        linhas = texto.split('\n')
+        texto_limpo = []
+
+        i = 0
+        while i < len(linhas):
+            linha_atual = linhas[i].strip()
+
+            # Padrão: número/ano-truncado (3 dígitos) no final da linha
+            # Ex: "Nº de Ordem: 19053/202" ou apenas "19053/202"
+            match = re.search(r'(\d{1,6}/\d{3})$', linha_atual)
+
+            if match and i + 1 < len(linhas):
+                proxima_linha = linhas[i + 1].strip()
+
+                # Próxima linha é apenas um dígito isolado?
+                if re.match(r'^\d$', proxima_linha):
+                    # JUNTAR! 19053/202 + 5 = 19053/2025
+                    linha_atual = linha_atual.replace(
+                        match.group(1),
+                        match.group(1) + proxima_linha
+                    )
+                    logger.info(f"🔧 Corrigido quebra de linha: {match.group(1)} + {proxima_linha} = {match.group(1) + proxima_linha}")
+                    texto_limpo.append(linha_atual)
+                    i += 2  # Pular próxima linha (já processada)
+                    continue
+
+            texto_limpo.append(linha_atual)
+            i += 1
+
+        return '\n'.join(texto_limpo)
+
     def extrair_numero_ordem(self, texto: str) -> Optional[str]:
         """
         Extrai número de ordem/precatório do texto da página PROCESSAMENTO.

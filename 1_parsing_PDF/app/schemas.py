@@ -432,7 +432,7 @@ class OficioRequisitorio(BaseModel):
         
         numero, ano = match.groups()
         
-        # Normalizar ano: se tem 2 dígitos, assumir 20XX
+        # Normalizar ano: se tem 2 ou 3 dígitos, expandir para 4
         if len(ano) == 2:
             ano_int = int(ano)
             # Se ano >= 90, assumir 19XX, senão 20XX
@@ -440,7 +440,17 @@ class OficioRequisitorio(BaseModel):
                 ano = f"19{ano}"
             else:
                 ano = f"20{ano}"
-        
+        elif len(ano) == 3:
+            # 🔧 CORREÇÃO: Ano truncado por quebra de linha (ex: 202)
+            # Isso acontece quando o PDF quebra "2025" em duas linhas: "202" + "5"
+            # Assumir 20XX (década de 2020)
+            # Pegar últimos 2 dígitos e expandir para 4
+            ano_int = int(ano[-2:])  # Últimos 2 dígitos
+            if ano_int >= 90:
+                ano = f"19{ano[-2:]}"
+            else:
+                ano = f"20{ano[-2:]}"
+
         return f"{numero}/{ano}"
     
     @field_validator('processo_origem', mode='before')

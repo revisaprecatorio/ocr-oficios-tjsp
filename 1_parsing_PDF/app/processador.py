@@ -365,6 +365,9 @@ class ProcessadorOficio:
             
             # Verificar se tem PROCESSAMENTO COM INFORMAÇÃO ou número de ordem
             if texto_proc:
+                # 🔧 CORREÇÃO: Limpar quebras de linha em números de ordem ANTES de processar
+                texto_proc = self.detector_proc._limpar_quebras_linha_numero_ordem(texto_proc)
+
                 texto_upper = texto_proc.upper()
                 if "PROCESSAMENTO COM INFORMAÇÃO" in texto_upper or "PROCESSAMENTO COM INFORMACAO" in texto_upper:
                     tem_processamento_com_informacao = True
