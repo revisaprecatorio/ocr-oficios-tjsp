@@ -14,6 +14,9 @@ pydantic>=2.5.0              # Validação e schemas de dados
 # Database
 psycopg2-binary>=2.9.0       # PostgreSQL adapter
 
+# Utilities
+tqdm>=4.67.0                 # Progress bars for batch processing
+
 # Configuração
 python-dotenv>=1.0.0         # Variáveis de ambiente
 
