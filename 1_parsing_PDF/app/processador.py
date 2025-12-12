@@ -346,8 +346,11 @@ class ProcessadorOficio:
             pagina_proc, texto_proc = self.detector_proc.detectar_processamento(
                 pdf_path,
                 inicio=inicio_proc,
-                limite=100  # Aumentar limite de busca
+                limite=None  # V2.7.3: Buscar até o final do PDF (sem limite)
             )
+
+            # V2.7.3: Variável para armazenar numero_ordem de fallback global
+            numero_ordem_global = None
 
             if pagina_proc:
                 if tracker:
@@ -355,6 +358,18 @@ class ProcessadorOficio:
             else:
                 if tracker:
                     tracker.adicionar_resultado("PROCESSAMENTO não encontrado", sucesso=False, nivel=1)
+
+                # V2.7.3 FIX: Fallback global - buscar numero_ordem em TODO o PDF
+                logger.info("🔍 V2.7.3: Tentando busca GLOBAL de numero_ordem...")
+                numero_ordem_global = self.detector_proc.buscar_numero_ordem_global(pdf_path)
+                if numero_ordem_global:
+                    logger.info(f"✅ V2.7.3: numero_ordem encontrado via busca global: {numero_ordem_global}")
+                    if tracker:
+                        tracker.adicionar_resultado(f"V2.7.3 GLOBAL: numero_ordem = {numero_ordem_global}", sucesso=True, nivel=1)
+                else:
+                    logger.warning("⚠️ V2.7.3: numero_ordem NÃO encontrado mesmo com busca global")
+                    if tracker:
+                        tracker.adicionar_resultado("V2.7.3 GLOBAL: numero_ordem não encontrado", sucesso=False, nivel=1)
             
             # 6.1. Verificar se ofício foi REJEITADO (ANTES de validar!)
             # 🔴 REGRA CRÍTICA: Verificar ACEITAÇÃO primeiro (prioridade máxima)
@@ -531,6 +546,7 @@ class ProcessadorOficio:
                 tem_anexo_ii=bool(texto_anexo),
                 tem_processamento=bool(texto_proc),
                 numero_ordem_titulo=numero_ordem_titulo,
+                numero_ordem_global=numero_ordem_global,  # V2.7.3
                 oficio_rejeitado=oficio_rejeitado,
                 motivo_rejeicao=motivo_rejeicao
             )
@@ -639,6 +655,7 @@ class ProcessadorOficio:
                             tem_anexo_ii=bool(texto_anexo),
                             tem_processamento=bool(texto_proc),
                             numero_ordem_titulo=numero_ordem_titulo,
+                            numero_ordem_global=numero_ordem_global,  # V2.7.3
                             oficio_rejeitado=oficio_rejeitado,
                             motivo_rejeicao=motivo_rejeicao
                         )
@@ -705,7 +722,8 @@ class ProcessadorOficio:
             # 8.2. Adicionar termos jurídicos detectados (V2.4.0 / V2.5.3)
             oficio_validado.preferencial = termos_juridicos['preferencial']
             oficio_validado.habilitacao_herdeiros = termos_juridicos['habilitacao_herdeiros']
-            oficio_validado.cessao_credito = termos_juridicos['cessao_credito']  # Sempre False em v2.5.2
+            # V2.7.2: cessao_credito REMOVIDO do schema
+            # oficio_validado.cessao_credito = termos_juridicos['cessao_credito']
             oficio_validado.doenca_grave = termos_juridicos.get('doenca_grave', False)  # V2.5.3: Novo campo
             logger.info(f"📜 Termos jurídicos adicionados aos dados validados")
 
@@ -726,6 +744,19 @@ class ProcessadorOficio:
                     oficio_validado.data_obito = None
             else:
                 oficio_validado.data_obito = None
+
+            # V2.7.3 FIX: Validar cpf_sucessor != credor_cpf_cnpj
+            if oficio_validado.cpf_sucessor and oficio_validado.credor_cpf_cnpj:
+                # Normalizar CPFs para comparação (remover formatação)
+                cpf_sucessor_limpo = ''.join(filter(str.isdigit, oficio_validado.cpf_sucessor))
+                credor_cpf_limpo = ''.join(filter(str.isdigit, oficio_validado.credor_cpf_cnpj))
+
+                if cpf_sucessor_limpo == credor_cpf_limpo:
+                    logger.warning(f"⚠️ V2.7.3: cpf_sucessor ({oficio_validado.cpf_sucessor}) "
+                                 f"é IGUAL a credor_cpf_cnpj ({oficio_validado.credor_cpf_cnpj}) → Zeran do!")
+                    oficio_validado.cpf_sucessor = None
+                    oficio_validado.habilitacao_herdeiros = False
+                    logger.info("✅ V2.7.3: cpf_sucessor zerado (mesmo CPF do credor)")
 
             logger.info(f"✅ Campos V2.5.3 adicionados: obito={oficio_validado.obito}, "
                        f"doenca_grave={oficio_validado.doenca_grave}, "
@@ -775,21 +806,22 @@ class ProcessadorOficio:
                 oficio_validado.credor_cpf_cnpj = "ERRO"
             
             # Detectar campos importantes vazios
+            # V2.7.2: requerente_caps REMOVIDO do schema
             campos_importantes = {
-                'requerente_caps': 'Nome do credor',
+                # 'requerente_caps': 'Nome do credor',  # V2.7.2: REMOVIDO
                 'valor_total_requisitado': 'Valor total',
                 'data_nascimento': 'Data de nascimento',
                 'banco': 'Banco',
                 'agencia': 'Agência',
                 'conta': 'Conta'
             }
-            
+
             for campo, descricao in campos_importantes.items():
                 valor = getattr(oficio_validado, campo, None)
                 if valor is None or valor == '' or valor == 0:
                     campos_erro.append(campo)
                     # Preencher com "ERRO" apenas campos de texto
-                    if campo in ['requerente_caps', 'banco', 'agencia', 'conta']:
+                    if campo in ['banco', 'agencia', 'conta']:  # V2.7.2: requerente_caps removido
                         setattr(oficio_validado, campo, "ERRO")
             
             # Montar mensagem de observações
@@ -976,28 +1008,31 @@ class ProcessadorOficio:
         return texto_filtrado
     
     def _extrair_dados_llm_hibrido(
-        self, 
-        texto_oficio: str, 
+        self,
+        texto_oficio: str,
         tem_anexo_ii: bool = False,
         tem_processamento: bool = False,
         numero_ordem_titulo: Optional[str] = None,
+        numero_ordem_global: Optional[str] = None,  # V2.7.3
         oficio_rejeitado: bool = False,
         motivo_rejeicao: Optional[str] = None
     ) -> Optional[Dict[str, Any]]:
         """
         Extração híbrida: Gemini 2.5 Flash (primeiro) com fallback para GPT-4o-mini.
-        
-        NOVA em FINDING 08: Combina qualidade do Gemini (13 campos, grátis) 
+
+        V2.7.3: Aceita numero_ordem_global para hint ao LLM
+        NOVA em FINDING 08: Combina qualidade do Gemini (13 campos, grátis)
         com confiabilidade do OpenAI (12 campos, 100% sucesso).
-        
+
         Args:
             texto_oficio: Texto relevante (ofício + ANEXO II + PROCESSAMENTO)
             tem_anexo_ii: Se ANEXO II está presente
             tem_processamento: Se PROCESSAMENTO está presente
             numero_ordem_titulo: Número de ordem extraído do título (PDFs antigos)
+            numero_ordem_global: Número de ordem encontrado via busca global (V2.7.3)
             oficio_rejeitado: Se o ofício foi rejeitado
             motivo_rejeicao: Motivo da rejeição (se houver)
-            
+
         Returns:
             Dicionário com dados extraídos ou None
         """
@@ -1025,13 +1060,13 @@ class ProcessadorOficio:
         if not self.llm_adapter:
             return self._extrair_dados_llm(
                 texto_oficio, tem_anexo_ii, tem_processamento,
-                numero_ordem_titulo, oficio_rejeitado, motivo_rejeicao
+                numero_ordem_titulo, numero_ordem_global, oficio_rejeitado, motivo_rejeicao
             )
-        
+
         # Construir prompt (mesmo prompt para ambos LLMs)
         prompt = self._construir_prompt_llm(
             texto_oficio, tem_anexo_ii, tem_processamento,
-            numero_ordem_titulo, oficio_rejeitado, motivo_rejeicao
+            numero_ordem_titulo, numero_ordem_global, oficio_rejeitado, motivo_rejeicao
         )
         
         # TENTATIVA 1: Gemini 2.5 Flash (mais completo, grátis)
@@ -1085,12 +1120,15 @@ class ProcessadorOficio:
         tem_anexo_ii: bool = False,
         tem_processamento: bool = False,
         numero_ordem_titulo: Optional[str] = None,
+        numero_ordem_global: Optional[str] = None,  # V2.7.3
         oficio_rejeitado: bool = False,
         motivo_rejeicao: Optional[str] = None
     ) -> str:
         """
         Constrói prompt para extração LLM (usado por ambos OpenAI e Gemini).
-        
+
+        V2.7.3: Adiciona numero_ordem_global como hint quando busca global encontra
+
         Returns:
             String com prompt completo
         """
@@ -1114,13 +1152,27 @@ class ProcessadorOficio:
 - Descreva o problema encontrado em descricao_anomalia
 - Extraia o que for possível
 """
-        
+
+        # V2.7.3: Adicionar hint sobre numero_ordem se encontrado
+        nota_numero_ordem = ""
+        if numero_ordem_titulo:
+            nota_numero_ordem = f"""
+✅ NÚMERO DE ORDEM JÁ DETECTADO NO TÍTULO: {numero_ordem_titulo}
+- Use este valor para o campo numero_ordem
+"""
+        elif numero_ordem_global:
+            nota_numero_ordem = f"""
+✅ NÚMERO DE ORDEM DETECTADO VIA BUSCA GLOBAL: {numero_ordem_global}
+- Use este valor para o campo numero_ordem
+- Foi encontrado em CERTIDÃO DE PUBLICAÇÃO ou outra seção do PDF
+"""
+
         # Prompt completo
         return f"""Você é um assistente especializado em extrair dados de Ofícios Requisitórios do TJSP.
 
 IMPORTANTE: Retorne JSON com estrutura FLAT (campos no nível raiz), NÃO use objetos aninhados!
 
-{nota_rejeicao}{nota_anomalia}
+{nota_rejeicao}{nota_anomalia}{nota_numero_ordem}
 
 DOCUMENTO: Ofício Requisitório do Tribunal de Justiça de São Paulo
 
@@ -1324,11 +1376,12 @@ DOCUMENTO:
 Retorne APENAS JSON FLAT válido:"""
     
     def _extrair_dados_llm(
-        self, 
-        texto_oficio: str, 
+        self,
+        texto_oficio: str,
         tem_anexo_ii: bool = False,
         tem_processamento: bool = False,
         numero_ordem_titulo: Optional[str] = None,
+        numero_ordem_global: Optional[str] = None,  # V2.7.3
         oficio_rejeitado: bool = False,
         motivo_rejeicao: Optional[str] = None
     ) -> Optional[Dict[str, Any]]:
@@ -1375,13 +1428,27 @@ Retorne APENAS JSON FLAT válido:"""
             logger.info(f"📝 Texto enviado ao LLM: {len(texto_oficio)} caracteres")
             logger.info(f"   📋 Primeiros 300 chars: {texto_oficio[:300]}")
             logger.info(f"   📋 Últimos 300 chars: {texto_oficio[-300:]}")
-            
+
+            # V2.7.3: Adicionar hint sobre numero_ordem se encontrado
+            nota_numero_ordem = ""
+            if numero_ordem_titulo:
+                nota_numero_ordem = f"""
+✅ NÚMERO DE ORDEM JÁ DETECTADO NO TÍTULO: {numero_ordem_titulo}
+- Use este valor para o campo numero_ordem
+"""
+            elif numero_ordem_global:
+                nota_numero_ordem = f"""
+✅ NÚMERO DE ORDEM DETECTADO VIA BUSCA GLOBAL: {numero_ordem_global}
+- Use este valor para o campo numero_ordem
+- Foi encontrado em CERTIDÃO DE PUBLICAÇÃO ou outra seção do PDF
+"""
+
             # Prompt V2 otimizado
             prompt = f"""Você é um assistente especializado em extrair dados de Ofícios Requisitórios do TJSP.
 
 IMPORTANTE: Retorne JSON com estrutura FLAT (campos no nível raiz), NÃO use objetos aninhados!
 
-{nota_rejeicao}{nota_anomalia}
+{nota_rejeicao}{nota_anomalia}{nota_numero_ordem}
 
 DOCUMENTO: Ofício Requisitório do Tribunal de Justiça de São Paulo
 

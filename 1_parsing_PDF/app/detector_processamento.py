@@ -1,6 +1,6 @@
 """
 DetectorProcessamento - Localiza página PROCESSAMENTO e extrai número de ordem/precatório
-Versão 2.0 - Otimizado para extração seletiva de páginas
+Versão 2.7.3 - Fix: Limite expandido + detecção de CERTIDÃO + fallback global
 """
 
 import re
@@ -53,22 +53,24 @@ class DetectorProcessamento:
         self.padrao_numero_simples = re.compile(r'\b(\d{1,5}/\d{4})\b')
     
     def detectar_processamento(
-        self, 
-        pdf_path: str, 
+        self,
+        pdf_path: str,
         inicio: int = 0,
-        limite: int = 50
+        limite: Optional[int] = None
     ) -> Tuple[Optional[int], Optional[str]]:
         """
-        Detecta página com PROCESSAMENTO após o ofício/ANEXO II.
-        
+        Detecta página com PROCESSAMENTO ou CERTIDÃO DE PUBLICAÇÃO após o ofício/ANEXO II.
+
+        V2.7.3 FIX: Limite padrão removido (None = busca todo PDF)
+
         Args:
             pdf_path: Caminho para o arquivo PDF
             inicio: Página para começar busca (0-indexed)
-            limite: Máximo de páginas para buscar após início
-            
+            limite: Máximo de páginas para buscar após início (None = buscar até o final)
+
         Returns:
             Tupla (numero_pagina, texto_pagina) ou (None, None) se não encontrado
-            
+
         Example:
             >>> detector = DetectorProcessamento()
             >>> pagina, texto = detector.detectar_processamento("oficio.pdf", inicio=20)
@@ -76,13 +78,13 @@ class DetectorProcessamento:
             ...     numero_ordem = detector.extrair_numero_ordem(texto)
         """
         try:
-            logger.info(f"Buscando PROCESSAMENTO a partir da página {inicio + 1}")
-            
+            logger.info(f"Buscando PROCESSAMENTO/CERTIDÃO a partir da página {inicio + 1}")
+
             doc = pymupdf.open(pdf_path)
             total_paginas = len(doc)
-            
-            # Limitar busca
-            fim = min(inicio + limite, total_paginas)
+
+            # Limitar busca (None = buscar até o final)
+            fim = min(inicio + limite, total_paginas) if limite else total_paginas
             
             for page_num in range(inicio, fim):
                 page = doc.load_page(page_num)
@@ -104,23 +106,38 @@ class DetectorProcessamento:
     
     def _eh_pagina_processamento(self, texto: str) -> bool:
         """
-        Verifica se texto contém indicadores de página PROCESSAMENTO.
-        
+        Verifica se texto contém indicadores de página PROCESSAMENTO ou CERTIDÃO DE PUBLICAÇÃO.
+
+        V2.7.3 FIX: Detecta também CERTIDÃO DE PUBLICAÇÃO que contém numero_ordem
+
         Args:
             texto: Texto da página
-            
+
         Returns:
-            True se é página PROCESSAMENTO
+            True se é página PROCESSAMENTO ou CERTIDÃO com numero_ordem
         """
         texto_upper = texto.upper()
-        
-        # Verificar keywords principais
+
+        # Verificar PROCESSAMENTO (padrão original)
         tem_titulo = "PROCESSAMENTO" in texto_upper
         tem_depre = "DEPRE" in texto_upper or "DIRETORIA DE EXECUÇÕES" in texto_upper
         tem_numero_ordem = "Nº DE ORDEM" in texto_upper or "NÚMERO DO PRECATÓRIO" in texto_upper
-        
-        # Precisa ter pelo menos título + um dos outros
-        return tem_titulo and (tem_depre or tem_numero_ordem)
+
+        # V2.7.3 FIX: Verificar CERTIDÃO DE PUBLICAÇÃO
+        tem_certidao = "CERTIDÃO DE PUBLICAÇÃO" in texto_upper or "CERTIDAO DE PUBLICACAO" in texto_upper
+        tem_numero_ordem_certidao = "NÚMERO DE ORDEM" in texto_upper
+
+        # Aceitar se:
+        # 1. PROCESSAMENTO + (DEPRE ou numero_ordem)
+        # 2. CERTIDÃO + numero_ordem
+        if tem_titulo and (tem_depre or tem_numero_ordem):
+            return True
+
+        if tem_certidao and tem_numero_ordem_certidao:
+            logger.info("✅ CERTIDÃO DE PUBLICAÇÃO detectada com numero_ordem")
+            return True
+
+        return False
     
     def eh_oficio_rejeitado(self, texto: str) -> bool:
         """
@@ -316,13 +333,13 @@ class DetectorProcessamento:
     def validar_numero_ordem(self, numero_ordem: str) -> bool:
         """
         Valida formato do número de ordem.
-        
+
         Args:
             numero_ordem: String a validar
-            
+
         Returns:
             True se formato válido (XXX/YYYY)
-            
+
         Example:
             >>> detector.validar_numero_ordem("822/2026")
             True
@@ -331,19 +348,78 @@ class DetectorProcessamento:
         """
         if not numero_ordem:
             return False
-        
+
         # Verificar padrão XXX/YYYY
         match = re.match(r'^\d{1,5}/\d{4}$', numero_ordem)
-        
+
         if match:
             # Validar ano (deve ser razoável)
             partes = numero_ordem.split('/')
             ano = int(partes[1])
-            
+
             if 2000 <= ano <= 2030:  # Anos válidos
                 return True
             else:
                 logger.warning(f"⚠️ Ano inválido no número de ordem: {ano}")
                 return False
-        
+
         return False
+
+    def buscar_numero_ordem_global(self, pdf_path: str) -> Optional[str]:
+        """
+        V2.7.3 FIX: Fallback global - busca numero_ordem em TODO o PDF usando REGEX.
+
+        Usado quando detectar_processamento() falha.
+        Busca padrões:
+        - "Nº de Ordem: XXXXX/YYYY"
+        - "Número de ordem: XXXXX/YYYY"
+        - "Número do Precatório: XXXXX/YYYY"
+
+        Args:
+            pdf_path: Caminho do PDF
+
+        Returns:
+            Primeiro numero_ordem válido encontrado ou None
+
+        Example:
+            >>> detector = DetectorProcessamento()
+            >>> numero = detector.buscar_numero_ordem_global("oficio.pdf")
+            >>> print(numero)  # "50228/2025"
+        """
+        try:
+            logger.info("🔍 V2.7.3: Iniciando busca GLOBAL de numero_ordem em todo PDF...")
+
+            doc = pymupdf.open(pdf_path)
+            total_paginas = len(doc)
+
+            # Padrões para buscar
+            padroes = [
+                re.compile(r'Nº de Ordem:\s*(\d{1,5}/\d{4})', re.IGNORECASE),
+                re.compile(r'Número de ordem:\s*(\d{1,5}/\d{4})', re.IGNORECASE),
+                re.compile(r'Número do Precatório:\s*(\d{1,5}/\d{4})', re.IGNORECASE),
+            ]
+
+            # Buscar em TODAS as páginas
+            for page_num in range(total_paginas):
+                page = doc.load_page(page_num)
+                texto = page.get_text()
+
+                # Tentar todos os padrões
+                for padrao in padroes:
+                    match = padrao.search(texto)
+                    if match:
+                        numero = match.group(1)
+
+                        # Validar
+                        if self.validar_numero_ordem(numero):
+                            logger.info(f"✅ V2.7.3 GLOBAL: numero_ordem encontrado na página {page_num + 1}: {numero}")
+                            doc.close()
+                            return numero
+
+            doc.close()
+            logger.warning("⚠️ V2.7.3 GLOBAL: numero_ordem NÃO encontrado em nenhuma página")
+            return None
+
+        except Exception as e:
+            logger.error(f"❌ Erro na busca global de numero_ordem: {e}")
+            return None
