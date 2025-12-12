@@ -13,25 +13,20 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 class OficioRequisitorio(BaseModel):
     """
     Schema principal para validação de dados extraídos de Ofícios Requisitórios.
-    
+
     Campos obrigatórios conforme AGENTS.md:
     - processo_origem: Número CNJ (formato: 0000000-00.0000.0.00.0000)
-    - requerente_caps: Nome TODO EM MAIÚSCULAS
+
+    V2.7.2: REMOVED requerente_caps - Era o advogado/representante, não o credor.
+            Para litisconsórcios, causava confusão. Usamos apenas credor_nome.
     """
-    
+
     # ===== CAMPOS OBRIGATÓRIOS =====
     processo_origem: str = Field(
-        ..., 
+        ...,
         description="Número CNJ do processo de origem (ou formato antigo)",
         min_length=10,  # Reduzido para aceitar formatos antigos mais curtos
         max_length=30
-    )
-    
-    requerente_caps: str = Field(
-        ..., 
-        description="Nome do requerente em MAIÚSCULAS",
-        min_length=3,
-        max_length=200
     )
     
     # V2: NOVO CAMPO (opcional pois pode não existir em ofícios rejeitados)
@@ -463,19 +458,8 @@ class OficioRequisitorio(BaseModel):
                 processo_limpo = processo_limpo[:30]
         
         return processo_limpo
-    
-    @field_validator('requerente_caps')
-    @classmethod
-    def validar_requerente_maiusculo(cls, v: str) -> str:
-        """Valida que o requerente está em MAIÚSCULAS"""
-        if not v:
-            raise ValueError("Nome do requerente é obrigatório")
-        
-        if v != v.upper():
-            raise ValueError(f"Nome do requerente deve estar em MAIÚSCULAS: {v}")
-        
-        return v
-    
+
+    # V2.7.2: REMOVED validar_requerente_maiusculo (requerente_caps field removed)
     # V2.7.1: REMOVED validar_oab (advogado_oab field removed)
 
     @field_validator('credor_cpf_cnpj', 'cpf_titular_conta', 'cpf_sucessor', mode='before')

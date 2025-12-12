@@ -437,11 +437,13 @@ class ProcessadorOficioV27(ProcessadorOficio):
         """
         Identify which fields are still missing after REGEX extraction.
 
-        V2.7.1: Only 4 fields need LLM (reduced from 8):
+        V2.7.2: Only 3 fields need LLM (reduced from 4 in V2.7.1):
         1. processo_origem (variable format)
-        2. requerente_caps (variable position)
-        3. vara (variable format)
-        4. devedor_ente (variable format)
+        2. vara (variable format)
+        3. devedor_ente (variable format)
+
+        REMOVED in V2.7.2 (1 field):
+        - requerente_caps (advogado/representante, not the actual credor - causes confusion in litisconsórcios)
 
         REMOVED in V2.7.1 (7 fields):
         - advogado_nome, advogado_oab (not needed)
@@ -454,9 +456,9 @@ class ProcessadorOficioV27(ProcessadorOficio):
         Returns:
             List of field names still missing
         """
-        # V2.7.1: All 45 fields from schema (reduced from 53)
+        # V2.7.2: All 44 fields from schema (reduced from 45)
         todos_campos = [
-            'processo_origem', 'requerente_caps', 'numero_ordem',
+            'processo_origem', 'numero_ordem',
             'vara', 'processo_execucao', 'processo_conhecimento',
             'data_base_atualizacao',
             # REMOVED: advogado_nome, advogado_oab, data_ajuizamento, data_transito_julgado
@@ -569,11 +571,11 @@ class ProcessadorOficioV27(ProcessadorOficio):
         """
         # Build field descriptions with explicit types
         descricoes = {
-            # PRIMARY FIELDS (V2.7.1: Only 4 fields)
+            # PRIMARY FIELDS (V2.7.2: Only 3 fields)
             'processo_origem': '(string) Número CNJ do processo (formato: 0000000-00.0000.0.00.0000)',
-            'requerente_caps': '(string) Nome TODO EM MAIÚSCULAS',
             'vara': '(string) Vara responsável pelo processo',
             'devedor_ente': '(string) Nome do ente devedor (ex: Município de São Paulo)',
+            # V2.7.2: REMOVED requerente_caps (advogado, not credor)
 
             # FALLBACK FIELDS (if REGEX fails)
             'numero_ordem': '(string) Número de ordem do RPV/Precatório (formato: XXXXX/YYYY)',
@@ -644,8 +646,7 @@ DOCUMENTO: Ofício Requisitório do Tribunal de Justiça de São Paulo
 
 1. STRINGS: Use aspas duplas (max 20 caracteres para campos curtos)
    Exemplo: "processo_origem": "0137444-93.2024.8.26.0500"
-   Exemplo: "requerente_caps": "ROBERTO FURIAN"
-   Exemplo: "data_ajuizamento": "2024-05-18"
+   Exemplo: "vara": "14ª VARA DA FAZENDA PÚBLICA"
    Exemplo: "conta_tipo": "Corrente" (OU null se não houver)
 
 2. BOOLEANS: Use true/false SEM aspas (NUNCA use "Sim"/"Não")

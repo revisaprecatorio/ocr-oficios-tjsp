@@ -26,8 +26,9 @@ CREATE TABLE IF NOT EXISTS esaj_detalhe_processos (
     -- CAMPOS OBRIGATÓRIOS DO JSON
     -- ========================================================================
     processo_origem VARCHAR(30) NOT NULL,
-    requerente_caps VARCHAR(200) NOT NULL,
-    
+    -- V2.7.2: REMOVED (advogado/representante, not actual credor - causes confusion in litisconsórcios):
+    -- requerente_caps VARCHAR(200) NOT NULL,
+
     -- ========================================================================
     -- CAMPOS OPCIONAIS - OFÍCIO
     -- ========================================================================
