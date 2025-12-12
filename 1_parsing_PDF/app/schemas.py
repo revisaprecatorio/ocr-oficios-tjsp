@@ -61,33 +61,15 @@ class OficioRequisitorio(BaseModel):
     )
     
     # ===== CAMPOS OPCIONAIS - DATAS =====
-    data_ajuizamento: Optional[date] = Field(
-        None, 
-        description="Data de ajuizamento do processo (formato ISO: YYYY-MM-DD)"
-    )
-    
-    data_transito_julgado: Optional[date] = Field(
-        None, 
-        description="Data do trânsito em julgado (formato ISO: YYYY-MM-DD)"
-    )
-    
+    # V2.7.1: REMOVED data_ajuizamento, data_transito_julgado (not needed)
+
     data_base_atualizacao: Optional[date] = Field(
         None, 
         description="Data base para atualização monetária (formato ISO: YYYY-MM-DD)"
     )
     
     # ===== CAMPOS OPCIONAIS - PARTES =====
-    advogado_nome: Optional[str] = Field(
-        None,
-        description="Nome do advogado",
-        max_length=200
-    )
-
-    advogado_oab: Optional[str] = Field(
-        None,
-        description="Número da OAB do advogado (formato: OAB/UF 000.000)",
-        max_length=20
-    )
+    # V2.7.1: REMOVED advogado_nome, advogado_oab (not needed)
 
     credor_nome: Optional[str] = Field(
         None,
@@ -132,13 +114,9 @@ class OficioRequisitorio(BaseModel):
         description="Tipo de conta (corrente, poupança, etc.)",
         max_length=20
     )
-    
-    # Estrutura aninhada do ANEXO II (alternativa)
-    anexo_ii: Optional[Dict[str, Any]] = Field(
-        None,
-        description="Dados bancários do ANEXO II em estrutura aninhada"
-    )
-    
+
+    # V2.7.1: REMOVED anexo_ii (not needed)
+
     # ===== CAMPOS FINANCEIROS - OPCIONAIS (V2) =====
     # Valores armazenados como Decimal para precisão monetária
     # Opcionais para permitir ofícios rejeitados ou PDFs antigos
@@ -206,11 +184,8 @@ class OficioRequisitorio(BaseModel):
         None,
         description="Indica se há habilitação de herdeiros (detectado via regex)"
     )
-    
-    cessao_credito: Optional[bool] = Field(
-        None,
-        description="Indica se há cessão de crédito ou direitos creditórios (detectado via regex)"
-    )
+
+    # V2.7.1: REMOVED cessao_credito (not needed)
 
     # ===== ÓBITO E SUCESSÃO (V2.5.3) =====
     obito: Optional[bool] = Field(
@@ -501,22 +476,8 @@ class OficioRequisitorio(BaseModel):
         
         return v
     
-    @field_validator('advogado_oab')
-    @classmethod
-    def validar_oab(cls, v: Optional[str]) -> Optional[str]:
-        """Valida formato OAB: OAB/UF 000.000"""
-        if v is None:
-            return v
-        
-        # Pattern básico para OAB
-        pattern = r'^OAB/[A-Z]{2}\s+\d{1,6}\.?\d{3}$'
-        if not re.match(pattern, v.upper()):
-            # Tentar normalizar formato comum
-            if re.match(r'^\d+/[A-Z]{2}$', v.upper()):
-                return f"OAB/{v.split('/')[1]} {v.split('/')[0]}"
-        
-        return v
-    
+    # V2.7.1: REMOVED validar_oab (advogado_oab field removed)
+
     @field_validator('credor_cpf_cnpj', 'cpf_titular_conta', 'cpf_sucessor', mode='before')
     @classmethod
     def validar_cpf_cnpj(cls, v: Optional[str]) -> Optional[str]:
@@ -566,21 +527,7 @@ class OficioRequisitorio(BaseModel):
         # Outros tipos: tentar converter
         return str(v)
     
-    @model_validator(mode='after')
-    def normalizar_dados_bancarios(self):
-        """Normaliza dados bancários de estrutura aninhada para campos diretos"""
-        # Se anexo_ii existe e campos diretos estão vazios, copiar
-        if self.anexo_ii and isinstance(self.anexo_ii, dict):
-            if not self.banco and 'banco' in self.anexo_ii:
-                self.banco = self.anexo_ii['banco']
-            if not self.agencia and 'agencia' in self.anexo_ii:
-                self.agencia = self.anexo_ii['agencia']
-            if not self.conta and 'conta' in self.anexo_ii:
-                self.conta = self.anexo_ii['conta']
-            if not self.conta_tipo and 'conta_tipo' in self.anexo_ii:
-                self.conta_tipo = self.anexo_ii['conta_tipo']
-        
-        return self
+    # V2.7.1: REMOVED normalizar_dados_bancarios (anexo_ii field removed)
 
 
 class ProcessoMetadata(BaseModel):

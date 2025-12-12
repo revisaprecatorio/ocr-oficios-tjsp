@@ -184,6 +184,30 @@ class ProcessadorOficioV27(ProcessadorOficio):
                         logger.info(f"✅ Seção do credor extraída ({len(secao_credor)} chars)")
                         texto_anexo = secao_credor
 
+            # === PHASE 6.5 (V2.7.1): DETECT PROCESSAMENTO PAGE ===
+            logger.info("=" * 80)
+            logger.info("🔍 V2.7.1: PHASE 6.5 - DETECT PROCESSAMENTO")
+            logger.info("=" * 80)
+
+            texto_proc = ""
+            # V2.7.1: Start search AFTER the correct ofício (avoid multi-ofício confusion)
+            inicio_busca = oficio_correto['paginas'][-1] if oficio_correto else 0
+            paginas_proc = self.detector_proc.detectar_processamento(pdf_path, inicio=inicio_busca)
+
+            if paginas_proc:
+                logger.info(f"✅ PROCESSAMENTO detectado: páginas {paginas_proc}")
+                # Extract text from PROCESSAMENTO pages
+                import fitz
+                doc = fitz.open(pdf_path)
+                for pag_num in paginas_proc:
+                    # V2.7.1: Validate page number is valid integer
+                    if isinstance(pag_num, int) and 0 <= pag_num < len(doc):
+                        texto_proc += doc[pag_num].get_text()
+                doc.close()
+                logger.info(f"✅ PROCESSAMENTO text extracted ({len(texto_proc)} chars)")
+            else:
+                logger.warning("⚠️ PROCESSAMENTO não detectado")
+
             # === V2.7.0 IMPROVEMENT 2: Detect old PDFs without ANEXO II ===
             nome_arquivo = Path(pdf_path).name
             processo_numero = nome_arquivo.replace('.pdf', '')
@@ -197,25 +221,88 @@ class ProcessadorOficioV27(ProcessadorOficio):
                 logger.warning("   Requer processamento manual especializado")
                 logger.warning("=" * 80)
 
-            # === PHASE 7 (NEW): COMPREHENSIVE REGEX EXTRACTION ===
+            # === PHASE 7 (V2.7.1): COMPREHENSIVE REGEX EXTRACTION ===
             logger.info("=" * 80)
-            logger.info("🔍 V2.7.0: PHASE 7 - COMPREHENSIVE REGEX EXTRACTION")
+            logger.info("🔍 V2.7.1: PHASE 7 - COMPREHENSIVE REGEX EXTRACTION")
             logger.info("=" * 80)
 
             dados_regex = {}
-            if texto_anexo and secao_credor:
+            extracao_credor_sucesso = False
+
+            # V2.7.1: Validate creditor extraction success
+            if secao_credor and len(secao_credor) > 100:
+                extracao_credor_sucesso = True
+                logger.info(f"✅ Extração do credor validada ({len(secao_credor)} chars)")
+            elif secao_credor:
+                logger.warning(f"⚠️ Seção do credor muito pequena ({len(secao_credor)} chars) - possível erro")
+            else:
+                logger.warning("⚠️ Extração do credor falhou (seção vazia)")
+
+            # V2.7.1: Anti-contamination - ABORT if multi-creditor PDF without successful extraction
+            if len(todos_oficios) > 1 and not extracao_credor_sucesso:
+                logger.error("=" * 80)
+                logger.error("❌ V2.7.1: DATA CONTAMINATION RISK DETECTED!")
+                logger.error(f"   PDF contains {len(todos_oficios)} creditors")
+                logger.error("   Creditor section extraction FAILED")
+                logger.error("   ABORTING to prevent wrong data extraction")
+                logger.error("=" * 80)
+
+                return {
+                    'cpf': cpf_numerico,
+                    'pdf': Path(pdf_path).name,
+                    'sucesso': False,
+                    'cpf_validado': True,
+                    'anomalia': True,
+                    'descricao_anomalia': (
+                        f"PDF multi-creditor ({len(todos_oficios)} credores) com falha na "
+                        f"extração da seção específica do CPF {cpf_formatado}. "
+                        f"Abortado para prevenir contaminação de dados entre credores."
+                    ),
+                    'tempo_processamento': time.time() - inicio,
+                    'num_oficios': len(todos_oficios)
+                }
+
+            if texto_anexo and extracao_credor_sucesso:
                 logger.info(f"📋 Extraindo TODOS os campos via REGEX...")
                 tempo_regex_inicio = time.time()
 
-                # Call V2.7.0 comprehensive extraction
-                dados_regex = self.detector_anexo.pre_extrair_dados_completo(texto_anexo)
+                # V2.7.1: Pass texto_processamento to extraction
+                dados_regex = self.detector_anexo.pre_extrair_dados_completo(
+                    texto_anexo,
+                    texto_processamento=texto_proc if texto_proc else None
+                )
 
                 tempo_regex = time.time() - tempo_regex_inicio
                 campos_regex = len([v for v in dados_regex.values() if v is not None])
                 logger.info(f"✅ REGEX extraction complete: {campos_regex} fields in {tempo_regex:.2f}s")
                 logger.info(f"   Success rate: {campos_regex}/45 = {100*campos_regex/45:.1f}%")
+
+                # V2.7.1: CPF CONSISTENCY VALIDATION
+                cpf_extraido = dados_regex.get('credor_cpf_cnpj', '').replace('.', '').replace('-', '')
+                if cpf_extraido and cpf_extraido != cpf_numerico:
+                    logger.error("=" * 80)
+                    logger.error("❌ V2.7.1: CPF MISMATCH DETECTED!")
+                    logger.error(f"   Expected CPF: {cpf_formatado} ({cpf_numerico})")
+                    logger.error(f"   Extracted CPF: {dados_regex.get('credor_cpf_cnpj')}")
+                    logger.error("   DATA CONTAMINATION DETECTED - Aborting")
+                    logger.error("=" * 80)
+
+                    return {
+                        'cpf': cpf_numerico,
+                        'pdf': Path(pdf_path).name,
+                        'sucesso': False,
+                        'cpf_validado': False,
+                        'anomalia': True,
+                        'descricao_anomalia': (
+                            f"CPF inconsistente: esperado {cpf_formatado}, "
+                            f"extraído {dados_regex.get('credor_cpf_cnpj')}. "
+                            f"Possível contaminação de dados de outro credor."
+                        ),
+                        'tempo_processamento': time.time() - inicio,
+                        'num_oficios': len(todos_oficios)
+                    }
             else:
-                logger.warning("⚠️ ANEXO II não encontrado, pulando extração REGEX")
+                logger.warning("⚠️ ANEXO II não encontrado ou extração falhou, pulando REGEX")
 
             # === PHASE 8 (NEW): IDENTIFY MISSING FIELDS ===
             logger.info("=" * 80)
@@ -236,10 +323,12 @@ class ProcessadorOficioV27(ProcessadorOficio):
             if campos_faltantes:
                 logger.info(f"🤖 Requesting {len(campos_faltantes)} missing fields from LLM...")
 
-                # Build full text (ofício + ANEXO II)
+                # Build full text (ofício + ANEXO II + PROCESSAMENTO)
                 texto_relevante = oficio_correto['texto']
                 if texto_anexo:
                     texto_relevante += f"\n\n{'='*60}\n=== ANEXO II ===\n{'='*60}\n\n{texto_anexo}"
+                if texto_proc:
+                    texto_relevante += f"\n\n{'='*60}\n=== PROCESSAMENTO ===\n{'='*60}\n\n{texto_proc}"
 
                 tempo_llm_inicio = time.time()
                 dados_llm = self._extrair_dados_llm_seletivo(
@@ -348,15 +437,16 @@ class ProcessadorOficioV27(ProcessadorOficio):
         """
         Identify which fields are still missing after REGEX extraction.
 
-        V2.7.0: Only 8 complex fields typically need LLM:
+        V2.7.1: Only 4 fields need LLM (reduced from 8):
         1. processo_origem (variable format)
         2. requerente_caps (variable position)
-        3. advogado_nome (multiple sections)
-        4. advogado_oab (multiple sections)
-        5. motivo_rejeicao (free text)
-        6. processo_execucao (rare)
-        7. processo_conhecimento (rare)
-        8. devedor_ente (rare)
+        3. vara (variable format)
+        4. devedor_ente (variable format)
+
+        REMOVED in V2.7.1 (7 fields):
+        - advogado_nome, advogado_oab (not needed)
+        - data_ajuizamento, data_transito_julgado (not needed)
+        - cessao_credito, anexo_ii, process_diagnostico (not needed)
 
         Args:
             dados_regex: Dict with fields extracted via regex
@@ -364,20 +454,21 @@ class ProcessadorOficioV27(ProcessadorOficio):
         Returns:
             List of field names still missing
         """
-        # All 53 fields from schema
+        # V2.7.1: All 45 fields from schema (reduced from 53)
         todos_campos = [
             'processo_origem', 'requerente_caps', 'numero_ordem',
             'vara', 'processo_execucao', 'processo_conhecimento',
-            'data_ajuizamento', 'data_transito_julgado', 'data_base_atualizacao',
-            'advogado_nome', 'advogado_oab',
+            'data_base_atualizacao',
+            # REMOVED: advogado_nome, advogado_oab, data_ajuizamento, data_transito_julgado
             'credor_nome', 'credor_cpf_cnpj', 'devedor_ente',
             'banco', 'agencia', 'conta', 'conta_tipo',
-            'anexo_ii',
+            # REMOVED: anexo_ii
             'valor_principal_liquido', 'valor_principal_bruto',
             'juros_moratorios', 'valor_total_requisitado', 'saldo_final',
             'contrib_previdenciaria_iprem', 'contrib_previdenciaria_hspm',
             'idoso', 'doenca_grave', 'pcd', 'preferencial',
-            'habilitacao_herdeiros', 'cessao_credito',
+            'habilitacao_herdeiros',
+            # REMOVED: cessao_credito
             'obito', 'data_obito', 'cpf_sucessor',
             'rejeitado', 'motivo_rejeicao',
             'observacoes', 'anomalia', 'descricao_anomalia',
@@ -462,7 +553,12 @@ class ProcessadorOficioV27(ProcessadorOficio):
         """
         Build minimal prompt requesting ONLY missing fields.
 
-        V2.7.0: Dramatically smaller prompt (8 fields vs 53 fields).
+        V2.7.1: Even smaller prompt (4 primary fields + fallbacks).
+
+        REMOVED IN V2.7.1:
+        - advogado_nome, advogado_oab (not needed)
+        - data_ajuizamento, data_transito_julgado (not needed)
+        - cessao_credito, anexo_ii, process_diagnostico (not needed)
 
         Args:
             texto_oficio: Full text
@@ -473,21 +569,19 @@ class ProcessadorOficioV27(ProcessadorOficio):
         """
         # Build field descriptions with explicit types
         descricoes = {
-            # Strings
+            # PRIMARY FIELDS (V2.7.1: Only 4 fields)
             'processo_origem': '(string) Número CNJ do processo (formato: 0000000-00.0000.0.00.0000)',
             'requerente_caps': '(string) Nome TODO EM MAIÚSCULAS',
+            'vara': '(string) Vara responsável pelo processo',
+            'devedor_ente': '(string) Nome do ente devedor (ex: Município de São Paulo)',
+
+            # FALLBACK FIELDS (if REGEX fails)
             'numero_ordem': '(string) Número de ordem do RPV/Precatório (formato: XXXXX/YYYY)',
-            'advogado_nome': '(string) Nome do advogado',
-            'advogado_oab': '(string) OAB do advogado (formato: OAB/SP XXX.XXX)',
             'motivo_rejeicao': '(string) Motivo da rejeição (se rejeitado)',
             'processo_execucao': '(string) Número do processo de execução',
             'processo_conhecimento': '(string) Número do processo de conhecimento',
-            'devedor_ente': '(string) Nome do ente devedor (ex: Município de São Paulo)',
-            'vara': '(string) Vara responsável pelo processo',
             'observacoes': '(string) Observações relevantes sobre o processamento. Use este campo para documentar informações importantes como "Parte não possui conta bancária" ou outras particularidades',
             'descricao_anomalia': '(string) Descrição da anomalia (se houver)',
-            'data_ajuizamento': '(string) Data de ajuizamento no formato ISO YYYY-MM-DD',
-            'data_transito_julgado': '(string) Data de trânsito em julgado no formato ISO YYYY-MM-DD',
             'cpf_titular_conta': '(string) CPF do titular da conta (somente números)',
             'cpf_sucessor': '(string) CPF do sucessor em caso de óbito (somente números)',
             'data_obito': '(string) Data de óbito no formato ISO YYYY-MM-DD',
@@ -497,7 +591,6 @@ class ProcessadorOficioV27(ProcessadorOficio):
             'rejeitado': '(boolean) true se ofício foi rejeitado, false caso contrário',
             'dados_bancarios_advogado': '(boolean) true se os dados bancários são do advogado, false se são do credor',
             'pcd': '(boolean) true se pessoa com deficiência, false caso contrário',
-            'cessao_credito': '(boolean) true se houve cessão de crédito, false caso contrário',
 
             # Numbers
             'valor_principal_liquido': '(number) Valor principal líquido em formato numérico (ex: 12345.67)',
@@ -508,8 +601,9 @@ class ProcessadorOficioV27(ProcessadorOficio):
             'contribuicao_social': '(number) Contribuição social em formato numérico',
             'assist_tecnico': '(number) Honorários de assistente técnico em formato numérico',
 
-            # Object (dict) - NEVER a string!
-            'anexo_ii': '(object) Objeto JSON vazio {} - NÃO copie o texto do ANEXO II aqui!'
+            # REMOVED IN V2.7.1:
+            # 'advogado_nome', 'advogado_oab', 'data_ajuizamento', 'data_transito_julgado',
+            # 'cessao_credito', 'anexo_ii'
         }
 
         # Build field list
@@ -563,10 +657,7 @@ DOCUMENTO: Ofício Requisitório do Tribunal de Justiça de São Paulo
    Exemplo: "valor_principal_liquido": 122125.03
    Exemplo: "contrib_previdenciaria_iprem": 13433.89
 
-4. OBJECTS: Use chaves {{}} (NUNCA copie texto para dentro do objeto!)
-   Exemplo: "anexo_ii": {{}}
-
-5. NULL: Se campo não existe, use null (sem aspas)
+4. NULL: Se campo não existe, use null (sem aspas)
    Exemplo: "data_obito": null
    Exemplo: "conta_tipo": null
    Exemplo: "cpf_sucessor": null
@@ -575,9 +666,6 @@ DOCUMENTO: Ofício Requisitório do Tribunal de Justiça de São Paulo
 
 ❌ ERRADO: "dados_bancarios_advogado": "Banco: 001 Agência: 6815"
 ✅ CORRETO: "dados_bancarios_advogado": true
-
-❌ ERRADO: "anexo_ii": "Credor nº: 1 Nome: FULANO..."
-✅ CORRETO: "anexo_ii": {{}}
 
 ❌ ERRADO: "anomalia": "Não"
 ✅ CORRETO: "anomalia": false

@@ -57,30 +57,43 @@ class DetectorAnexoIIV27(DetectorAnexoII):
         super().__init__()
         logger.info("🚀 DetectorAnexoIIV27 initialized (REGEX-first approach)")
 
-    def pre_extrair_dados_completo(self, texto_secao: str) -> Dict[str, any]:
+    def pre_extrair_dados_completo(
+        self,
+        texto_secao: str,
+        texto_processamento: Optional[str] = None
+    ) -> Dict[str, any]:
         """
-        V2.7.0: COMPREHENSIVE regex extraction.
+        V2.7.1: COMPREHENSIVE regex extraction.
 
         Extracts ALL possible fields using regex patterns before LLM.
         This is the master method that calls all individual extractors.
 
         EXTRACTION ORDER:
+        0. PROCESSAMENTO data (numero_ordem, processo_execucao, processo_conhecimento)
         1. Basic identifiers (CPF, dates)
         2. Bank data (banco, agencia, conta, conta_tipo)
         3. Personal info (nome, nascimento, idoso, pcd, doenca_grave)
         4. Financial values (all 14 value fields)
-        5. Legal flags (cessao, habilitacao, obito, preferencial)
+        5. Legal flags (habilitacao, obito, preferencial)
         6. Administrative (tipo_levantamento, dados_bancarios_advogado)
 
         Args:
             texto_secao: Text from creditor's section in ANEXO II
+            texto_processamento: Optional text from PROCESSAMENTO page
 
         Returns:
             Dict with all fields extracted via regex
         """
-        logger.info("🔍 V2.7.0: Starting COMPREHENSIVE regex extraction...")
+        logger.info("🔍 V2.7.1: Starting COMPREHENSIVE regex extraction...")
 
         dados = {}
+
+        # === PHASE 0: PROCESSAMENTO DATA (V2.7.1) ===
+        if texto_processamento:
+            logger.info("📋 Extracting PROCESSAMENTO fields...")
+            dados.update(self._regex_numero_ordem(texto_processamento))
+            dados.update(self._regex_processo_execucao(texto_processamento))
+            dados.update(self._regex_processo_conhecimento(texto_processamento))
 
         # === PHASE 1: BASIC IDENTIFIERS ===
         dados.update(self._regex_cpf_cnpj(texto_secao))
@@ -122,8 +135,7 @@ class DetectorAnexoIIV27(DetectorAnexoII):
         # Calculate saldo_final (V2.5.2 logic)
         dados.update(self._calcular_saldo_final(dados))
 
-        # === PHASE 5: LEGAL FLAGS ===
-        dados.update(self._regex_cessao_credito(texto_secao))
+        # === PHASE 5: LEGAL FLAGS (V2.7.1: cessao_credito removed) ===
         dados.update(self._regex_habilitacao_herdeiros(texto_secao))
         dados.update(self._regex_obito(texto_secao))
         dados.update(self._regex_data_obito(texto_secao))
@@ -307,18 +319,22 @@ class DetectorAnexoIIV27(DetectorAnexoII):
 
         CHALLENGE: Name can have multiple words, need to stop at next field.
         STRATEGY: Extract until next known field (CPF/CNPJ, Data, etc.)
+
+        V2.7.1: Accept both UPPERCASE and Title Case names (some PDFs use Title Case)
         """
         match = re.search(
-            r'Nome:\s*([A-ZÀÁÂÃÄÅÇÈÉÊËÌÍÎÏÑÒÓÔÕÖÙÚÛÜ\s]+?)(?=\s*(?:CPF|Data|Endere[çc]o|Telefone|Email|Banco|$))',
+            r'Nome:\s*([A-ZÀÁÂÃÄÅÇÈÉÊËÌÍÎÏÑÒÓÔÕÖÙÚÛÜa-zàáâãäåçèéêëìíîïñòóôõöùúûü\s]+?)(?=\s*(?:CPF|Data|Endere[çc]o|Telefone|Email|Banco|$))',
             texto,
             re.IGNORECASE
         )
         if match:
             nome = match.group(1).strip()
-            # Validate: nome should be in CAPS and at least 5 chars
-            if nome.isupper() and len(nome) >= 5:
-                logger.info(f"   ✅ Credor Nome: {nome}")
-                return {'credor_nome': nome}
+            # V2.7.1: Validate minimum length only (accept both CAPS and Title Case)
+            if len(nome) >= 5:
+                # Normalize to UPPERCASE for consistency
+                nome_upper = nome.upper()
+                logger.info(f"   ✅ Credor Nome: {nome_upper}")
+                return {'credor_nome': nome_upper}
         return {}
 
     def _regex_pcd(self, texto: str) -> Dict:
@@ -616,36 +632,8 @@ class DetectorAnexoIIV27(DetectorAnexoII):
         return {}
 
     # ========================================================================
-    # PHASE 5: LEGAL FLAGS
+    # PHASE 5: LEGAL FLAGS (V2.7.1: cessao_credito removed)
     # ========================================================================
-
-    def _regex_cessao_credito(self, texto: str) -> Dict:
-        """
-        Detect credit assignment (cessão de crédito).
-
-        PATTERNS:
-        - "Cessão de crédito: Sim/Não"
-        - Mentions of "cessionário", "cedente"
-        """
-        # Direct pattern
-        match = re.search(
-            r'Cess[ãa]o\s+de\s+cr[ée]dito:\s*(Sim|N[ãa]o)',
-            texto,
-            re.IGNORECASE
-        )
-        if match:
-            tem_cessao = match.group(1).upper() == 'SIM'
-            logger.info(f"   ✅ Cessão Crédito: {tem_cessao}")
-            return {'cessao_credito': tem_cessao}
-
-        # Alternative: look for keywords
-        keywords = ['cession[áa]rio', 'cedente', 'cess[ãa]o de direito']
-        for keyword in keywords:
-            if re.search(keyword, texto, re.IGNORECASE):
-                logger.info(f"   ✅ Cessão Crédito: True (keyword: {keyword})")
-                return {'cessao_credito': True}
-
-        return {}
 
     def _regex_habilitacao_herdeiros(self, texto: str) -> Dict:
         """
@@ -781,5 +769,69 @@ class DetectorAnexoIIV27(DetectorAnexoII):
                 tipo = match.group(1).strip()
                 logger.info(f"   ✅ Tipo Levantamento: {tipo}")
                 return {'tipo_levantamento': tipo}
+
+        return {}
+
+    # ========================================================================
+    # PHASE 0: PROCESSAMENTO DATA (V2.7.1)
+    # ========================================================================
+
+    def _regex_numero_ordem(self, texto: str) -> Dict:
+        """
+        Extract numero_ordem from PROCESSAMENTO page.
+
+        Reuses existing DetectorProcessamento logic.
+
+        PATTERNS:
+        - "Nº de Ordem: 822/2026"
+        - "Número do Precatório: 822/2026"
+        """
+        from .detector_processamento import DetectorProcessamento
+
+        detector = DetectorProcessamento()
+        numero = detector.extrair_numero_ordem(texto)
+
+        if numero:
+            logger.info(f"   ✅ Número Ordem: {numero}")
+            return {'numero_ordem': numero}
+
+        return {}
+
+    def _regex_processo_execucao(self, texto: str) -> Dict:
+        """
+        Extract execution process number from PROCESSAMENTO page.
+
+        PATTERN:
+        - "Processo DEPRE n°: XXXX-XX.XXXX.X.XX.XXXX"
+        """
+        match = re.search(
+            r'Processo\s+DEPRE\s+n[°º]?:\s*(\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4})',
+            texto,
+            re.IGNORECASE
+        )
+        if match:
+            processo = match.group(1)
+            logger.info(f"   ✅ Processo Execução: {processo}")
+            return {'processo_execucao': processo}
+
+        return {}
+
+    def _regex_processo_conhecimento(self, texto: str) -> Dict:
+        """
+        Extract knowledge process number from PROCESSAMENTO page.
+
+        PATTERN:
+        - "Processo Origem n°: XXXX-XX.XXXX.X.XX.XXXX"
+        - May include /YYYY suffix
+        """
+        match = re.search(
+            r'Processo\s+Origem\s+n[°º]?:\s*(\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}(?:/\d{4})?)',
+            texto,
+            re.IGNORECASE
+        )
+        if match:
+            processo = match.group(1)
+            logger.info(f"   ✅ Processo Conhecimento: {processo}")
+            return {'processo_conhecimento': processo}
 
         return {}

@@ -39,16 +39,18 @@ CREATE TABLE IF NOT EXISTS esaj_detalhe_processos (
     -- ========================================================================
     -- DATAS
     -- ========================================================================
-    data_ajuizamento DATE,
-    data_transito_julgado DATE,
+    -- V2.7.1: REMOVED (not needed):
+    -- data_ajuizamento DATE,
+    -- data_transito_julgado DATE,
     data_base_atualizacao DATE,
     data_nascimento DATE,
     
     -- ========================================================================
     -- PARTES ENVOLVIDAS
     -- ========================================================================
-    advogado_nome VARCHAR(200),
-    advogado_oab VARCHAR(20),
+    -- V2.7.1: REMOVED (not needed):
+    -- advogado_nome VARCHAR(200),
+    -- advogado_oab VARCHAR(20),
     credor_nome VARCHAR(200),
     credor_cpf_cnpj VARCHAR(18),
     devedor_ente VARCHAR(200),
@@ -94,7 +96,8 @@ CREATE TABLE IF NOT EXISTS esaj_detalhe_processos (
     -- ========================================================================
     preferencial BOOLEAN DEFAULT FALSE,
     habilitacao_herdeiros BOOLEAN DEFAULT FALSE,
-    cessao_credito BOOLEAN DEFAULT FALSE,
+    -- V2.7.1: REMOVED (not needed):
+    -- cessao_credito BOOLEAN DEFAULT FALSE,
 
     -- ========================================================================
     -- ÓBITO E SUCESSÃO (V2.5.3 - Detector de Habilitação de Herdeiros)
@@ -111,12 +114,10 @@ CREATE TABLE IF NOT EXISTS esaj_detalhe_processos (
     observacoes TEXT,
     anomalia BOOLEAN,
     descricao_anomalia TEXT,
-    
-    -- ========================================================================
-    -- NOVO CAMPO: Controle de Diagnóstico
-    -- ========================================================================
-    process_diagnostico BOOLEAN DEFAULT FALSE,
-    
+
+    -- V2.7.1: REMOVED (not needed):
+    -- process_diagnostico BOOLEAN DEFAULT FALSE,
+
     -- ========================================================================
     -- METADADOS
     -- ========================================================================
@@ -137,12 +138,12 @@ COMMENT ON TABLE esaj_detalhe_processos IS 'Dados extraídos de Ofícios Requisi
 COMMENT ON COLUMN esaj_detalhe_processos.id IS 'ID auto-incremento (chave primária)';
 COMMENT ON COLUMN esaj_detalhe_processos.cpf IS 'CPF do requerente (extraído do nome da pasta)';
 COMMENT ON COLUMN esaj_detalhe_processos.numero_processo_cnj IS 'Número do processo CNJ (extraído do nome do arquivo)';
-COMMENT ON COLUMN esaj_detalhe_processos.process_diagnostico IS 'Flag para controle de processamento/diagnóstico (DEFAULT FALSE)';
+-- V2.7.1: REMOVED process_diagnostico
 COMMENT ON COLUMN esaj_detalhe_processos.rejeitado IS 'Indica se o ofício foi rejeitado pelo DEPRE';
 COMMENT ON COLUMN esaj_detalhe_processos.timestamp_ingestao IS 'Data/hora da ingestão no banco';
 COMMENT ON COLUMN esaj_detalhe_processos.preferencial IS 'Indica se há pedido de preferência no processo (detectado via regex: preferência|preferencia)';
 COMMENT ON COLUMN esaj_detalhe_processos.habilitacao_herdeiros IS 'Indica se há habilitação de herdeiros no processo (V2.5.3: detectado via código 9270 e termos jurídicos)';
-COMMENT ON COLUMN esaj_detalhe_processos.cessao_credito IS 'Indica se há cessão de crédito (V2.4.0: detectado via regex)';
+-- V2.7.1: REMOVED cessao_credito
 COMMENT ON COLUMN esaj_detalhe_processos.saldo_final IS 'Saldo final após pagamento parcial. Se não houver, igual a valor_total_requisitado (V2.5.2)';
 COMMENT ON COLUMN esaj_detalhe_processos.obito IS 'Indica se o requerente faleceu (V2.5.3: detectado via Detector de Habilitação de Herdeiros)';
 COMMENT ON COLUMN esaj_detalhe_processos.data_obito IS 'Data do óbito do requerente (V2.5.3)';
