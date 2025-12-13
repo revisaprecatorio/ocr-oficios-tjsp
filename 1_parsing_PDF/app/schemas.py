@@ -1,6 +1,8 @@
 """
 Schemas Pydantic para validação de dados dos Ofícios Requisitórios TJSP.
 Conforme especificações do AGENTS.md.
+
+V3.0: Schema simplificado - 35 colunas essenciais (50→35, -30%)
 """
 
 import re
@@ -38,22 +40,12 @@ class OficioRequisitorio(BaseModel):
     
     # ===== CAMPOS OPCIONAIS - OFÍCIO =====
     vara: Optional[str] = Field(
-        None, 
+        None,
         description="Vara responsável pelo ofício",
         max_length=100
     )
-    
-    processo_execucao: Optional[str] = Field(
-        None, 
-        description="Número do processo de execução",
-        max_length=30
-    )
-    
-    processo_conhecimento: Optional[str] = Field(
-        None, 
-        description="Número do processo de conhecimento",
-        max_length=30
-    )
+
+    # V3.0: REMOVED processo_execucao, processo_conhecimento (0% filled)
     
     # ===== CAMPOS OPCIONAIS - DATAS =====
     # V2.7.1: REMOVED data_ajuizamento, data_transito_julgado (not needed)
@@ -104,12 +96,7 @@ class OficioRequisitorio(BaseModel):
         max_length=30
     )
 
-    conta_tipo: Optional[str] = Field(
-        None,
-        description="Tipo de conta (corrente, poupança, etc.)",
-        max_length=20
-    )
-
+    # V3.0: REMOVED conta_tipo, tipo_levantamento, dados_bancarios_advogado, cpf_titular_conta (0% filled)
     # V2.7.1: REMOVED anexo_ii (not needed)
 
     # ===== CAMPOS FINANCEIROS - OPCIONAIS (V2) =====
@@ -143,15 +130,7 @@ class OficioRequisitorio(BaseModel):
         description="Saldo final após pagamento parcial. Se não houver pagamento parcial, igual a valor_total_requisitado. Campo detectado via regex ou LLM."
     )
 
-    contrib_previdenciaria_iprem: Optional[Decimal] = Field(
-        None,
-        description="Contribuição previdenciária IPREM (sem R$, sem pontos de milhar)"
-    )
-    
-    contrib_previdenciaria_hspm: Optional[Decimal] = Field(
-        None, 
-        description="Contribuição previdenciária HSPM (sem R$, sem pontos de milhar)"
-    )
+    # V3.0: REMOVED contrib_previdenciaria_iprem, contrib_previdenciaria_hspm, valor_compensado, custas (0% filled)
     
     # ===== CAMPOS OPCIONAIS - PREFERÊNCIAS =====
     idoso: Optional[bool] = Field(
@@ -227,78 +206,15 @@ class OficioRequisitorio(BaseModel):
         description="Descrição da anomalia encontrada",
         max_length=500
     )
-    
-    # ===== CAMPOS ADICIONAIS DO ANEXO II (V2) =====
-    tipo_levantamento: Optional[str] = Field(
-        None,
-        description="Tipo de levantamento (ex: Crédito em contas para outros bancos)",
-        max_length=200
-    )
-    
-    dados_bancarios_advogado: Optional[bool] = Field(
-        None,
-        description="Se os dados bancários informados são do advogado"
-    )
-    
-    cpf_titular_conta: Optional[str] = Field(
-        None,
-        description="CPF do titular da conta bancária indicada",
-        max_length=18
-    )
-    
+
+    # V3.0: Removed 9 campos (tipo_levantamento, dados_bancarios_advogado, cpf_titular_conta,
+    # valor_compensado, contribuicao_social, salario_pericial, assist_tecnico, custas,
+    # despesas, multas) - 0% filled
+
+    # ===== CAMPOS ADICIONAIS (V2/V3) =====
     data_nascimento: Optional[date] = Field(
         None,
         description="Data de nascimento do credor"
-    )
-    
-    valor_compensado: Optional[Decimal] = Field(
-        None,
-        description="Valor compensado (Art. 100)",
-        ge=0,
-        decimal_places=2
-    )
-    
-    # Valores trabalhistas (se houver)
-    contribuicao_social: Optional[Decimal] = Field(
-        None,
-        description="Contribuição social",
-        ge=0,
-        decimal_places=2
-    )
-    
-    salario_pericial: Optional[Decimal] = Field(
-        None,
-        description="Salário pericial",
-        ge=0,
-        decimal_places=2
-    )
-    
-    assist_tecnico: Optional[Decimal] = Field(
-        None,
-        description="Assistente técnico",
-        ge=0,
-        decimal_places=2
-    )
-    
-    custas: Optional[Decimal] = Field(
-        None,
-        description="Custas processuais",
-        ge=0,
-        decimal_places=2
-    )
-    
-    despesas: Optional[Decimal] = Field(
-        None,
-        description="Despesas",
-        ge=0,
-        decimal_places=2
-    )
-    
-    multas: Optional[Decimal] = Field(
-        None,
-        description="Multas",
-        ge=0,
-        decimal_places=2
     )
 
     # ===== VALIDADORES =====
@@ -309,15 +225,9 @@ class OficioRequisitorio(BaseModel):
         'juros_moratorios',
         'valor_total_requisitado',
         'saldo_final',  # V2.5.2: Novo campo
-        'contrib_previdenciaria_iprem',
-        'contrib_previdenciaria_hspm',
-        'valor_compensado',
-        'contribuicao_social',
-        'salario_pericial',
-        'assist_tecnico',
-        'custas',
-        'despesas',
-        'multas',
+        # V3.0: Removed 8 campos (contrib_previdenciaria_iprem, contrib_previdenciaria_hspm,
+        # valor_compensado, contribuicao_social, salario_pericial, assist_tecnico, custas,
+        # despesas, multas)
         mode='before'
     )
     @classmethod
