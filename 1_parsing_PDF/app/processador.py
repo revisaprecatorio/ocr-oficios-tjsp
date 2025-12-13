@@ -1,5 +1,5 @@
 """
-ProcessadorOficio V2.6.0 - Pipeline consolidado com data quality aprimorada.
+ProcessadorOficio V2.7.4 - V2.7.2/V2.7.3 fixes + Prompts LLM atualizados.
 
 V2.6.0 = V2.5.3 + Melhorias Críticas:
 1. ✅ Exemplos explícitos no prompt (valores brasileiros) - já em V2.5.3
@@ -76,11 +76,11 @@ class ProcessadorOficio:
         self.detector_habilitacao = DetectorHabilitacaoHerdeiros()  # V2.5.3: Novo detector
 
         logger.info("=" * 80)
-        logger.info("🚀 ProcessadorOficio V2.6.0 inicializado")
+        logger.info("🚀 ProcessadorOficio V2.7.4 inicializado")
         logger.info("=" * 80)
         logger.info("✅ V2.5.2: Detector Saldo Final")
         logger.info("✅ V2.5.3: Detector Habilitação Herdeiros + Doença Grave + Óbito")
-        logger.info("✅ V2.6.0: Verificação de tipos + Validação de sanidade")
+        logger.info("✅ V2.7.4: Prompts LLM atualizados (requerente_caps removido)")
         logger.info("=" * 80)
     
     def processar_arquivo(self, pdf_path: str, cpf_numerico: str, tracker: Optional[TrackerExecucao] = None) -> Dict[str, Any]:
@@ -629,8 +629,9 @@ class ProcessadorOficio:
                 tracker.adicionar_item("Validando dados extraídos...", nivel=0, emoji="🔍")
 
             try:
+                logger.info("🔍 V2.7.4: Iniciando validação Pydantic...")
                 oficio_validado = OficioRequisitorio(**dados_oficio)
-                logger.info("✅ Dados validados com sucesso")
+                logger.info("✅ V2.7.4: Dados validados com sucesso (sem erros de campo inexistente)")
                 if tracker:
                     tracker.adicionar_resultado("Dados validados com sucesso", sucesso=True, nivel=1)
                     campos_preenchidos = len([k for k, v in dados_oficio.items() if v])
@@ -638,11 +639,12 @@ class ProcessadorOficio:
             except Exception as e:
                 # FINDING 08: Se validação falhar, tentar fallback para OpenAI
                 from pydantic import ValidationError
-                
-                # Log completo do erro (TODO #3)
-                logger.error(f"❌ Erro na validação Pydantic com dados do Gemini:")
+
+                # V2.7.4: Log completo do erro
+                logger.error(f"❌ V2.7.4: Erro na validação Pydantic:")
                 logger.error(f"   Tipo: {type(e).__name__}")
                 logger.error(f"   Mensagem: {str(e)}")
+                logger.error(f"   Dados tentados: {list(dados_oficio.keys())[:10]}...")  # V2.7.4: Log campos
                 
                 # Se temos LLM adapter e não tentamos OpenAI ainda, fazer fallback
                 if hasattr(self, 'llm_adapter') and self.llm_adapter:
@@ -1179,7 +1181,6 @@ DOCUMENTO: Ofício Requisitório do Tribunal de Justiça de São Paulo
 === CAMPOS OBRIGATÓRIOS (nível raiz do JSON) ===
 
 - processo_origem: Número CNJ do processo (formato: 0000000-00.0000.0.00.0000)
-- requerente_caps: Nome TODO EM MAIÚSCULAS
 - numero_ordem: Número de ordem do RPV/Precatório (formato: XXXXX/YYYY)
   ⚠️ ATENÇÃO - DIFERENÇA CRÍTICA:
   * CORRETO: "644/2015", "2913/2023", "12345/2024" (formato: números/ano)
@@ -1233,7 +1234,7 @@ REGRA FUNDAMENTAL: Este PDF pode conter MÚLTIPLOS CREDORES (até 52 credores em
 2. O campo "Nome:" no OFÍCIO refere-se ao CREDOR ESPECÍFICO que você deve extrair
    Exemplo: "Nome: Roberto Pereira da Cruz" = credor #26 de 52
 
-3. SEMPRE use o campo "Nome:" do OFÍCIO para preencher `requerente_caps`
+3. V2.7.4: Campo requerente_caps REMOVIDO (usamos apenas credor_nome)
    NUNCA use o campo "Requerente:" do PROCESSAMENTO
 
 4. Se encontrar "Credor n°: XX" ou "Credor nº: XX", esse é o credor específico
@@ -1243,12 +1244,12 @@ EXEMPLO DE CONFUSÃO (NÃO FAÇA ISTO):
 ❌ ERRADO:
 Ofício: "Credor nº: 26, Nome: Roberto Pereira da Cruz"
 PROCESSAMENTO: "Requerente: Maria das Dores e outros"
-→ requerente_caps = "MARIA DAS DORES..." ← ERRADO!
+→ V2.7.4: requerente_caps REMOVIDO
 
 ✅ CORRETO:
 Ofício: "Credor nº: 26, Nome: Roberto Pereira da Cruz"
 PROCESSAMENTO: "Requerente: [VIDE OFÍCIO PARA CREDOR ESPECÍFICO]"
-→ requerente_caps = "ROBERTO PEREIRA DA CRUZ" ← CORRETO!
+→ V2.7.4: requerente_caps REMOVIDO
 ```
 
 ⚠️⚠️⚠️ ATENÇÃO: DADOS BANCÁRIOS INLINE (SEM ANEXO II SEPARADO) ⚠️⚠️⚠️
@@ -1260,7 +1261,7 @@ PROCURE POR ESTES PADRÕES NO TEXTO DO OFÍCIO:
 
 PADRÃO INLINE TÍPICO (PROCURE NO OFÍCIO):
 - "Credor n°: XX" ou "Credor nº: XX"
-- "Nome: [NOME COMPLETO]" ← USE ESTE PARA requerente_caps
+- "Nome: [NOME COMPLETO]" ← Extrair para credor_nome
 - "CPF/CNPJ: XXX.XXX.XXX-XX" ← EXTRAIA PARA credor_cpf_cnpj
 - "Data do nascimento: DD/MM/AAAA" ← EXTRAIA PARA data_nascimento (converta para AAAA-MM-DD)
 - "Banco: XXX" ou "Banco: [NOME DO BANCO]"
@@ -1284,7 +1285,7 @@ SEMPRE extraia estes campos quando presentes no ofício!
 REGRAS PARA DADOS INLINE:
 1. Se há ANEXO II separado → use dados do ANEXO II (prioridade)
 2. Se NÃO há ANEXO II → procure dados inline no ofício
-3. SEMPRE use "Nome:" do ofício para requerente_caps (NUNCA "Requerente:" do PROCESSAMENTO)
+3. V2.7.4: Campo requerente_caps REMOVIDO (usamos apenas credor_nome)
 4. SEMPRE extraia CPF/CNPJ e Data do nascimento se presentes no ofício
 5. Extraia TODOS os campos disponíveis (banco, agência, conta, valores)
 6. Se encontrar "Credor n°: XX", extraia os dados desse credor específico
@@ -1301,7 +1302,7 @@ Valor requisitado: R$ 52.228,43"
 
 → Extrair:
 {{
-  "requerente_caps": "ROBERTO PEREIRA DA CRUZ",  ← Use "Nome:" do ofício
+  // V2.7.4: requerente_caps REMOVIDO
   "credor_nome": "ROBERTO PEREIRA DA CRUZ",
   "credor_cpf_cnpj": "037.304.618-93",
   "banco": "001",
@@ -1455,7 +1456,6 @@ DOCUMENTO: Ofício Requisitório do Tribunal de Justiça de São Paulo
 === CAMPOS OBRIGATÓRIOS (nível raiz do JSON) ===
 
 - processo_origem: Número CNJ do processo (formato: 0000000-00.0000.0.00.0000)
-- requerente_caps: Nome TODO EM MAIÚSCULAS
 - numero_ordem: Número de ordem do RPV/Precatório (formato: XXXXX/YYYY)
   ⚠️ ATENÇÃO - DIFERENÇA CRÍTICA:
   * CORRETO: "644/2015", "2913/2023", "12345/2024" (formato: números/ano)
@@ -1509,7 +1509,7 @@ REGRA FUNDAMENTAL: Este PDF pode conter MÚLTIPLOS CREDORES (até 52 credores em
 2. O campo "Nome:" no OFÍCIO refere-se ao CREDOR ESPECÍFICO que você deve extrair
    Exemplo: "Nome: Roberto Pereira da Cruz" = credor #26 de 52
 
-3. SEMPRE use o campo "Nome:" do OFÍCIO para preencher `requerente_caps`
+3. V2.7.4: Campo requerente_caps REMOVIDO (usamos apenas credor_nome)
    NUNCA use o campo "Requerente:" do PROCESSAMENTO
 
 4. Se encontrar "Credor n°: XX" ou "Credor nº: XX", esse é o credor específico
@@ -1519,12 +1519,12 @@ EXEMPLO DE CONFUSÃO (NÃO FAÇA ISTO):
 ❌ ERRADO:
 Ofício: "Credor nº: 26, Nome: Roberto Pereira da Cruz"
 PROCESSAMENTO: "Requerente: Maria das Dores e outros"
-→ requerente_caps = "MARIA DAS DORES..." ← ERRADO!
+→ V2.7.4: requerente_caps REMOVIDO
 
 ✅ CORRETO:
 Ofício: "Credor nº: 26, Nome: Roberto Pereira da Cruz"
 PROCESSAMENTO: "Requerente: [VIDE OFÍCIO PARA CREDOR ESPECÍFICO]"
-→ requerente_caps = "ROBERTO PEREIRA DA CRUZ" ← CORRETO!
+→ V2.7.4: requerente_caps REMOVIDO
 ```
 
 ⚠️⚠️⚠️ ATENÇÃO: DADOS BANCÁRIOS INLINE (SEM ANEXO II SEPARADO) ⚠️⚠️⚠️
@@ -1536,7 +1536,7 @@ PROCURE POR ESTES PADRÕES NO TEXTO DO OFÍCIO:
 
 PADRÃO INLINE TÍPICO (PROCURE NO OFÍCIO):
 - "Credor n°: XX" ou "Credor nº: XX"
-- "Nome: [NOME COMPLETO]" ← USE ESTE PARA requerente_caps
+- "Nome: [NOME COMPLETO]" ← Extrair para credor_nome
 - "CPF/CNPJ: XXX.XXX.XXX-XX" ← EXTRAIA PARA credor_cpf_cnpj
 - "Data do nascimento: DD/MM/AAAA" ← EXTRAIA PARA data_nascimento (converta para AAAA-MM-DD)
 - "Banco: XXX" ou "Banco: [NOME DO BANCO]"
@@ -1560,7 +1560,7 @@ SEMPRE extraia estes campos quando presentes no ofício!
 REGRAS PARA DADOS INLINE:
 1. Se há ANEXO II separado → use dados do ANEXO II (prioridade)
 2. Se NÃO há ANEXO II → procure dados inline no ofício
-3. SEMPRE use "Nome:" do ofício para requerente_caps (NUNCA "Requerente:" do PROCESSAMENTO)
+3. V2.7.4: Campo requerente_caps REMOVIDO (usamos apenas credor_nome)
 4. SEMPRE extraia CPF/CNPJ e Data do nascimento se presentes no ofício
 5. Extraia TODOS os campos disponíveis (banco, agência, conta, valores)
 6. Se encontrar "Credor n°: XX", extraia os dados desse credor específico
@@ -1577,7 +1577,7 @@ Valor requisitado: R$ 52.228,43"
 
 → Extrair:
 {{
-  "requerente_caps": "ROBERTO PEREIRA DA CRUZ",  ← Use "Nome:" do ofício
+  // V2.7.4: requerente_caps REMOVIDO
   "credor_nome": "ROBERTO PEREIRA DA CRUZ",
   "credor_cpf_cnpj": "037.304.618-93",
   "banco": "001",
@@ -1649,7 +1649,7 @@ CONTROLE:
 EXEMPLO DE ESTRUTURA CORRETA:
 {{
   "processo_origem": "0035938-67.2018.8.26.0053",
-  "requerente_caps": "REGINA APARECIDA NARDES GARCIA DIAS",
+  // V2.7.4: requerente_caps REMOVIDO
   "numero_ordem": "2913/2023",
   "valor_principal_liquido": 17753.80,
   "valor_principal_bruto": 37993.13,
