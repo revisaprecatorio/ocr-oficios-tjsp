@@ -1,15 +1,23 @@
 """
-ProcessadorOficio V2.7.5 - V2.7.2/V2.7.3/V2.7.4 fixes + Detecção PROCESSAMENTO rigorosa.
+ProcessadorOficio V2.7.6 - V2.7.2/V2.7.3/V2.7.4/V2.7.5 fixes + doenca_grave fix.
 
-V2.6.0 = V2.5.3 + Melhorias Críticas:
-1. ✅ Exemplos explícitos no prompt (valores brasileiros) - já em V2.5.3
-2. ✅ Verificação rigorosa de tipos de dados (NOVO)
-3. ✅ Validação de sanidade de valores (NOVO)
+V2.7.6 = FIX CRÍTICO doenca_grave:
+1. ✅ DetectorTermosJuridicos agora valida RESPOSTA (Sim/Não)
+2. ✅ Bug v2.5.3: detectava keyword, ignorava resposta "Não"
+3. ✅ Resultado: 100% falso-positivos corrigidos
 
-Histórico:
+Histórico V2.7.x:
+- V2.7.6: FIX doenca_grave - validação de resposta Sim/Não
+- V2.7.5: Detecção PROCESSAMENTO rigorosa (3 campos obrigatórios)
+- V2.7.4: Prompts LLM atualizados (requerente_caps removido)
+- V2.7.3: Fix data quality (numero_ordem + cpf_sucessor)
+- V2.7.2: Remove requerente_caps field
+- V2.7.1: Fix critical bugs (numero_ordem + data contamination)
+- V2.7.0: REGEX-first architecture
+
+Histórico V2.5.x:
 - V2.5.3: Detecção de habilitação de herdeiros, óbito, doença grave
 - V2.5.2: Detecção de saldo final
-- V2.6.0: Consolidação com data quality aprimorada (unificação com V3)
 
 Meta: Taxa de sucesso ≥98% (vs 96.1% em V2.5.1)
 """
@@ -76,12 +84,13 @@ class ProcessadorOficio:
         self.detector_habilitacao = DetectorHabilitacaoHerdeiros()  # V2.5.3: Novo detector
 
         logger.info("=" * 80)
-        logger.info("🚀 ProcessadorOficio V2.7.5 inicializado")
+        logger.info("🚀 ProcessadorOficio V2.7.6 inicializado")
         logger.info("=" * 80)
         logger.info("✅ V2.5.2: Detector Saldo Final")
         logger.info("✅ V2.5.3: Detector Habilitação Herdeiros + Doença Grave + Óbito")
         logger.info("✅ V2.7.4: Prompts LLM atualizados (requerente_caps removido)")
         logger.info("✅ V2.7.5: Detecção PROCESSAMENTO rigorosa (3 campos obrigatórios) + validação numero_ordem")
+        logger.info("✅ V2.7.6: FIX CRÍTICO doenca_grave - validação de resposta (Sim/Não)")
         logger.info("=" * 80)
     
     def processar_arquivo(self, pdf_path: str, cpf_numerico: str, tracker: Optional[TrackerExecucao] = None) -> Dict[str, Any]:

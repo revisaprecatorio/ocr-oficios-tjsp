@@ -1,16 +1,23 @@
 """
 DetectorTermosJuridicos - Detecta termos jurídicos específicos em PDFs
-Versão: 2.0.0
-Data: 04/12/2025
+Versão: 2.7.6
+Data: 13/12/2025
+
+MUDANÇAS v2.7.6:
+- 🔧 DOENÇA GRAVE: FIX CRÍTICO - agora valida resposta (Sim/Não) em vez de apenas detectar keyword
+  * Bug v2.5.3: detectava keyword "Portador de doença grave", ignorava resposta "Não"
+  * Causava 100% falso-positivos (todos PDFs têm o campo)
+  * Solução: novo método _detectar_doenca_grave_com_resposta()
 
 MUDANÇAS v2.0:
 - ❌ CESSÃO DE CRÉDITO: Desativado (sempre retorna False)
 - ✅ HABILITAÇÃO DE HERDEIROS: Nova lógica validada por CPF
 - ✅ PREFERENCIAL: Mantido sem alterações
 
-Detecta 2 termos jurídicos específicos no texto completo do PDF:
+Detecta 3 termos jurídicos específicos no texto completo do PDF:
 1. Preferência/Preferencia
 2. Habilitação de Herdeiros (VALIDADO por CPF do objeto)
+3. Doença Grave (VALIDADO por resposta Sim/Não - v2.7.6)
 """
 
 import re
@@ -63,25 +70,24 @@ class DetectorTermosJuridicos:
         #     re.IGNORECASE
         # )
 
-        # Pattern 4: Doença Grave (v2.5.3)
-        # Matches: "doença grave", "moléstia grave", "laudo médico", etc.
-        self.pattern_doenca_grave = re.compile(
-            r'(doen[çc]a\s+grave|mol[ée]stia\s+grave|grave\s+doen[çc]a|'
-            r'laudo\s+m[ée]dico|atestado\s+m[ée]dico|'
-            r'portador\s+de\s+doen[çc]a\s+grave)',
+        # Pattern 4: Doença Grave - Campo do formulário com resposta (v2.7.6)
+        # Matches: "Portador de doença grave: Sim" ou "Portador de doença grave: Não"
+        # V2.7.6 FIX: Agora extrai a RESPOSTA (Sim/Não) em vez de apenas detectar keyword
+        self.pattern_doenca_grave_campo = re.compile(
+            r'Portador\s+de\s+doen[çc]a\s+grave:\s*([^\n]{1,30})',
             re.IGNORECASE
         )
 
-        logger.info("DetectorTermosJuridicos v2.5.3 inicializado (Cessão de Crédito DESATIVADO, Doença Grave ATIVO)")
+        logger.info("DetectorTermosJuridicos v2.7.6 inicializado (Cessão DESATIVADO, Doença Grave com validação de resposta)")
     
     def detectar_termos(self, texto_completo: str, cpf_objeto: str = None) -> Dict[str, bool]:
         """
         Busca termos jurídicos no texto completo do PDF.
 
-        MUDANÇAS v2.5.3:
+        MUDANÇAS v2.7.6:
         - Cessão de crédito sempre retorna False (desativado)
         - Habilitação de herdeiros validada por CPF (evita falso-positivos)
-        - Doença grave detectada (novo campo)
+        - Doença grave VALIDADA por resposta (FIX: não retorna True apenas pela keyword)
 
         Args:
             texto_completo: Texto completo extraído do PDF
@@ -93,16 +99,16 @@ class DetectorTermosJuridicos:
             {
                 'preferencial': bool,
                 'habilitacao_herdeiros': bool,
-                'cessao_credito': bool,  # Sempre False em v2.5.3
-                'doenca_grave': bool  # Novo em v2.5.3
+                'cessao_credito': bool,  # Sempre False em v2.7.6
+                'doenca_grave': bool  # Validado por resposta em v2.7.6
             }
 
         Example:
             >>> detector = DetectorTermosJuridicos()
-            >>> texto = "Reconheço a preferência para o credor com doença grave"
+            >>> texto = "Portador de doença grave: Sim"
             >>> resultado = detector.detectar_termos(texto, "576.290.808-91")
             >>> print(resultado)
-            {'preferencial': True, 'habilitacao_herdeiros': False, 'cessao_credito': False, 'doenca_grave': True}
+            {'preferencial': False, 'habilitacao_herdeiros': False, 'cessao_credito': False, 'doenca_grave': True}
         """
         if not texto_completo:
             logger.warning("Texto vazio fornecido para detecção de termos")
@@ -122,8 +128,8 @@ class DetectorTermosJuridicos:
         # 3. CESSÃO DE CRÉDITO = Sempre False (desativado v2.0)
         cessao = False
 
-        # 4. Buscar DOENÇA GRAVE (v2.5.3)
-        doenca_grave = bool(self.pattern_doenca_grave.search(texto_completo))
+        # 4. Buscar DOENÇA GRAVE com validação de resposta (v2.7.6 FIX)
+        doenca_grave = self._detectar_doenca_grave_com_resposta(texto_completo)
 
         # Log resultados
         logger.info(
@@ -202,7 +208,67 @@ class DetectorTermosJuridicos:
                 f"Encontrado {cpf_encontrado}, esperado {cpf_objeto}"
             )
             return False
-    
+
+    def _detectar_doenca_grave_com_resposta(self, texto_completo: str) -> bool:
+        """
+        Detecta doença grave VALIDADA por resposta (Sim/Não).
+
+        LÓGICA v2.7.6 (FIX crítico):
+        1. Busca campo "Portador de doença grave:"
+        2. Extrai a resposta (próximos 30 chars)
+        3. Valida se resposta == "Sim"
+        4. Retorna TRUE apenas se resposta for "Sim"
+
+        BUG ANTERIOR (v2.5.3):
+        - Regex simples detectava apenas keyword "portador de doença grave"
+        - Retornava TRUE mesmo quando resposta era "Não"
+        - Causava 100% falso-positivos (todos PDFs têm o campo)
+
+        Args:
+            texto_completo: Texto completo do PDF
+
+        Returns:
+            True se resposta for "Sim", False caso contrário
+
+        Example:
+            >>> detector = DetectorTermosJuridicos()
+            >>> texto = "Portador de doença grave: Sim"
+            >>> resultado = detector._detectar_doenca_grave_com_resposta(texto)
+            >>> print(resultado)
+            True
+
+            >>> texto2 = "Portador de doença grave: Não"
+            >>> resultado2 = detector._detectar_doenca_grave_com_resposta(texto2)
+            >>> print(resultado2)
+            False
+        """
+        if not texto_completo:
+            return False
+
+        # Buscar campo "Portador de doença grave:" e extrair resposta
+        match = self.pattern_doenca_grave_campo.search(texto_completo)
+
+        if not match:
+            logger.debug("Campo 'Portador de doença grave' não encontrado")
+            return False
+
+        # Extrair resposta (grupo 1)
+        resposta = match.group(1).strip().upper()
+
+        logger.debug(f"Campo 'Portador de doença grave' encontrado com resposta: '{resposta}'")
+
+        # Validar resposta = "Sim"
+        if "SIM" in resposta:
+            logger.info("✅ V2.7.6: Doença grave = TRUE (resposta: Sim)")
+            return True
+        elif "NÃO" in resposta or "NAO" in resposta or "N/A" in resposta:
+            logger.info("❌ V2.7.6: Doença grave = FALSE (resposta: Não)")
+            return False
+        else:
+            # Resposta ambígua ou vazia
+            logger.warning(f"⚠️ V2.7.6: Resposta ambígua para doença grave: '{resposta}' - retornando False")
+            return False
+
     def detectar_com_contexto(self, texto_completo: str, cpf_objeto: str = None) -> Dict[str, Any]:
         """
         Busca os termos E retorna o contexto (snippet) onde foram encontrados.
