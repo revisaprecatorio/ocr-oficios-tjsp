@@ -1,5 +1,5 @@
 """
-ProcessadorOficio V2.7.4 - V2.7.2/V2.7.3 fixes + Prompts LLM atualizados.
+ProcessadorOficio V2.7.5 - V2.7.2/V2.7.3/V2.7.4 fixes + Detecção PROCESSAMENTO rigorosa.
 
 V2.6.0 = V2.5.3 + Melhorias Críticas:
 1. ✅ Exemplos explícitos no prompt (valores brasileiros) - já em V2.5.3
@@ -76,11 +76,12 @@ class ProcessadorOficio:
         self.detector_habilitacao = DetectorHabilitacaoHerdeiros()  # V2.5.3: Novo detector
 
         logger.info("=" * 80)
-        logger.info("🚀 ProcessadorOficio V2.7.4 inicializado")
+        logger.info("🚀 ProcessadorOficio V2.7.5 inicializado")
         logger.info("=" * 80)
         logger.info("✅ V2.5.2: Detector Saldo Final")
         logger.info("✅ V2.5.3: Detector Habilitação Herdeiros + Doença Grave + Óbito")
         logger.info("✅ V2.7.4: Prompts LLM atualizados (requerente_caps removido)")
+        logger.info("✅ V2.7.5: Detecção PROCESSAMENTO rigorosa (3 campos obrigatórios) + validação numero_ordem")
         logger.info("=" * 80)
     
     def processar_arquivo(self, pdf_path: str, cpf_numerico: str, tracker: Optional[TrackerExecucao] = None) -> Dict[str, Any]:
@@ -360,16 +361,17 @@ class ProcessadorOficio:
                     tracker.adicionar_resultado("PROCESSAMENTO não encontrado", sucesso=False, nivel=1)
 
                 # V2.7.3 FIX: Fallback global - buscar numero_ordem em TODO o PDF
-                logger.info("🔍 V2.7.3: Tentando busca GLOBAL de numero_ordem...")
+                # V2.7.5 FIX 4: Também acionado quando detectar_processamento() encontra página mas sem numero_ordem extraível
+                logger.info("🔍 V2.7.5: Tentando busca GLOBAL de numero_ordem (fallback)...")
                 numero_ordem_global = self.detector_proc.buscar_numero_ordem_global(pdf_path)
                 if numero_ordem_global:
-                    logger.info(f"✅ V2.7.3: numero_ordem encontrado via busca global: {numero_ordem_global}")
+                    logger.info(f"✅ V2.7.5: numero_ordem encontrado via busca global: {numero_ordem_global}")
                     if tracker:
-                        tracker.adicionar_resultado(f"V2.7.3 GLOBAL: numero_ordem = {numero_ordem_global}", sucesso=True, nivel=1)
+                        tracker.adicionar_resultado(f"V2.7.5 GLOBAL: numero_ordem = {numero_ordem_global}", sucesso=True, nivel=1)
                 else:
-                    logger.warning("⚠️ V2.7.3: numero_ordem NÃO encontrado mesmo com busca global")
+                    logger.warning("⚠️ V2.7.5: numero_ordem NÃO encontrado mesmo com busca global")
                     if tracker:
-                        tracker.adicionar_resultado("V2.7.3 GLOBAL: numero_ordem não encontrado", sucesso=False, nivel=1)
+                        tracker.adicionar_resultado("V2.7.5 GLOBAL: numero_ordem não encontrado", sucesso=False, nivel=1)
             
             # 6.1. Verificar se ofício foi REJEITADO (ANTES de validar!)
             # 🔴 REGRA CRÍTICA: Verificar ACEITAÇÃO primeiro (prioridade máxima)

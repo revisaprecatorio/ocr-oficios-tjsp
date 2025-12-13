@@ -1,6 +1,6 @@
 """
 DetectorProcessamento - Localiza página PROCESSAMENTO e extrai número de ordem/precatório
-Versão 2.7.3 - Fix: Limite expandido + detecção de CERTIDÃO + fallback global
+Versão 2.7.5 - Fix: Regra rigorosa PROCESSAMENTO (todos campos) + validação imediata numero_ordem
 """
 
 import re
@@ -89,12 +89,18 @@ class DetectorProcessamento:
             for page_num in range(inicio, fim):
                 page = doc.load_page(page_num)
                 texto = page.get_text()
-                
+
                 # Verificar se tem "PROCESSAMENTO" no texto
                 if self._eh_pagina_processamento(texto):
-                    logger.info(f"✅ PROCESSAMENTO detectado na página {page_num + 1}")
-                    doc.close()
-                    return (page_num + 1, texto)  # 1-indexed
+                    # V2.7.5 FIX 2: Validar que numero_ordem pode ser extraído
+                    numero_ordem = self.extrair_numero_ordem(texto)
+                    if numero_ordem:
+                        logger.info(f"✅ PROCESSAMENTO detectado na página {page_num + 1} com numero_ordem: {numero_ordem}")
+                        doc.close()
+                        return (page_num + 1, texto)  # 1-indexed
+                    else:
+                        logger.warning(f"⚠️ V2.7.5: Página {page_num + 1} passou teste mas sem numero_ordem extraível - continuando busca...")
+                        # Continua buscando próxima página
             
             doc.close()
             logger.warning(f"⚠️ PROCESSAMENTO não encontrado (buscou {fim - inicio} páginas)")
@@ -109,6 +115,7 @@ class DetectorProcessamento:
         Verifica se texto contém indicadores de página PROCESSAMENTO ou CERTIDÃO DE PUBLICAÇÃO.
 
         V2.7.3 FIX: Detecta também CERTIDÃO DE PUBLICAÇÃO que contém numero_ordem
+        V2.7.5 FIX: Exige TODOS os 3 campos (PROCESSAMENTO + DEPRE + numero_ordem)
 
         Args:
             texto: Texto da página
@@ -117,6 +124,11 @@ class DetectorProcessamento:
             True se é página PROCESSAMENTO ou CERTIDÃO com numero_ordem
         """
         texto_upper = texto.upper()
+
+        # V2.7.5 FIX 3: Rejeitar APROVAÇÃO DE REQUISITÓRIO (não é PROCESSAMENTO)
+        if "APROVAÇÃO DE REQUISITÓRIO" in texto_upper or "APROVACAO DE REQUISITORIO" in texto_upper:
+            logger.debug("❌ Rejeitado: APROVAÇÃO DE REQUISITÓRIO (não é PROCESSAMENTO)")
+            return False
 
         # Verificar PROCESSAMENTO (padrão original)
         tem_titulo = "PROCESSAMENTO" in texto_upper
@@ -127,10 +139,11 @@ class DetectorProcessamento:
         tem_certidao = "CERTIDÃO DE PUBLICAÇÃO" in texto_upper or "CERTIDAO DE PUBLICACAO" in texto_upper
         tem_numero_ordem_certidao = "NÚMERO DE ORDEM" in texto_upper
 
-        # Aceitar se:
-        # 1. PROCESSAMENTO + (DEPRE ou numero_ordem)
+        # V2.7.5 FIX 1: Aceitar se TODOS os 3 campos presentes:
+        # 1. PROCESSAMENTO + DEPRE + numero_ordem (TODOS obrigatórios)
         # 2. CERTIDÃO + numero_ordem
-        if tem_titulo and (tem_depre or tem_numero_ordem):
+        if tem_titulo and tem_depre and tem_numero_ordem:
+            logger.debug("✅ PROCESSAMENTO válido: título + DEPRE + numero_ordem")
             return True
 
         if tem_certidao and tem_numero_ordem_certidao:

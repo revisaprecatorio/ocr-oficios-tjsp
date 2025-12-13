@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 """
-Pipeline Consolidado de Processamento de Ofícios Requisitórios - V2.7.4
+Pipeline Consolidado de Processamento de Ofícios Requisitórios - V2.7.5
 
 Script principal para processar PDFs de ofícios em lotes.
-Utiliza ProcessadorOficio V2.7.4 com fixes V2.7.2/V2.7.3 + Prompts atualizados.
+Utiliza ProcessadorOficio V2.7.5 com detecção PROCESSAMENTO rigorosa.
 
 Funcionalidades:
 - Processamento em lotes com tamanho configurável
@@ -17,7 +17,7 @@ Uso:
     python3 processar_pipeline.py --lotes 4,5,6,7    # Processar lotes específicos
     python3 processar_pipeline.py --all --force      # Reprocessar tudo
 
-Versão: V2.7.4 (V2.7.2/V2.7.3 fixes + Prompts LLM atualizados)
+Versão: V2.7.5 (V2.7.2/V2.7.3/V2.7.4 fixes + Detecção PROCESSAMENTO rigorosa)
 """
 
 import os
