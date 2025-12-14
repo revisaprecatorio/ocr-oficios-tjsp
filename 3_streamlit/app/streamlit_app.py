@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """
-Interface Streamlit - Consulta de Ofícios Requisitórios TJSP
+Interface Streamlit - Consulta de Ofícios Requisitórios TJSP V3.0
 Permite filtrar, visualizar e exportar dados do PostgreSQL
+
+Versão: V3.0 (Schema cleanup 50→35 cols + V2.7.6 fixes)
+Compatível com schema V3.0 (35 colunas essenciais)
 """
 
 import os
@@ -90,23 +93,21 @@ def carregar_todos_dados():
                 password=db_password
             )
             
-            # Query para buscar TODOS os dados de uma vez
+            # Query V3.0 - Schema cleanup (35 colunas essenciais)
             query = """
                 SELECT
-                    id, cpf, numero_processo_cnj, processo_origem, requerente_caps,
-                    numero_ordem, vara, processo_execucao, processo_conhecimento,
-                    data_ajuizamento, data_transito_julgado, data_base_atualizacao, data_nascimento,
-                    advogado_nome, advogado_oab, credor_nome, credor_cpf_cnpj, devedor_ente,
-                    banco, agencia, conta, conta_tipo, tipo_levantamento,
-                    dados_bancarios_advogado, cpf_titular_conta,
+                    id, cpf, numero_processo_cnj, processo_origem,
+                    numero_ordem, vara,
+                    data_base_atualizacao, data_nascimento,
+                    credor_nome, credor_cpf_cnpj, devedor_ente,
+                    banco, agencia, conta,
                     valor_principal_liquido, valor_principal_bruto, juros_moratorios,
-                    valor_total_requisitado, saldo_final, contrib_previdenciaria_iprem, contrib_previdenciaria_hspm,
-                    valor_compensado, contribuicao_social, salario_pericial,
-                    assist_tecnico, custas, despesas, multas,
+                    valor_total_requisitado, saldo_final,
                     idoso, doenca_grave, pcd,
-                    preferencial, habilitacao_herdeiros, cessao_credito,
+                    preferencial, habilitacao_herdeiros,
+                    obito, data_obito, cpf_sucessor,
                     rejeitado, motivo_rejeicao, observacoes, anomalia, descricao_anomalia,
-                    process_diagnostico, caminho_pdf, timestamp_ingestao
+                    caminho_pdf, timestamp_ingestao
                 FROM esaj_detalhe_processos
                 ORDER BY timestamp_ingestao DESC;
             """
@@ -127,10 +128,8 @@ def carregar_todos_dados():
                 df['preferencial'] = df['preferencial'].astype('boolean')
             if 'habilitacao_herdeiros' in df.columns:
                 df['habilitacao_herdeiros'] = df['habilitacao_herdeiros'].astype('boolean')
-            if 'cessao_credito' in df.columns:
-                df['cessao_credito'] = df['cessao_credito'].astype('boolean')
-            if 'process_diagnostico' in df.columns:
-                df['process_diagnostico'] = df['process_diagnostico'].astype('boolean')
+            if 'obito' in df.columns:
+                df['obito'] = df['obito'].astype('boolean')
             
             return df
             
@@ -177,13 +176,14 @@ def filtrar_dataframe(df: pd.DataFrame, filtros: dict) -> pd.DataFrame:
     # Filtro: Termos Jurídicos (v2.4.0)
     if filtros.get('preferencial') is not None:
         df_filtrado = df_filtrado[df_filtrado['preferencial'] == filtros['preferencial']]
-    
+
     if filtros.get('habilitacao_herdeiros') is not None:
         df_filtrado = df_filtrado[df_filtrado['habilitacao_herdeiros'] == filtros['habilitacao_herdeiros']]
-    
-    if filtros.get('cessao_credito') is not None:
-        df_filtrado = df_filtrado[df_filtrado['cessao_credito'] == filtros['cessao_credito']]
-    
+
+    # Filtro: Óbito (V3.0)
+    if filtros.get('obito') is not None:
+        df_filtrado = df_filtrado[df_filtrado['obito'] == filtros['obito']]
+
     # Filtro: Valores
     if filtros.get('valor_min', 0) > 0:
         df_filtrado = df_filtrado[df_filtrado['valor_total_requisitado'] >= filtros['valor_min']]
@@ -191,13 +191,13 @@ def filtrar_dataframe(df: pd.DataFrame, filtros: dict) -> pd.DataFrame:
     if filtros.get('valor_max', 1000000) < 1000000:
         df_filtrado = df_filtrado[df_filtrado['valor_total_requisitado'] <= filtros['valor_max']]
     
-    # Filtro: Datas
+    # Filtro: Datas (V3.0: data_ajuizamento removido, usando data_base_atualizacao)
     if filtros.get('data_inicio'):
-        df_filtrado = df_filtrado[df_filtrado['data_ajuizamento'] >= pd.to_datetime(filtros['data_inicio'])]
-    
+        df_filtrado = df_filtrado[df_filtrado['data_base_atualizacao'] >= pd.to_datetime(filtros['data_inicio'])]
+
     if filtros.get('data_fim'):
-        df_filtrado = df_filtrado[df_filtrado['data_ajuizamento'] <= pd.to_datetime(filtros['data_fim'])]
-    
+        df_filtrado = df_filtrado[df_filtrado['data_base_atualizacao'] <= pd.to_datetime(filtros['data_fim'])]
+
     return df_filtrado
 
 
@@ -334,21 +334,21 @@ def main():
         filtros['habilitacao_herdeiros'] = False
     else:
         filtros['habilitacao_herdeiros'] = None
-    
-    # Selectbox para Cessão de Crédito
-    cessao_option = st.sidebar.selectbox(
-        "📄 Cessão de Crédito",
-        ["Todos", "Com Cessão", "Sem Cessão"],
+
+    # Selectbox para Óbito (V3.0)
+    obito_option = st.sidebar.selectbox(
+        "⚰️ Óbito do Credor",
+        ["Todos", "Com Óbito", "Sem Óbito"],
         index=0,
-        key="select_cessao"
+        key="select_obito"
     )
-    if cessao_option == "Com Cessão":
-        filtros['cessao_credito'] = True
-    elif cessao_option == "Sem Cessão":
-        filtros['cessao_credito'] = False
+    if obito_option == "Com Óbito":
+        filtros['obito'] = True
+    elif obito_option == "Sem Óbito":
+        filtros['obito'] = False
     else:
-        filtros['cessao_credito'] = None
-    
+        filtros['obito'] = None
+
     # ========================================================================
     # CARREGAR DADOS (após renderizar controles rápidos)
     # ========================================================================
@@ -437,11 +437,12 @@ def main():
         habilitacao_count = df['habilitacao_herdeiros'].sum() if 'habilitacao_herdeiros' in df.columns else 0
         habilitacao_pct = (habilitacao_count / len(df) * 100) if len(df) > 0 else 0
         st.metric("👨‍👩‍👧‍👦 Habilitação Herdeiros", f"{int(habilitacao_count)} ({habilitacao_pct:.1f}%)")
-    
+
+    # V3.0: métrica de óbito adicionada
     with col7:
-        cessao_count = df['cessao_credito'].sum() if 'cessao_credito' in df.columns else 0
-        cessao_pct = (cessao_count / len(df) * 100) if len(df) > 0 else 0
-        st.metric("📄 Cessão de Crédito", f"{int(cessao_count)} ({cessao_pct:.1f}%)")
+        obito_count = df['obito'].sum() if 'obito' in df.columns else 0
+        obito_pct = (obito_count / len(df) * 100) if len(df) > 0 else 0
+        st.metric("⚰️ Óbito do Credor", f"{int(obito_count)} ({obito_pct:.1f}%)")
     
     st.markdown("---")
     
@@ -494,10 +495,11 @@ def main():
             # Criar lista de processos com informações resumidas
             processo_options = []
             for idx, row in df.iterrows():
-                requerente = row['requerente_caps'][:40] if len(row['requerente_caps']) > 40 else row['requerente_caps']
+                # V3.0: requerente_caps → credor_nome
+                credor = row['credor_nome'][:40] if len(row['credor_nome']) > 40 else row['credor_nome']
                 rejeitado = row.get('rejeitado', False)
                 status = "❌ Rejeitado" if pd.notna(rejeitado) and rejeitado else "✅ Aprovado"
-                processo_options.append(f"{row['numero_processo_cnj']} | {requerente} | {status}")
+                processo_options.append(f"{row['numero_processo_cnj']} | {credor} | {status}")
             
             # Selectbox para escolher processo
             selected_option = st.selectbox(
@@ -521,7 +523,26 @@ def main():
                 with col3:
                     valor = selected_row.get('valor_total_requisitado', '-')
                     st.write(f"**Valor:** {valor}")
-                
+
+                # V3.0: Exibir informações de sucessão se houver óbito
+                if selected_row.get('obito', False):
+                    st.warning("⚰️ **ATENÇÃO:** Processo com óbito do credor original")
+                    col_obito1, col_obito2 = st.columns(2)
+                    with col_obito1:
+                        if pd.notna(selected_row.get('cpf_sucessor')):
+                            st.info(f"👤 **CPF Sucessor:** {selected_row['cpf_sucessor']}")
+                        else:
+                            st.info("👤 **CPF Sucessor:** Não informado")
+                    with col_obito2:
+                        if pd.notna(selected_row.get('data_obito')):
+                            st.info(f"📅 **Data do Óbito:** {selected_row['data_obito']}")
+                        else:
+                            st.info("📅 **Data do Óbito:** Não informada")
+
+                    # Verificar se há habilitação de herdeiros
+                    if selected_row.get('habilitacao_herdeiros', False):
+                        st.success("✅ Processo com habilitação de herdeiros confirmada")
+
                 # Botão de download e visualização
                 pdf_path = get_pdf_path(cpf, numero_processo)
                 
@@ -581,16 +602,15 @@ def main():
                     )
                     st.plotly_chart(fig2, use_container_width=True)
             
-            # Gráfico: Termos Jurídicos (v2.4.0)
+            # Gráfico: Termos Jurídicos (V3.0: cessao_credito removido)
             st.markdown("### 📜 Distribuição de Termos Jurídicos")
-            
-            # Preparar dados para o gráfico
+
+            # Preparar dados para o gráfico (V3.0: apenas preferencial e habilitacao_herdeiros)
             termos_data = {
-                'Termo': ['Preferência', 'Habilitação de Herdeiros', 'Cessão de Crédito'],
+                'Termo': ['Preferência', 'Habilitação de Herdeiros'],
                 'Quantidade': [
                     int(df['preferencial'].sum()) if 'preferencial' in df.columns else 0,
-                    int(df['habilitacao_herdeiros'].sum()) if 'habilitacao_herdeiros' in df.columns else 0,
-                    int(df['cessao_credito'].sum()) if 'cessao_credito' in df.columns else 0
+                    int(df['habilitacao_herdeiros'].sum()) if 'habilitacao_herdeiros' in df.columns else 0
                 ]
             }
             
@@ -617,9 +637,9 @@ def main():
         st.subheader("Visualizar PDF")
         
         if not df.empty:
-            # Seletor de processo
+            # Seletor de processo (V3.0: requerente_caps → credor_nome)
             processo_options = df.apply(
-                lambda row: f"{row['cpf']} - {row['numero_processo_cnj']} - {row['requerente_caps'][:30]}",
+                lambda row: f"{row['cpf']} - {row['numero_processo_cnj']} - {row['credor_nome'][:30]}",
                 axis=1
             ).tolist()
             
@@ -632,12 +652,32 @@ def main():
                 
                 col1, col2, col3 = st.columns(3)
                 with col1:
-                    st.write(f"**Requerente:** {selected_row['requerente_caps'][:40]}")
+                    # V3.0: requerente_caps → credor_nome
+                    st.write(f"**Credor:** {selected_row['credor_nome'][:40]}")
                 with col2:
                     st.write(f"**CPF:** {cpf}")
                 with col3:
                     st.write(f"**Processo:** {numero_processo}")
-                
+
+                # V3.0: Exibir informações de sucessão se houver óbito
+                if selected_row.get('obito', False):
+                    st.warning("⚰️ **ATENÇÃO:** Processo com óbito do credor original")
+                    col_obito1, col_obito2 = st.columns(2)
+                    with col_obito1:
+                        if pd.notna(selected_row.get('cpf_sucessor')):
+                            st.info(f"👤 **CPF Sucessor:** {selected_row['cpf_sucessor']}")
+                        else:
+                            st.info("👤 **CPF Sucessor:** Não informado")
+                    with col_obito2:
+                        if pd.notna(selected_row.get('data_obito')):
+                            st.info(f"📅 **Data do Óbito:** {selected_row['data_obito']}")
+                        else:
+                            st.info("📅 **Data do Óbito:** Não informada")
+
+                    # Verificar se há habilitação de herdeiros
+                    if selected_row.get('habilitacao_herdeiros', False):
+                        st.success("✅ Processo com habilitação de herdeiros confirmada")
+
                 pdf_path = get_pdf_path(cpf, numero_processo)
                 
                 if pdf_path.exists():
