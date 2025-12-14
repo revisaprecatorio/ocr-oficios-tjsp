@@ -1,8 +1,14 @@
 -- ============================================================================
--- VIEW: vw_precatorios_full (V2.5.2)
+-- VIEW: vw_precatorios_full (V3.0)
 -- Descrição: View consolidada com dados de ofícios + cálculos + consultas
--- Versão: V2.5.2 - Inclui novos campos (saldo_final, preferencial, habilitacao_herdeiros, cessao_credito)
--- Data: 04/12/2025
+-- Versão: V3.0 - Schema cleanup (35 colunas essenciais)
+-- Data: 13/12/2025
+-- Changelog:
+--   V3.0 (13/12/2025): Removed 15 unused columns (50→35)
+--   V2.7.2 (12/12/2025): Removed requerente_caps
+--   V2.7.1 (09/12/2025): Removed advogado_*, data_ajuizamento, cessao_credito
+--   V2.5.3 (09/12/2025): Added obito, data_obito, cpf_sucessor
+--   V2.5.2 (04/12/2025): Added saldo_final, preferencial, habilitacao_herdeiros
 -- ============================================================================
 
 DROP VIEW IF EXISTS vw_precatorios_full;
@@ -10,26 +16,27 @@ DROP VIEW IF EXISTS vw_precatorios_full;
 CREATE OR REPLACE VIEW vw_precatorios_full AS
 SELECT
     -- ========================================================================
-    -- TABELA PRINCIPAL: esaj_detalhe_processos (TODOS OS CAMPOS)
+    -- TABELA PRINCIPAL: esaj_detalhe_processos (35 COLUNAS V3.0)
     -- ========================================================================
+
+    -- Identificadores
     d.cpf,
     d.numero_processo_cnj,
     d.processo_origem,
-    d.requerente_caps,
+
+    -- Campos Ofício
     d.numero_ordem,
     d.vara,
-    d.processo_execucao,
-    d.processo_conhecimento,
+    -- V3.0: REMOVED processo_execucao, processo_conhecimento (0% filled)
 
     -- Datas
-    d.data_ajuizamento,
-    d.data_transito_julgado,
+    -- V2.7.1: REMOVED data_ajuizamento, data_transito_julgado
     d.data_base_atualizacao,
     d.data_nascimento,
 
     -- Partes envolvidas
-    d.advogado_nome,
-    d.advogado_oab,
+    -- V2.7.2: REMOVED requerente_caps
+    -- V2.7.1: REMOVED advogado_nome, advogado_oab
     d.credor_nome,
     d.credor_cpf_cnpj,
     d.devedor_ente,
@@ -38,36 +45,31 @@ SELECT
     d.banco,
     d.agencia,
     d.conta,
-    d.conta_tipo,
-    d.tipo_levantamento,
-    d.dados_bancarios_advogado,
-    d.cpf_titular_conta,
+    -- V3.0: REMOVED conta_tipo, tipo_levantamento, dados_bancarios_advogado, cpf_titular_conta (0% filled)
 
     -- Valores financeiros
     d.valor_principal_liquido,
     d.valor_principal_bruto,
     d.juros_moratorios,
     d.valor_total_requisitado,
-    d.saldo_final,                        -- ✅ V2.5.2: NOVO CAMPO
-    d.contrib_previdenciaria_iprem,
-    d.contrib_previdenciaria_hspm,
-    d.valor_compensado,
-    d.contribuicao_social,
-    d.salario_pericial,
-    d.assist_tecnico,
-    d.custas,
-    d.despesas,
-    d.multas,
+    d.saldo_final,
+    -- V3.0: REMOVED contrib_previdenciaria_iprem, contrib_previdenciaria_hspm, valor_compensado,
+    --       contribuicao_social, salario_pericial, assist_tecnico, custas, despesas, multas (0% filled)
 
     -- Preferências de pagamento
     d.idoso,
     d.doenca_grave,
     d.pcd,
 
-    -- Termos jurídicos (V2.5.2)
-    d.preferencial,                       -- ✅ V2.5.2: NOVO CAMPO
-    d.habilitacao_herdeiros,              -- ✅ V2.5.2: NOVO CAMPO
-    d.cessao_credito,                     -- ✅ V2.5.2: NOVO CAMPO
+    -- Termos jurídicos
+    d.preferencial,
+    d.habilitacao_herdeiros,
+    -- V2.7.1: REMOVED cessao_credito
+
+    -- Óbito e sucessão (V2.5.3)
+    d.obito,
+    d.data_obito,
+    d.cpf_sucessor,
 
     -- Controle de processamento
     d.rejeitado,
@@ -75,7 +77,9 @@ SELECT
     d.observacoes,
     d.anomalia,
     d.descricao_anomalia,
-    d.process_diagnostico,
+    -- V2.7.1: REMOVED process_diagnostico
+
+    -- Metadados
     d.caminho_pdf,
     d.timestamp_ingestao,
 
@@ -131,9 +135,7 @@ LEFT JOIN (
 -- 1. VIEW usa LEFT JOIN para preservar TODOS os registros da tabela principal
 -- 2. Se não houver cálculo, campos de cálculo serão NULL
 -- 3. Se não houver consulta, campos de consulta serão NULL
--- 4. V2.5.2 adiciona 4 novos campos da tabela principal:
---    - saldo_final (após pagamento parcial, ou = valor_total_requisitado)
---    - preferencial (detectado por regex)
---    - habilitacao_herdeiros (validado por código 9270 + CPF)
---    - cessao_credito (DESATIVADO - sempre FALSE)
+-- 4. V3.0: Schema simplificado com 35 colunas essenciais (-30% vs V2.7.6)
+-- 5. V2.5.3: Campos de óbito/sucessão: obito, data_obito, cpf_sucessor
+-- 6. V2.5.2: Campos financeiros/jurídicos: saldo_final, preferencial, habilitacao_herdeiros
 -- ============================================================================

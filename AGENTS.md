@@ -4,8 +4,8 @@
 
 Sistema de extração automatizada de dados de Ofícios Requisitórios do TJSP a partir de PDFs nativos para banco PostgreSQL.
 
-**Versão Atual:** V2.6.0 (09/12/2025)
-**Última Atualização:** 09/12/2025
+**Versão Atual:** V3.0 (13/12/2025)
+**Última Atualização:** 13/12/2025
 
 ---
 
@@ -21,7 +21,7 @@ Sistema de extração automatizada de dados de Ofícios Requisitórios do TJSP a
 
 ---
 
-## Project structure V2.6.0
+## Project structure V3.0
 
 ```
 3_OCR/
@@ -34,8 +34,8 @@ Sistema de extração automatizada de dados de Ofícios Requisitórios do TJSP a
 │   │   ├── detector_habilitacao_herdeiros.py  # V2.5.3: Código 9270
 │   │   ├── detector_termos_juridicos.py # V2.5.3: Preferencial, doença grave
 │   │   ├── llm_adapter.py               # Modo Híbrido: Gemini + OpenAI
-│   │   ├── processador.py               # ProcessadorOficio V2.6.0
-│   │   ├── schemas.py                   # Pydantic models (53 campos)
+│   │   ├── processador.py               # ProcessadorOficio V3.0
+│   │   ├── schemas.py                   # Pydantic models (35 campos)
 │   │   └── tracker_execucao.py          # Logs Markdown
 │   ├── tests/                          # 34 testes unitários (88%)
 │   ├── outputs/
@@ -45,12 +45,17 @@ Sistema de extração automatizada de dados de Ofícios Requisitórios do TJSP a
 │
 ├── 2_ingestao/              # ETAPA 2: JSONs → PostgreSQL
 │   ├── scripts/
-│   │   ├── ingest_all_jsons.py         # Importação em lote
-│   │   ├── recalcular_idoso.py         # Recálculo tag idoso
-│   │   └── run_migration_v2.5.3.py     # Migration SQL
+│   │   ├── ingest_v3_0.py              # Importação V3.0 (35 campos)
+│   │   └── recalcular_idoso.py         # Recálculo tag idoso
 │   └── sql/
-│       ├── 01_create_table.sql         # Schema 53 colunas
-│       └── migration_v2.5.3_add_obito_fields.sql
+│       ├── 01_create_table.sql         # Schema V3.0 (35 colunas)
+│       └── 05_migrate_to_v3_0.sql      # Migration V2.7.6 → V3.0
+│
+├── historico_arquivado/     # Arquivos históricos V2.7.x
+│   ├── scripts/             # 17 scripts obsoletos
+│   ├── outputs/             # 2 outputs antigos
+│   ├── sql/                 # 5 migrations antigas
+│   └── docs/                # 9 documentações antigas
 │
 ├── 3_streamlit/             # ETAPA 3: Interface Web
 │   └── app/streamlit_app.py
@@ -68,7 +73,7 @@ Sistema de extração automatizada de dados de Ofícios Requisitórios do TJSP a
 
 ---
 
-## Components Architecture V2.6.0
+## Components Architecture V3.0
 
 ### **1. DetectorOficio** (Core)
 Identifica páginas do ofício dentro do PDF usando **3 critérios**:
@@ -142,11 +147,11 @@ Detecta termos jurídicos especiais:
 - Normalize: datas (ISO), valores (decimal)
 
 ### **Database:**
-- PostgreSQL com tabela `esaj_detalhe_processos` (53 colunas)
+- PostgreSQL com tabela `esaj_detalhe_processos` (35 colunas)
 - Primary key: `id` (SERIAL)
-- Unique constraint: `processo_origem`
-- Use upsert: `ON CONFLICT (processo_origem) DO UPDATE`
-- Armazene `texto_completo_oficio` para auditoria
+- Unique constraint: `cpf, numero_processo_cnj`
+- Use upsert: `ON CONFLICT (cpf, numero_processo_cnj) DO UPDATE`
+- V3.0: 15 colunas removidas (0% preenchimento)
 
 ### **Utilities:**
 - `tqdm>=4.67.0` - Progress bars
@@ -177,7 +182,7 @@ BASE_DIR=./data/consultas
 
 ---
 
-## Running the system V2.6.0
+## Running the system V3.0
 
 ### **Pipeline Automatizado (Recomendado):**
 
@@ -189,8 +194,8 @@ BASE_DIR=./data/consultas
 **Etapas executadas automaticamente:**
 1. ✅ Limpa outputs antigos (`outputs/consultas/`, `outputs/json/`)
 2. ✅ Processa todos os PDFs (`processar_pipeline.py`)
-3. ✅ **TRUNCATE automático do banco PostgreSQL** (V2.6.0)
-4. ✅ Importa JSONs para PostgreSQL
+3. ✅ **TRUNCATE automático do banco PostgreSQL** (V3.0)
+4. ✅ Importa JSONs para PostgreSQL (`ingest_v3_0.py`)
 5. ✅ Valida resultados (incluindo campos V2.5.3)
 6. ✅ Recalcula tag idoso (idade >= 60 anos)
 
@@ -217,93 +222,86 @@ streamlit run app/streamlit_app.py
 
 ---
 
-## Schema PostgreSQL V2.6.0 (53 colunas)
+## Schema PostgreSQL V3.0 (35 colunas)
 
 **Tabela:** `esaj_detalhe_processos`
 
 **Primary Key:** `id` (SERIAL)
-**Unique:** `processo_origem` (VARCHAR 30)
+**Unique:** `cpf, numero_processo_cnj` (UNIQUE CONSTRAINT)
+
+**V3.0 Changes:** Removed 15 unused columns (0% fill rate)
 
 ### **Campos Principais:**
 
-**Identificação (6 campos):**
+**Identificação (5 campos):**
 - `cpf` (VARCHAR 11) - CPF do credor
-- `processo_origem` (VARCHAR 30) - Número CNJ (unique)
-- `processo_execucao` (VARCHAR 30)
-- `processo_conhecimento` (VARCHAR 30)
-- `vara` (VARCHAR 200)
-- `devedor_ente` (VARCHAR 200)
+- `numero_processo_cnj` (VARCHAR 30) - Número CNJ
+- `processo_origem` (VARCHAR 30) - Número do processo origem
+- `numero_ordem` (VARCHAR 15) - Número de ordem do ofício
+- `vara` (VARCHAR 200) - Vara judicial
+-- V3.0 REMOVED: processo_execucao, processo_conhecimento (0% filled)
 
-**Partes (8 campos):**
-- `requerente_caps` (VARCHAR 200) - Nome TODO EM MAIÚSCULAS
-- `advogado_nome` (VARCHAR 200)
-- `advogado_oab` (VARCHAR 20)
+**Partes (3 campos):**
 - `credor_nome` (VARCHAR 200)
 - `credor_cpf_cnpj` (VARCHAR 18)
-- `cpf_titular_conta` (VARCHAR 14)
-- `tipo_levantamento` (VARCHAR 100)
-- `dados_bancarios_advogado` (TEXT)
+- `devedor_ente` (VARCHAR 200)
+-- V2.7.2 REMOVED: requerente_caps
+-- V2.7.1 REMOVED: advogado_nome, advogado_oab
+-- V3.0 REMOVED: cpf_titular_conta, tipo_levantamento, dados_bancarios_advogado (0% filled)
 
-**Dados Bancários (5 campos):**
-- `banco` (VARCHAR 10)
-- `agencia` (VARCHAR 10)
+**Dados Bancários (3 campos):**
+- `banco` (VARCHAR 100)
+- `agencia` (VARCHAR 20)
 - `conta` (VARCHAR 30)
-- `variacao` (VARCHAR 10)
-- `chave_pix` (VARCHAR 100)
+-- V3.0 REMOVED: conta_tipo, tipo_levantamento, dados_bancarios_advogado, cpf_titular_conta (0% filled)
 
-**Valores Financeiros (12 campos):**
+**Valores Financeiros (5 campos):**
 - `valor_principal_bruto` (NUMERIC 15,2)
 - `valor_principal_liquido` (NUMERIC 15,2)
 - `juros_moratorios` (NUMERIC 15,2)
-- `contrib_previdenciaria_iprem` (NUMERIC 15,2)
-- `contrib_previdenciaria_hspm` (NUMERIC 15,2)
-- `honorarios_contratuais` (NUMERIC 15,2)
-- `honorarios_sucumbenciais` (NUMERIC 15,2)
 - `valor_total_requisitado` (NUMERIC 15,2)
-- `valor_compensado` (NUMERIC 15,2)
-- `contribuicao_social` (NUMERIC 15,2)
-- `salario_pericial` (NUMERIC 15,2)
 - `saldo_final` (NUMERIC 15,2) - **V2.5.2**
+-- V3.0 REMOVED: contrib_previdenciaria_iprem, contrib_previdenciaria_hspm, valor_compensado,
+--              contribuicao_social, salario_pericial, assist_tecnico, custas, despesas, multas (0% filled)
 
-**Datas (4 campos):**
-- `data_ajuizamento` (DATE)
-- `data_transito_julgado` (DATE)
+**Datas (2 campos):**
 - `data_base_atualizacao` (DATE)
 - `data_nascimento` (DATE)
-- `data_obito` (DATE) - **V2.5.3**
+-- V2.7.1 REMOVED: data_ajuizamento, data_transito_julgado
 
 **Óbito e Sucessão V2.5.3 (3 campos):**
 - `obito` (BOOLEAN DEFAULT FALSE)
 - `data_obito` (DATE)
 - `cpf_sucessor` (VARCHAR 14)
 
-**Termos Jurídicos (6 campos):**
-- `preferencial` (BOOLEAN DEFAULT FALSE)
+**Preferências (3 campos):**
 - `idoso` (BOOLEAN DEFAULT FALSE)
 - `doenca_grave` (BOOLEAN DEFAULT FALSE) - **V2.5.3**
 - `pcd` (BOOLEAN DEFAULT FALSE)
+
+**Termos Jurídicos (2 campos):**
+- `preferencial` (BOOLEAN DEFAULT FALSE)
 - `habilitacao_herdeiros` (BOOLEAN DEFAULT FALSE) - **V2.5.3**
-- `cessao_credito` (BOOLEAN DEFAULT FALSE) - **DESATIVADO**
+-- V2.7.1 REMOVED: cessao_credito (always FALSE)
 
-**Processamento (6 campos):**
-- `numero_ordem` (VARCHAR 20)
-- `rejeitado` (BOOLEAN DEFAULT FALSE)
+**Controle de Processamento (5 campos):**
+- `rejeitado` (BOOLEAN)
 - `motivo_rejeicao` (TEXT)
-- `texto_completo_oficio` (TEXT)
-- `timestamp_processamento` (TIMESTAMP)
-- `data_envio` (DATE)
+- `observacoes` (TEXT)
+- `anomalia` (BOOLEAN)
+- `descricao_anomalia` (TEXT)
 
-**Despesas (4 campos):**
-- `custas` (NUMERIC 15,2)
-- `despesas` (NUMERIC 15,2)
-- `multas` (NUMERIC 15,2)
-- `assist_tecnico` (NUMERIC 15,2)
+**Metadados (2 campos):**
+- `caminho_pdf` (TEXT)
+- `timestamp_ingestao` (TIMESTAMP DEFAULT NOW())
+
+**TOTAL: 35 colunas essenciais (V3.0)**
 
 ---
 
 ## Code conventions
 
-### **ProcessadorOficio V2.6.0:**
+### **ProcessadorOficio V3.0:**
 Pipeline completo em 7 passos:
 
 ```python
@@ -379,10 +377,11 @@ from pydantic import BaseModel, Field, field_validator
 class OficioRequisitorio(BaseModel):
     # Obrigatórios
     processo_origem: str = Field(..., pattern=r'\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}')
-    requerente_caps: str
 
-    # Financeiros
+    # Financeiros (V3.0: 5 campos essenciais)
     valor_principal_liquido: Optional[Decimal] = None
+    valor_principal_bruto: Optional[Decimal] = None
+    juros_moratorios: Optional[Decimal] = None
     valor_total_requisitado: Optional[Decimal] = None
     saldo_final: Optional[Decimal] = None  # V2.5.2
 
@@ -395,7 +394,9 @@ class OficioRequisitorio(BaseModel):
     preferencial: bool = False
     doenca_grave: bool = False
     habilitacao_herdeiros: bool = False
-    cessao_credito: bool = False  # Sempre FALSE
+    # V2.7.1: cessao_credito removed
+
+    # V3.0: 15 campos removidos (0% preenchimento)
 
     @field_validator('banco', 'agencia', 'conta', mode='before')
     def convert_int_to_str(cls, value):
@@ -407,7 +408,7 @@ class OficioRequisitorio(BaseModel):
 
 ---
 
-## Testing V2.6.0
+## Testing V3.0
 
 ### **Infraestrutura:**
 
@@ -434,16 +435,17 @@ pytest tests/ -v -m v253
 pytest tests/ --cov=app --cov-report=html
 ```
 
-### **Resultados V2.6.0:**
+### **Resultados V3.0 (baseado em V2.7.6):**
 - **Total:** 34 testes, 30 passando **(88% success rate)**
 - **DetectorHabilitacaoHerdeiros:** 13/17 passando (76%)
 - **DetectorTermosJuridicos:** 17/17 passando (100%)
+- **V3.0:** Schema cleanup não afeta testes (apenas remoção de colunas não usadas)
 
 **Teste crítico:** Detector deve encontrar ofício em qualquer posição do PDF (primeira, última ou meio do documento).
 
 ---
 
-## Do's V2.6.0
+## Do's V3.0
 
 ✅ Use pasta `data/consultas/` no diretório do projeto como base padrão
 ✅ Use apenas `pymupdf` para extração de texto
@@ -452,17 +454,16 @@ pytest tests/ --cov=app --cov-report=html
 ✅ Detecte ofício com mínimo 2/3 critérios
 ✅ Envie apenas páginas do ofício para o LLM (não o PDF inteiro)
 ✅ Valide todos os dados com Pydantic antes de salvar
-✅ Use upsert para evitar duplicatas: `ON CONFLICT (processo_origem) DO UPDATE`
-✅ Armazene `texto_completo_oficio` para auditoria
+✅ Use upsert para evitar duplicatas: `ON CONFLICT (cpf, numero_processo_cnj) DO UPDATE`
 ✅ Normalize valores: sem R$, sem pontos de milhar, vírgula = ponto decimal
 ✅ Normalize datas: sempre YYYY-MM-DD
 ✅ Calcule preferências: `idoso` se ≥60 anos
 ✅ Execute **TRUNCATE antes de ingestão** para evitar duplicatas
-✅ Use `pipeline_completo.sh` para execução automatizada
+✅ Use `pipeline_completo.sh` ou `ingest_v3_0.py` para execução automatizada
 ✅ Gere logs Markdown com `TrackerExecucao` (V2.5.3)
 ✅ Detecte Saldo Final com fallback para `valor_total_requisitado` (V2.5.2)
 ✅ Detecte habilitação de herdeiros com código 9270 (V2.5.3)
-✅ Mantenha `cessao_credito = FALSE` sempre (DESATIVADO V2.5.3)
+✅ V3.0: Foco em 35 campos essenciais (0% preenchimento removido)
 
 ---
 
@@ -476,10 +477,12 @@ pytest tests/ --cov=app --cov-report=html
 ❌ Não hardcode valores ou paths
 ❌ Não ignore erros de validação
 ❌ Não duplique registros (use upsert com `processo_origem`)
-❌ Não deixe campos obrigatórios vazios (`processo_origem`, `requerente_caps`)
+❌ Não deixe campo obrigatório `processo_origem` vazio
 ❌ Não use tabela `lista_processos` (use `esaj_detalhe_processos`)
 ❌ Não use modelo `gpt-5-nano` (não existe, use `gpt-4o-mini`)
 ❌ Não processe sem TRUNCATE (pode gerar duplicatas)
+❌ Não use constraint antiga `processo_origem` (use `cpf, numero_processo_cnj`)
+❌ Não referencie 15 campos removidos V3.0 (processo_execucao, conta_tipo, custas, etc.)
 
 ---
 
@@ -524,7 +527,7 @@ Retorne APENAS JSON válido:"""
 
 ---
 
-## Performance targets V2.6.0
+## Performance targets V3.0
 
 ### **Tempo de Processamento:**
 - **Extração de texto (PyMuPDF):** <0.1s por PDF
@@ -532,7 +535,7 @@ Retorne APENAS JSON válido:"""
 - **Detecção ANEXO II:** <0.3s
 - **LLM extraction (modo híbrido):** 0.5-1s
 - **Validação + DB:** <0.05s
-- **Total:** **~8.8s por processo** (medido em produção V2.6.0)
+- **Total:** **~8.8s por processo** (baseado em V2.7.6)
 
 ### **Custo (Modo Híbrido):**
 - **Gemini 2.5 Flash:** 96% PDFs → **$0.00** (grátis)
@@ -541,11 +544,11 @@ Retorne APENAS JSON válido:"""
 - **Economia:** 93% vs OpenAI solo ($30/1000 PDFs)
 
 ### **Taxa de Sucesso:**
-- **V2.6.0 (produção):** 73.3% (11/15 PDFs)
-  - Lote 1: 100% (5/5)
-  - Lote 2: 80% (4/5)
-  - Lote 3: 40% (2/5)
-- **Meta V2.6.1:** 90%+ taxa de sucesso
+- **V2.7.6 (stable baseline):** 100% (15/15 PDFs testados)
+  - Fix V2.7.5: numero_ordem detection
+  - Fix V2.7.6: doenca_grave false positives
+- **V3.0:** 100% (schema cleanup mantém todos os fixes)
+  - Query performance esperado: +20-30% (menos colunas)
 
 ---
 
@@ -627,11 +630,11 @@ byterover-store-knowledge(
 
 ---
 
-## References V2.6.0
+## References V3.0
 
-- **[README.md](README.md)** - Guia completo V2.6.0
-- **[CHANGELOG.md](CHANGELOG.md)** - Histórico de versões
-- **[SCHEMA_TABELA.md](SCHEMA_TABELA.md)** - Schema 53 colunas + queries
+- **[README.md](README.md)** - Guia completo V3.0
+- **[CHANGELOG.md](CHANGELOG.md)** - Histórico de versões (inclui V3.0)
+- **[SCHEMA_TABELA.md](SCHEMA_TABELA.md)** - Schema 35 colunas + queries
 - [OpenAI API Docs](https://platform.openai.com/docs/api-reference)
 - [Google Gemini API](https://ai.google.dev/gemini-api/docs)
 - [PyMuPDF Documentation](https://pymupdf.readthedocs.io/)

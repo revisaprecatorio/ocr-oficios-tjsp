@@ -1,12 +1,13 @@
 -- ============================================================================
 -- TABELA: esaj_detalhe_processos
 -- Descrição: Armazena dados extraídos de Ofícios Requisitórios do TJSP
--- Versão: 2.6.0
--- Data: 09/12/2025
+-- Versão: 3.0
+-- Data: 13/12/2025
 -- Changelog:
---   V2.5.2 (04/12/2025): + saldo_final
+--   V3.0 (13/12/2025): Schema cleanup - 50→35 colunas (-30%)
 --   V2.5.3 (04/12/2025): + obito, data_obito, cpf_sucessor
---   V2.6.0 (09/12/2025): Schema consolidado com todas as colunas
+--   V2.5.2 (04/12/2025): + saldo_final
+--   V2.6.0 (09/12/2025): Schema consolidado
 -- ============================================================================
 
 CREATE TABLE IF NOT EXISTS esaj_detalhe_processos (
@@ -34,8 +35,7 @@ CREATE TABLE IF NOT EXISTS esaj_detalhe_processos (
     -- ========================================================================
     numero_ordem VARCHAR(15),
     vara VARCHAR(200),
-    processo_execucao VARCHAR(30),
-    processo_conhecimento VARCHAR(30),
+    -- V3.0: REMOVED processo_execucao, processo_conhecimento (0% filled)
     
     -- ========================================================================
     -- DATAS
@@ -59,13 +59,10 @@ CREATE TABLE IF NOT EXISTS esaj_detalhe_processos (
     -- ========================================================================
     -- DADOS BANCÁRIOS (ANEXO II)
     -- ========================================================================
-    banco VARCHAR(100),  -- V2.6.0: Aumentado de 10 para 100 (fix schema mismatch)
+    banco VARCHAR(100),
     agencia VARCHAR(20),
     conta VARCHAR(30),
-    conta_tipo VARCHAR(20),
-    tipo_levantamento VARCHAR(200),
-    dados_bancarios_advogado BOOLEAN,
-    cpf_titular_conta VARCHAR(18),
+    -- V3.0: REMOVED conta_tipo, tipo_levantamento, dados_bancarios_advogado, cpf_titular_conta (0% filled)
     
     -- ========================================================================
     -- VALORES FINANCEIROS (NUMERIC(15,2) para precisão monetária)
@@ -75,15 +72,8 @@ CREATE TABLE IF NOT EXISTS esaj_detalhe_processos (
     juros_moratorios NUMERIC(15,2),
     valor_total_requisitado NUMERIC(15,2),
     saldo_final NUMERIC(15,2),
-    contrib_previdenciaria_iprem NUMERIC(15,2),
-    contrib_previdenciaria_hspm NUMERIC(15,2),
-    valor_compensado NUMERIC(15,2),
-    contribuicao_social NUMERIC(15,2),
-    salario_pericial NUMERIC(15,2),
-    assist_tecnico NUMERIC(15,2),
-    custas NUMERIC(15,2),
-    despesas NUMERIC(15,2),
-    multas NUMERIC(15,2),
+    -- V3.0: REMOVED contrib_previdenciaria_iprem, contrib_previdenciaria_hspm, valor_compensado,
+    --       contribuicao_social, salario_pericial, assist_tecnico, custas, despesas, multas (0% filled)
     
     -- ========================================================================
     -- PREFERÊNCIAS (Prioridades de Pagamento)
@@ -135,7 +125,7 @@ CREATE TABLE IF NOT EXISTS esaj_detalhe_processos (
 -- ============================================================================
 -- COMENTÁRIOS NA TABELA
 -- ============================================================================
-COMMENT ON TABLE esaj_detalhe_processos IS 'Dados extraídos de Ofícios Requisitórios do TJSP';
+COMMENT ON TABLE esaj_detalhe_processos IS 'V3.0: Dados extraídos de Ofícios Requisitórios do TJSP (35 colunas essenciais)';
 COMMENT ON COLUMN esaj_detalhe_processos.id IS 'ID auto-incremento (chave primária)';
 COMMENT ON COLUMN esaj_detalhe_processos.cpf IS 'CPF do requerente (extraído do nome da pasta)';
 COMMENT ON COLUMN esaj_detalhe_processos.numero_processo_cnj IS 'Número do processo CNJ (extraído do nome do arquivo)';
