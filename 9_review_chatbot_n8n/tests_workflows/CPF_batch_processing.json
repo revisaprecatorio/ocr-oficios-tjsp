@@ -1,0 +1,143 @@
+{
+  "name": "CPF_batch_processing",
+  "id": "jMzstMZfztUMz7O6",
+  "description": "Workflow simplificado para consulta de CPF no e-SAJ TJSP. Recebe CPF via webhook, consulta TJSP, extrai nome e processos, salva no banco com UPSERT e simula pagamento aprovado.",
+  "version": "1.0.0",
+  "createdAt": "2025-12-13T22:22:32.024Z",
+  "updatedAt": "2025-12-14T00:37:22.500Z",
+  "nodes": [
+    {
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "parameters": {
+        "httpMethod": "POST",
+        "options": {},
+        "path": "cpf-batch-processing",
+        "responseMode": "responseNode"
+      },
+      "position": [0, 300],
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "webhookId": "cpf-batch-processing"
+    },
+    {
+      "id": "extract-cpf",
+      "name": "Extract CPF",
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "cpf-raw",
+              "name": "cpf",
+              "type": "string",
+              "value": "={{ ($json.body.cpf || $json.cpf || '').toString().replace(/[^0-9]/g, '') }}"
+            },
+            {
+              "id": "whatsapp-const",
+              "name": "whatsapp_from",
+              "type": "string",
+              "value": "5511941455345"
+            }
+          ]
+        }
+      },
+      "position": [220, 300],
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4
+    },
+    {
+      "id": "consulta-esaj",
+      "name": "Consulta e-SAJ",
+      "parameters": {
+        "method": "GET",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": false,
+              "responseFormat": "text"
+            }
+          }
+        },
+        "url": "=https://esaj.tjsp.jus.br/cpopg/search.do?conversationId=&cbPesquisa=DOCPARTE&dadosConsulta.valorConsulta={{ $('Extract CPF').item.json.cpf }}&cdForo=-1"
+      },
+      "position": [660, 300],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2
+    },
+    {
+      "id": "parse-response",
+      "name": "Parse e-SAJ Response",
+      "parameters": {
+        "jsCode": "const html = $input.first().json.data || $input.first().json.body || '';\nconst cpf = $('Extract CPF').item.json.cpf;\n\nlet nome_extraido = 'N/A';\nlet processos_array = [];\nlet classe_extraida = 'Processo';\n\n// Detectar tipo de página\nconst isListPage = html.includes('tabelaResultado') || html.includes('linhaProcesso');\nconst isSinglePage = html.includes('unj-entity-header') || html.includes('abrirPastaDigitalEmPopup');\nconst naoEncontrado = html.includes('Não foram encontrados processos') || html.includes('Nenhum registro localizado');\n\nif (naoEncontrado) {\n  nome_extraido = 'N/A';\n  processos_array = [];\n} else if (isSinglePage) {\n  // FORMATO PÁGINA ÚNICA (detalhes do processo)\n  \n  // Extrair número do processo\n  const numMatch = html.match(/(\\d{7}-\\d{2}\\.\\d{4}\\.\\d\\.\\d{2}\\.\\d{4})/);\n  \n  // CLASSE - Padrão exato do e-SAJ:\n  // <span id=\"classeProcesso\" title=\"...\">Procedimento do Juizado...</span>\n  const classeMatch = html.match(/id=\"classeProcesso\"[^>]*>([^<]+)/i);\n  if (classeMatch && classeMatch[1]) {\n    classe_extraida = classeMatch[1].trim();\n  }\n  \n  // NOME - Padrão exato do e-SAJ:\n  // <td class=\"nomeParteEAdvogado\">\\n  Maria Lucia Maduro Pinto\\n  <br>\\n  Advogado:\n  const nomePatterns = [\n    /nomeParteEAdvogado[^>]*>[\\s\\n]*([A-ZÀ-Ú][A-Za-zÀ-ÿ\\s]+?)(?:\\s*<br|\\s*Advogad)/i,\n    /tablePartesPrincipais[\\s\\S]*?tipoDeParticipacao[\"'][^>]*>Reqte[\\s\\S]{0,200}?nomeParteEAdvogado[^>]*>[\\s\\n]*([A-ZÀ-Ú][A-Za-zÀ-ÿ\\s]+?)(?:\\s*<br|\\s*Advogad)/i,\n    /tipoDeParticipacao[\"'][^>]*>Reqte[\\s\\S]{0,500}?>([A-ZÀ-Ú][A-Za-zÀ-ÿ\\s]+?)(?:\\s*<br|\\s*Advogad)/i,\n    /Reqte[\\s\\S]{0,300}?class=\"[^\"]*nomeParteEAdvogado[^>]*>[\\s\\n]*([A-ZÀ-Ú][A-Za-zÀ-ÿ\\s]+?)(?:\\s*<br|\\s*Advogad)/i\n  ];\n  \n  for (const pattern of nomePatterns) {\n    const match = html.match(pattern);\n    if (match && match[1]) {\n      const nome = match[1].trim().replace(/\\s+/g, ' ');\n      if (nome.length >= 5 && !/^(Reqte|Requerente|Polo|SÃO PAULO)/i.test(nome)) {\n        nome_extraido = nome;\n        break;\n      }\n    }\n  }\n  \n  if (numMatch) {\n    processos_array.push({\n      numero: numMatch[1],\n      classe: classe_extraida,\n      data: new Date().toLocaleDateString('pt-BR')\n    });\n  }\n} else if (isListPage) {\n  // FORMATO LISTA (múltiplos processos)\n  const processoRegex = /(\\d{7}-\\d{2}\\.\\d{4}\\.\\d\\.\\d{2}\\.\\d{4})/g;\n  let match;\n  const seen = new Set();\n  while ((match = processoRegex.exec(html)) !== null) {\n    if (!seen.has(match[1])) {\n      seen.add(match[1]);\n      processos_array.push({\n        numero: match[1],\n        classe: 'Processo',\n        data: new Date().toLocaleDateString('pt-BR')\n      });\n    }\n  }\n  const nomeListMatch = html.match(/Requerente[^<]*<[^>]*>([^<]+)/i);\n  if (nomeListMatch && nomeListMatch[1]) {\n    nome_extraido = nomeListMatch[1].trim();\n  }\n} else {\n  // Fallback\n  const processoRegex = /(\\d{7}-\\d{2}\\.\\d{4}\\.\\d\\.\\d{2}\\.\\d{4})/g;\n  let match;\n  const seen = new Set();\n  while ((match = processoRegex.exec(html)) !== null) {\n    if (!seen.has(match[1])) {\n      seen.add(match[1]);\n      processos_array.push({\n        numero: match[1],\n        classe: 'Processo',\n        data: new Date().toLocaleDateString('pt-BR')\n      });\n    }\n  }\n}\n\nconst total_processos = processos_array.length;\n\nlet responseText = 'Consulta sistema do Tribunal Judiciario\\n\\n';\nresponseText += `Prezado(a) ${nome_extraido}, CPF: ${cpf}\\n\\n`;\n\nif (total_processos > 0) {\n  responseText += 'Localizamos os seguintes requerimentos:\\n';\n  processos_array.forEach(p => {\n    responseText += `${p.data} ${p.numero} ${p.classe}\\n`;\n  });\n} else {\n  responseText += 'Nenhum processo localizado para este CPF.\\n';\n}\n\nresponseText += `\\nConsulta oficial realizada no sistema do Tribunal de Justica as ${new Date().toLocaleDateString('pt-BR')}, ${new Date().toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'})}`;\n\nreturn [{\n  json: {\n    cpf,\n    nome_extraido,\n    processos_array,\n    total_processos,\n    responseText,\n    _debug: {\n      isListPage,\n      isSinglePage,\n      naoEncontrado,\n      classe_extraida,\n      htmlLength: html.length\n    }\n  }\n}];"
+      },
+      "position": [880, 300],
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2
+    },
+    {
+      "id": "insert-consulta",
+      "name": "Upsert Consulta",
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {},
+        "query": "=INSERT INTO consultas_esaj (whatsapp_from, whatsapp_phone_number, cpf, nome_requerente, processos, total_processos, resposta_formatada, current_state, state_updated_at, timestamp_consulta, created_at, updated_at, mp_payment_status, mp_payment_id, mp_payment_amount, payment_confirmed_at) VALUES ('5511941455345', '5511941455345', '{{ $json.cpf }}', '{{ ($json.nome_extraido || \"N/A\").replace(/'/g, \"''\") }}', '{{ JSON.stringify({lista: $json.processos_array || []}) }}'::jsonb, {{ $json.total_processos || 0 }}, '{{ ($json.responseText || \"\").replace(/'/g, \"''\") }}', 'PAYMENT_APPROVED', NOW(), NOW(), NOW(), NOW(), 'approved', 'BATCH_' || EXTRACT(EPOCH FROM NOW())::text, 1.00, NOW()) ON CONFLICT (whatsapp_from, cpf) DO UPDATE SET nome_requerente = EXCLUDED.nome_requerente, processos = EXCLUDED.processos, total_processos = EXCLUDED.total_processos, resposta_formatada = EXCLUDED.resposta_formatada, current_state = EXCLUDED.current_state, state_updated_at = NOW(), timestamp_consulta = NOW(), updated_at = NOW(), mp_payment_status = EXCLUDED.mp_payment_status, mp_payment_id = EXCLUDED.mp_payment_id, mp_payment_amount = EXCLUDED.mp_payment_amount, payment_confirmed_at = EXCLUDED.payment_confirmed_at RETURNING id, cpf, nome_requerente, total_processos",
+        "resource": "database"
+      },
+      "position": [1100, 300],
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "credentials": {
+        "postgres": {
+          "id": "b0F0gRzrpEq6BR3M",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "id": "respond-webhook",
+      "name": "Respond to Webhook",
+      "parameters": {
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        },
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": true,\n  \"cpf\": \"{{ $('Parse e-SAJ Response').item.json.cpf }}\",\n  \"nome\": \"{{ $('Parse e-SAJ Response').item.json.nome_extraido }}\",\n  \"total_processos\": {{ $('Parse e-SAJ Response').item.json.total_processos }},\n  \"processos\": {{ JSON.stringify($('Parse e-SAJ Response').item.json.processos_array, null, 2) }},\n  \"resposta\": \"{{ $('Parse e-SAJ Response').item.json.responseText.replace(/\"/g, '\\\\\"').replace(/\\n/g, '\\\\n') }}\",\n  \"status_pagamento\": \"PAYMENT_APPROVED\",\n  \"inserted_id\": {{ $json.id || 0 }}\n}"
+      },
+      "position": [1320, 300],
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [[{"node": "Extract CPF", "type": "main", "index": 0}]]
+    },
+    "Extract CPF": {
+      "main": [[{"node": "Consulta e-SAJ", "type": "main", "index": 0}]]
+    },
+    "Consulta e-SAJ": {
+      "main": [[{"node": "Parse e-SAJ Response", "type": "main", "index": 0}]]
+    },
+    "Parse e-SAJ Response": {
+      "main": [[{"node": "Upsert Consulta", "type": "main", "index": 0}]]
+    },
+    "Upsert Consulta": {
+      "main": [[{"node": "Respond to Webhook", "type": "main", "index": 0}]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "webhook_url": "https://n8n.srv987902.hstgr.cloud/webhook/cpf-batch-processing",
+    "test_command": "curl -X POST https://n8n.srv987902.hstgr.cloud/webhook/cpf-batch-processing -H 'Content-Type: application/json' -d '{\"cpf\": \"08212993876\"}'"
+  }
+}
