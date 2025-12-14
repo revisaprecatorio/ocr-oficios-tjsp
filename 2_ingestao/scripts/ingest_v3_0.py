@@ -70,7 +70,7 @@ def main():
         sys.exit(1)
 
     # Buscar JSONs na pasta (aceita v2.7.x JSONs - backwards compatible)
-    json_dir = Path(__file__).parent.parent.parent / "1_parsing_PDF" / "outputs_v2_7_4" / "json"
+    json_dir = Path(__file__).parent.parent.parent / "1_parsing_PDF" / "outputs" / "json"
 
     if not json_dir.exists():
         print(f"❌ Pasta não encontrada: {json_dir}")

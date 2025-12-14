@@ -372,7 +372,8 @@ class OficioRequisitorio(BaseModel):
     # V2.7.2: REMOVED validar_requerente_maiusculo (requerente_caps field removed)
     # V2.7.1: REMOVED validar_oab (advogado_oab field removed)
 
-    @field_validator('credor_cpf_cnpj', 'cpf_titular_conta', 'cpf_sucessor', mode='before')
+    # V3.0: REMOVED cpf_titular_conta from validator (field removed)
+    @field_validator('credor_cpf_cnpj', 'cpf_sucessor', mode='before')
     @classmethod
     def validar_cpf_cnpj(cls, v: Optional[str]) -> Optional[str]:
         """
