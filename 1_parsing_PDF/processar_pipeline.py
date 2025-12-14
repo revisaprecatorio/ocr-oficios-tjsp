@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 """
-Pipeline Consolidado de Processamento de Ofícios Requisitórios - V2.7.5
+Pipeline Consolidado de Processamento de Ofícios Requisitórios - V3.0
 
 Script principal para processar PDFs de ofícios em lotes.
-Utiliza ProcessadorOficio V2.7.5 com detecção PROCESSAMENTO rigorosa.
+Utiliza ProcessadorOficio V3.0 (Schema Cleanup + Production Ready).
 
 Funcionalidades:
 - Processamento em lotes com tamanho configurável
@@ -17,7 +17,7 @@ Uso:
     python3 processar_pipeline.py --lotes 4,5,6,7    # Processar lotes específicos
     python3 processar_pipeline.py --all --force      # Reprocessar tudo
 
-Versão: V2.7.5 (V2.7.2/V2.7.3/V2.7.4 fixes + Detecção PROCESSAMENTO rigorosa)
+Versão: V3.0 (Schema cleanup 50→35 cols + V2.7.6 fixes)
 """
 
 import os
@@ -189,7 +189,7 @@ def processar_pdf(pdf_path: Path, processador: ProcessadorOficio, logs_dir: Path
         # Criar tracker para este CPF
         tracker = TrackerExecucao(cpf=cpf, processo=processo)
 
-        # Processar com V2 + tracker
+        # Processar com V3.0 + tracker
         resultado = processador.processar_arquivo(str(pdf_path), cpf, tracker=tracker)
 
         # Salvar Markdown
@@ -305,7 +305,7 @@ def processar_em_lotes(pdfs: List[Path], output_dir: Path, inicio_lote: int = 1)
     
     # Estatísticas finais
     print(f"{'='*60}")
-    print(f"📊 ESTATÍSTICAS FINAIS V2")
+    print(f"📊 ESTATÍSTICAS FINAIS V3.0")
     print(f"{'='*60}")
     print(f"Total processado: {estatisticas_globais['total_pdfs']}")
     print(f"Sucesso: {estatisticas_globais['sucesso']} ({estatisticas_globais['sucesso']/estatisticas_globais['total_pdfs']*100:.1f}%)")
@@ -326,8 +326,8 @@ def processar_em_lotes(pdfs: List[Path], output_dir: Path, inicio_lote: int = 1)
 def main():
     """Função principal"""
     import argparse
-    
-    parser = argparse.ArgumentParser(description="Processar ofícios em lotes V2")
+
+    parser = argparse.ArgumentParser(description="Processar ofícios em lotes V3.0")
     parser.add_argument("--input", default=BASE_DIR, help="Diretório de entrada")
     parser.add_argument("--output", default=OUTPUT_DIR, help="Diretório de saída")
     parser.add_argument("--inicio", type=int, default=1, help="Número do lote inicial")
@@ -338,9 +338,9 @@ def main():
     # Criar diretório de saída
     output_path = Path(args.output)
     output_path.mkdir(parents=True, exist_ok=True)
-    
+
     print("="*60)
-    print("🔄 PROCESSADOR EM LOTES V2 - Ofícios Requisitórios TJSP")
+    print("🔄 PROCESSADOR EM LOTES V3.0 - Ofícios Requisitórios TJSP")
     print("="*60)
     print(f"📁 Input: {args.input}")
     print(f"📁 Output: {args.output}")
@@ -360,9 +360,9 @@ def main():
     
     # Processar
     processar_em_lotes(pdfs, output_path, args.inicio)
-    
+
     print("="*60)
-    print("✅ PROCESSAMENTO V2 CONCLUÍDO")
+    print("✅ PROCESSAMENTO V3.0 CONCLUÍDO")
     print("="*60)
 
 

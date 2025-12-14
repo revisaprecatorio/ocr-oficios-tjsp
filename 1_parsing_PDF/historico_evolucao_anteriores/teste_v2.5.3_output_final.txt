@@ -1,0 +1,46 @@
+================================================================================
+🧪 TESTE V2.5.3 - Validação de Detecções com Amostra
+================================================================================
+
+🔧 Inicializando ProcessadorOficio V2.5.3...
+
+📋 Total de casos de teste: 4
+================================================================================
+
+================================================================================
+🧪 TESTE 1/4: Herdeiros habilitados (código 9270 no PDF)
+================================================================================
+   CPF: 576.290.808-91
+   Processo: 0137448-33.2024.8.26.0500
+   ❌ PDF não encontrado: /Users/persivalballeste/Documents/@IANIA/PROJECTS/revisa/revisa/3_OCR/1_parsing_PDF/data/consultas/57629080891/0137448-33.2024.8.26.0500.pdf
+
+================================================================================
+🧪 TESTE 2/4: Herdeiros habilitados (código 9270 no PDF)
+================================================================================
+   CPF: 105.823.048-49
+   Processo: 0137452-70.2024.8.26.0500
+   ❌ PDF não encontrado: /Users/persivalballeste/Documents/@IANIA/PROJECTS/revisa/revisa/3_OCR/1_parsing_PDF/data/consultas/10582304849/0137452-70.2024.8.26.0500.pdf
+
+================================================================================
+🧪 TESTE 3/4: Doença grave (sem óbito)
+================================================================================
+   CPF: 137.250.048-03
+   Processo: 0137634-56.2024.8.26.0500
+   ❌ PDF não encontrado: /Users/persivalballeste/Documents/@IANIA/PROJECTS/revisa/revisa/3_OCR/1_parsing_PDF/data/consultas/13725004803/0137634-56.2024.8.26.0500.pdf
+
+================================================================================
+🧪 TESTE 4/4: Caso normal (idoso + preferencial)
+================================================================================
+   CPF: 037.368.708-76
+   Processo: 0137444-93.2024.8.26.0500
+   ❌ PDF não encontrado: /Users/persivalballeste/Documents/@IANIA/PROJECTS/revisa/revisa/3_OCR/1_parsing_PDF/data/consultas/03736870876/0137444-93.2024.8.26.0500.pdf
+
+================================================================================
+📊 RESUMO DOS TESTES V2.5.3
+================================================================================
+   Total de testes: 4
+   ✅ Sucessos: 0 (0.0%)
+   ❌ Falhas: 4 (100.0%)
+
+   📄 Relatório salvo: /Users/persivalballeste/Documents/@IANIA/PROJECTS/revisa/revisa/3_OCR/1_parsing_PDF/outputs/relatorio_testes_v2.5.3.json
+================================================================================
