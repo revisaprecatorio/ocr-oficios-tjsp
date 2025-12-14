@@ -4,6 +4,52 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 
 ---
 
+## [3.0.1] - 2025-12-14
+
+### 🎨 STREAMLIT V3.0: Óbito & Sucessão Features
+
+#### ✨ New Features
+
+**Óbito Detection & Succession Info:**
+- ✅ Added óbito filter in sidebar (⚰️ Óbito do Credor)
+- ✅ Added óbito metric in dashboard (shows count + percentage)
+- ✅ Display succession information (cpf_sucessor, data_obito) in process details
+- ✅ Visual alerts for óbito cases with habilitação_herdeiros
+- ✅ 2 locations: "Dados" tab and "Visualizar PDF" tab
+
+**Schema Alignment:**
+- ✅ Updated query to V3.0: 50→35 columns
+- ✅ Replaced `requerente_caps` with `credor_nome` throughout
+- ✅ Replaced `data_ajuizamento` with `data_base_atualizacao` in filters
+- ✅ Removed `cessao_credito` field and filter
+- ✅ Added `obito`, `data_obito`, `cpf_sucessor` to query
+
+#### 📊 Production Status
+
+**VPS Deployment:**
+- ✅ Deployed to production: http://72.60.62.124:8501
+- ✅ Container: `oficios-streamlit`
+- ✅ VPS: srv987902.hstgr.cloud
+- ✅ Database: 13 processes (2 with óbito = 15.4%)
+
+**Database Stats:**
+- 2/13 processes with óbito (15.4%)
+- All óbito cases have `habilitacao_herdeiros = TRUE`
+- All óbito cases have `cpf_sucessor` filled
+- None with `data_obito` (field exists but not extracted from PDF yet)
+
+#### 🔧 Technical Details
+
+**Files Modified:**
+- `3_streamlit/app/streamlit_app.py` - Added óbito features
+
+**Compatibility:**
+- ✅ Fully compatible with V3.0 schema (35 columns)
+- ✅ Backwards compatible with V2.7.6 data
+- ✅ Ready for future `data_obito` extraction
+
+---
+
 ## [3.0.0] - 2025-12-13
 
 ### 🧹 SCHEMA CLEANUP: 50 → 35 Columns (-30%)

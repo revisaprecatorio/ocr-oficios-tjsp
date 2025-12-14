@@ -6,7 +6,13 @@ Sistema automatizado de extração de dados de Ofícios Requisitórios do TJSP a
 
 ## 📌 Controle de Versões
 
-### **Versão Atual: v2.6.0** (09/12/2025)
+### **Versão Atual: v3.0.1** (14/12/2025)
+
+**🎨 Streamlit V3.0 + Schema Cleanup (50→35 colunas)**
+- ✅ Interface com filtro de óbito e informações de sucessão
+- ✅ Schema otimizado: -30% colunas (15 campos 0% removidos)
+- ✅ Deploy em produção: http://72.60.62.124:8501
+- ✅ 13 processos no banco (2 com óbito = 15.4%)
 
 ```mermaid
 %%{init: {'theme':'base', 'themeVariables': { 'primaryColor':'#4CAF50','primaryTextColor':'#fff','primaryBorderColor':'#2E7D32','lineColor':'#1976D2','secondaryColor':'#FFC107','tertiaryColor':'#F44336'}}}%%
