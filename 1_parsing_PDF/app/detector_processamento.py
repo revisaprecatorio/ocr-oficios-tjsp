@@ -109,11 +109,76 @@ class DetectorProcessamento:
         except Exception as e:
             logger.error(f"❌ Erro ao detectar PROCESSAMENTO: {e}")
             return (None, None)
-    
+
+    def detectar_rejeicao(
+        self,
+        pdf_path: str,
+        inicio: int = 0,
+        limite: Optional[int] = None
+    ) -> Tuple[Optional[int], Optional[str], Optional[str]]:
+        """
+        V3.0.2: Detecta página com NOTA DE REJEIÇÃO usando REGEX.
+
+        PRIORIDADE: Esta função deve ser chamada ANTES de detectar_processamento()
+        para garantir que rejeições não sejam confundidas com PROCESSAMENTO.
+
+        Args:
+            pdf_path: Caminho para o arquivo PDF
+            inicio: Página para começar busca (0-indexed)
+            limite: Máximo de páginas para buscar após início (None = buscar até o final)
+
+        Returns:
+            Tupla (numero_pagina, texto_pagina, motivo_rejeicao) ou (None, None, None) se não encontrado
+
+        Example:
+            >>> detector = DetectorProcessamento()
+            >>> pagina, texto, motivo = detector.detectar_rejeicao("oficio.pdf", inicio=20)
+            >>> if pagina:
+            ...     print(f"Ofício rejeitado na página {pagina}: {motivo[:100]}")
+        """
+        try:
+            logger.info(f"🔍 V3.0.2: Buscando NOTA DE REJEIÇÃO a partir da página {inicio + 1}")
+
+            doc = pymupdf.open(pdf_path)
+            total_paginas = len(doc)
+
+            # Limitar busca (None = buscar até o final)
+            fim = min(inicio + limite, total_paginas) if limite else total_paginas
+
+            for page_num in range(inicio, fim):
+                page = doc.load_page(page_num)
+                texto = page.get_text()
+                texto_upper = texto.upper()
+
+                # Verificar keywords de rejeição
+                if "NOTA DE REJEIÇÃO" in texto_upper or "NOTA DE REJEICAO" in texto_upper:
+                    # Confirmar que é realmente rejeição (não falso positivo)
+                    if "DEPRE" in texto_upper or "DIRETORIA DE EXECUÇÕES" in texto_upper:
+                        # Extrair motivo
+                        motivo = self.extrair_motivo_rejeicao(texto)
+
+                        logger.warning(f"⚠️ NOTA DE REJEIÇÃO detectada na página {page_num + 1}")
+                        if motivo:
+                            logger.info(f"   Motivo: {motivo[:100]}...")
+                        else:
+                            logger.warning(f"   ⚠️ Motivo não extraído")
+
+                        doc.close()
+                        return (page_num + 1, texto, motivo)  # 1-indexed
+
+            doc.close()
+            logger.info(f"✅ NOTA DE REJEIÇÃO não encontrada (buscou {fim - inicio} páginas)")
+            return (None, None, None)
+
+        except Exception as e:
+            logger.error(f"❌ Erro ao detectar REJEIÇÃO: {e}")
+            return (None, None, None)
+
     def _eh_pagina_processamento(self, texto: str) -> bool:
         """
         Verifica se texto contém indicadores de página PROCESSAMENTO ou CERTIDÃO DE PUBLICAÇÃO.
 
+        V3.0.2 FIX: Rejeitar NOTA DE REJEIÇÃO (prioridade máxima)
         V2.7.3 FIX: Detecta também CERTIDÃO DE PUBLICAÇÃO que contém numero_ordem
         V2.7.5 FIX: Exige TODOS os 3 campos (PROCESSAMENTO + DEPRE + numero_ordem)
 
@@ -124,6 +189,11 @@ class DetectorProcessamento:
             True se é página PROCESSAMENTO ou CERTIDÃO com numero_ordem
         """
         texto_upper = texto.upper()
+
+        # V3.0.2 FIX: PRIORIDADE MÁXIMA - Rejeitar NOTA DE REJEIÇÃO
+        if "NOTA DE REJEIÇÃO" in texto_upper or "NOTA DE REJEICAO" in texto_upper:
+            logger.debug("❌ Rejeitado: NOTA DE REJEIÇÃO (não é PROCESSAMENTO)")
+            return False
 
         # V2.7.5 FIX 3: Rejeitar APROVAÇÃO DE REQUISITÓRIO (não é PROCESSAMENTO)
         if "APROVAÇÃO DE REQUISITÓRIO" in texto_upper or "APROVACAO DE REQUISITORIO" in texto_upper:
@@ -187,35 +257,72 @@ class DetectorProcessamento:
     
     def extrair_motivo_rejeicao(self, texto: str) -> Optional[str]:
         """
-        Extrai o motivo da rejeição do ofício.
-        
+        Extrai o motivo da rejeição do ofício usando REGEX robusto.
+
+        V3.0.2: REGEX melhorado com múltiplos padrões + truncamento garantido
+
         Args:
             texto: Texto da página de rejeição
-            
+
         Returns:
-            Motivo da rejeição ou None
+            Motivo da rejeição ou None (máximo 500 chars)
         """
         try:
-            # Buscar padrão: "tendo em vista que..."
-            import re
-            
-            padrao = re.compile(
-                r'tendo em vista que[,:]?\s*(.+?)(?:\.|São Paulo)',
+            motivo = None
+
+            # Padrão 1: "tendo em vista que..." (mais comum)
+            padrao1 = re.compile(
+                r'tendo em vista\s+que[,:]?\s*(.+?)(?:\.[\s\n]*(?:São Paulo|Cumpre-nos|De outra|Ressaltamos))',
                 re.IGNORECASE | re.DOTALL
             )
-            
-            match = padrao.search(texto)
+
+            match = padrao1.search(texto)
             if match:
                 motivo = match.group(1).strip()
-                # Limitar tamanho
+                # Limpar quebras de linha e espaços múltiplos
+                motivo = re.sub(r'\s+', ' ', motivo)
+                logger.info(f"✅ Motivo extraído (Padrão 1): {motivo[:100]}...")
+
+            # Padrão 2: "irregularidade(s) passível(eis) de REJEIÇÃO..."
+            if not motivo:
+                padrao2 = re.compile(
+                    r'irregularidade\(s\)\s+passível\(eis\)\s+de\s+REJEIÇÃO[^,]*,\s+tendo\s+em\s+vista\s+que[,:]?\s*(.+?)(?:\.[\s\n]*(?:São Paulo|Cumpre-nos|De outra|Ressaltamos))',
+                    re.IGNORECASE | re.DOTALL
+                )
+
+                match = padrao2.search(texto)
+                if match:
+                    motivo = match.group(1).strip()
+                    motivo = re.sub(r'\s+', ' ', motivo)
+                    logger.info(f"✅ Motivo extraído (Padrão 2): {motivo[:100]}...")
+
+            # Padrão 3: Fallback - texto completo após "NOTA DE REJEIÇÃO"
+            if not motivo and "NOTA DE REJEIÇÃO" in texto.upper():
+                # Extrair parágrafo após "NOTA DE REJEIÇÃO"
+                padrao3 = re.compile(
+                    r'NOTA DE REJEIÇÃO.+?(?:Processo DEPRE|O ofício).+?(?:irregularidade.+?)(?:\.[\s\n]*(?:São Paulo|Cumpre-nos))',
+                    re.IGNORECASE | re.DOTALL
+                )
+                match = padrao3.search(texto)
+                if match:
+                    motivo = match.group(0).strip()
+                    motivo = re.sub(r'\s+', ' ', motivo)
+                    # Remover cabeçalho da nota
+                    motivo = re.sub(r'^NOTA DE REJEIÇÃO.*?irregularidade\(s\)[^:]+:\s*', '', motivo, flags=re.IGNORECASE)
+                    logger.warning(f"⚠️ Motivo extraído (Fallback): {motivo[:100]}...")
+
+            # GARANTIA: Truncar em 500 chars SEMPRE (schema Pydantic)
+            if motivo:
                 if len(motivo) > 500:
                     motivo = motivo[:497] + "..."
+                    logger.warning(f"⚠️ Motivo truncado para 500 chars (era {len(match.group(1))} chars)")
                 return motivo
-            
-            return None
-            
+            else:
+                logger.warning("⚠️ Motivo de rejeição não extraído (nenhum padrão match)")
+                return None
+
         except Exception as e:
-            logger.error(f"Erro ao extrair motivo de rejeição: {e}")
+            logger.error(f"❌ Erro ao extrair motivo de rejeição: {e}")
             return None
     
     def extrair_numero_ordem_do_titulo(self, texto_oficio: str) -> Optional[str]:

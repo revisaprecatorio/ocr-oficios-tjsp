@@ -351,98 +351,70 @@ class ProcessadorOficio:
             )
             
             # 6. Detectar PROCESSAMENTO (PDFs novos) - buscar em mais páginas
+            # V3.0.2: PRIORIDADE 1 - Detectar REJEIÇÃO ANTES de PROCESSAMENTO
             if tracker:
-                tracker.adicionar_secao("## 6. Detecção PROCESSAMENTO")
-                tracker.adicionar_item("Buscando página PROCESSAMENTO...", nivel=0, emoji="🔍")
+                tracker.adicionar_secao("## 6. Detecção REJEIÇÃO / PROCESSAMENTO")
+                tracker.adicionar_item("V3.0.2: Buscando NOTA DE REJEIÇÃO...", nivel=0, emoji="🔍")
 
-            inicio_proc = paginas_anexo[-1] - 1 if paginas_anexo else ultima_pag_oficio - 1
-            pagina_proc, texto_proc = self.detector_proc.detectar_processamento(
+            inicio_busca = paginas_anexo[-1] - 1 if paginas_anexo else ultima_pag_oficio - 1
+
+            # V3.0.2: Nova função - detectar_rejeicao() retorna (pagina, texto, motivo)
+            pagina_rejeicao, texto_rejeicao, motivo_rejeicao = self.detector_proc.detectar_rejeicao(
                 pdf_path,
-                inicio=inicio_proc,
-                limite=None  # V2.7.3: Buscar até o final do PDF (sem limite)
+                inicio=inicio_busca,
+                limite=None  # Buscar até o final do PDF
             )
 
-            # V2.7.3: Variável para armazenar numero_ordem de fallback global
+            oficio_rejeitado = False
+            if pagina_rejeicao:
+                oficio_rejeitado = True
+                logger.warning(f"⚠️ V3.0.2: OFÍCIO REJEITADO detectado na página {pagina_rejeicao}")
+                if motivo_rejeicao:
+                    logger.info(f"   📝 Motivo: {motivo_rejeicao[:150]}...")
+                if tracker:
+                    tracker.adicionar_resultado(f"⚠️ NOTA DE REJEIÇÃO: página {pagina_rejeicao}", sucesso=True, nivel=1)
+                    if motivo_rejeicao:
+                        tracker.adicionar_detalhes("Motivo", motivo_rejeicao[:200] + "..." if len(motivo_rejeicao) > 200 else motivo_rejeicao, nivel=2)
+            else:
+                if tracker:
+                    tracker.adicionar_resultado("✅ Ofício NÃO rejeitado", sucesso=True, nivel=1)
+
+            # 6.1. Se NÃO rejeitado → Detectar PROCESSAMENTO (ou CERTIDÃO) com número de ordem
+            pagina_proc = None
+            texto_proc = None
             numero_ordem_global = None
 
-            if pagina_proc:
+            if not oficio_rejeitado:
                 if tracker:
-                    tracker.adicionar_resultado(f"PROCESSAMENTO: página {pagina_proc}", sucesso=True, nivel=1)
-            else:
-                if tracker:
-                    tracker.adicionar_resultado("PROCESSAMENTO não encontrado", sucesso=False, nivel=1)
+                    tracker.adicionar_item("Buscando PROCESSAMENTO...", nivel=0, emoji="🔍")
 
-                # V2.7.3 FIX: Fallback global - buscar numero_ordem em TODO o PDF
-                # V2.7.5 FIX 4: Também acionado quando detectar_processamento() encontra página mas sem numero_ordem extraível
-                logger.info("🔍 V2.7.5: Tentando busca GLOBAL de numero_ordem (fallback)...")
-                numero_ordem_global = self.detector_proc.buscar_numero_ordem_global(pdf_path)
-                if numero_ordem_global:
-                    logger.info(f"✅ V2.7.5: numero_ordem encontrado via busca global: {numero_ordem_global}")
-                    if tracker:
-                        tracker.adicionar_resultado(f"V2.7.5 GLOBAL: numero_ordem = {numero_ordem_global}", sucesso=True, nivel=1)
-                else:
-                    logger.warning("⚠️ V2.7.5: numero_ordem NÃO encontrado mesmo com busca global")
-                    if tracker:
-                        tracker.adicionar_resultado("V2.7.5 GLOBAL: numero_ordem não encontrado", sucesso=False, nivel=1)
-            
-            # 6.1. Verificar se ofício foi REJEITADO (ANTES de validar!)
-            # 🔴 REGRA CRÍTICA: Verificar ACEITAÇÃO primeiro (prioridade máxima)
-            oficio_rejeitado = False
-            motivo_rejeicao = None
-            tem_processamento_com_informacao = False
-            tem_numero_ordem = False
-            
-            # Verificar se tem PROCESSAMENTO COM INFORMAÇÃO ou número de ordem
-            if texto_proc:
-                # 🔧 CORREÇÃO: Limpar quebras de linha em números de ordem ANTES de processar
-                texto_proc = self.detector_proc._limpar_quebras_linha_numero_ordem(texto_proc)
+                pagina_proc, texto_proc = self.detector_proc.detectar_processamento(
+                    pdf_path,
+                    inicio=inicio_busca,
+                    limite=None  # V2.7.3: Buscar até o final do PDF (sem limite)
+                )
 
-                texto_upper = texto_proc.upper()
-                if "PROCESSAMENTO COM INFORMAÇÃO" in texto_upper or "PROCESSAMENTO COM INFORMACAO" in texto_upper:
-                    tem_processamento_com_informacao = True
-                    logger.info("✅ PROCESSAMENTO COM INFORMAÇÃO detectado → Ofício ACEITO")
-                
-                if self.detector_proc.extrair_numero_ordem(texto_proc):
-                    tem_numero_ordem = True
-                    logger.info("✅ Número de ordem detectado → Ofício ACEITO")
-            
-            # 🔴 PRIORIDADE: Se tem PROCESSAMENTO COM INFORMAÇÃO ou número de ordem → NÃO é rejeitado
-            if tem_processamento_com_informacao or tem_numero_ordem:
-                oficio_rejeitado = False
-                logger.info("✅ Ofício ACEITO (tem PROCESSAMENTO COM INFORMAÇÃO ou número de ordem)")
-            else:
-                # Só verificar rejeição se NÃO tem indicadores de aceitação
-                # Buscar rejeição no texto do PROCESSAMENTO ou em páginas próximas
-                if texto_proc and self.detector_proc.eh_oficio_rejeitado(texto_proc):
-                    oficio_rejeitado = True
-                    motivo_rejeicao = self.detector_proc.extrair_motivo_rejeicao(texto_proc)
-                    logger.warning(f"⚠️ OFÍCIO REJEITADO detectado na página {pagina_proc}!")
-                    if motivo_rejeicao:
-                        logger.info(f"   Motivo: {motivo_rejeicao[:100]}...")
+                if pagina_proc:
+                    # 🔧 CORREÇÃO: Limpar quebras de linha em números de ordem ANTES de processar
+                    texto_proc = self.detector_proc._limpar_quebras_linha_numero_ordem(texto_proc)
+                    logger.info(f"✅ PROCESSAMENTO detectado na página {pagina_proc}")
+                    if tracker:
+                        tracker.adicionar_resultado(f"PROCESSAMENTO: página {pagina_proc}", sucesso=True, nivel=1)
                 else:
-                    # Buscar rejeição em páginas próximas ao ofício
-                    logger.debug("Buscando NOTA DE REJEIÇÃO em páginas próximas...")
-                    for pag_offset in range(0, 50):
-                        pag_busca = ultima_pag_oficio + pag_offset
-                        try:
-                            doc = pymupdf.open(pdf_path)
-                            if pag_busca < len(doc):
-                                texto_busca = doc.load_page(pag_busca).get_text()
-                                if self.detector_proc.eh_oficio_rejeitado(texto_busca):
-                                    oficio_rejeitado = True
-                                    motivo_rejeicao = self.detector_proc.extrair_motivo_rejeicao(texto_busca)
-                                    logger.warning(f"⚠️ OFÍCIO REJEITADO detectado na página {pag_busca + 1}!")
-                                    if motivo_rejeicao:
-                                        logger.info(f"   Motivo: {motivo_rejeicao[:100]}...")
-                                    # Usar esse texto como PROCESSAMENTO
-                                    if not texto_proc:
-                                        texto_proc = texto_busca
-                                        pagina_proc = pag_busca
-                                    break
-                            doc.close()
-                        except Exception as e:
-                            logger.debug(f"Erro ao buscar rejeição na página {pag_busca}: {e}")
-                        break
+                    if tracker:
+                        tracker.adicionar_resultado("PROCESSAMENTO não encontrado", sucesso=False, nivel=1)
+
+                    # V2.7.3 FIX: Fallback global - buscar numero_ordem em TODO o PDF
+                    logger.info("🔍 V2.7.5: Tentando busca GLOBAL de numero_ordem (fallback)...")
+                    numero_ordem_global = self.detector_proc.buscar_numero_ordem_global(pdf_path)
+                    if numero_ordem_global:
+                        logger.info(f"✅ V2.7.5: numero_ordem encontrado via busca global: {numero_ordem_global}")
+                        if tracker:
+                            tracker.adicionar_resultado(f"V2.7.5 GLOBAL: numero_ordem = {numero_ordem_global}", sucesso=True, nivel=1)
+                    else:
+                        logger.warning("⚠️ V2.7.5: numero_ordem NÃO encontrado mesmo com busca global")
+                        if tracker:
+                            tracker.adicionar_resultado("V2.7.5 GLOBAL: numero_ordem não encontrado", sucesso=False, nivel=1)
             
             # 7. Montar texto relevante (APENAS páginas necessárias!)
             # CHUNKING: Se ofício muito grande SEM ANEXO II/PROCESSAMENTO, reduzir
@@ -484,19 +456,16 @@ class ProcessadorOficio:
                 texto_relevante += f"\n\n{'='*60}\n=== ANEXO II ===\n{'='*60}\n\n{texto_anexo}"
             else:
                 logger.warning("⚠️ ANEXO II não encontrado")
-            
-            if texto_proc:
+
+            # V3.0.2: Adicionar NOTA DE REJEIÇÃO ou PROCESSAMENTO ao texto relevante
+            if oficio_rejeitado and texto_rejeicao:
+                logger.info(f"📋 NOTA DE REJEIÇÃO encontrada na página {pagina_rejeicao}")
+                texto_relevante += f"\n\n{'='*60}\n=== NOTA DE REJEIÇÃO ===\n{'='*60}\n\n{texto_rejeicao}"
+            elif texto_proc:
                 # FIX v2.4.3: Filtrar campo "Requerente" do PROCESSAMENTO em PDFs multi-creditor
-                # O campo "Requerente" no PROCESSAMENTO refere-se ao requerente GERAL (todos os credores),
-                # não ao credor específico do ofício. Isso causa confusão no LLM.
                 texto_proc_filtrado = self._filtrar_requerente_processamento(texto_proc)
-                
-                if oficio_rejeitado:
-                    logger.info(f"📋 NOTA DE REJEIÇÃO encontrada na página {pagina_proc}")
-                    texto_relevante += f"\n\n{'='*60}\n=== NOTA DE REJEIÇÃO ===\n{'='*60}\n\n{texto_proc_filtrado}"
-                else:
-                    logger.info(f"📋 PROCESSAMENTO encontrado na página {pagina_proc}")
-                    texto_relevante += f"\n\n{'='*60}\n=== PROCESSAMENTO ===\n{'='*60}\n\n{texto_proc_filtrado}"
+                logger.info(f"📋 PROCESSAMENTO encontrado na página {pagina_proc}")
+                texto_relevante += f"\n\n{'='*60}\n=== PROCESSAMENTO ===\n{'='*60}\n\n{texto_proc_filtrado}"
             elif numero_ordem_titulo:
                 logger.info(f"📋 Número de ordem extraído do TÍTULO: {numero_ordem_titulo}")
             else:
@@ -522,14 +491,14 @@ class ProcessadorOficio:
                 
                 texto_relevante = texto_chunk
                 
-                # Re-adicionar ANEXO II e PROCESSAMENTO (se houver)
+                # Re-adicionar ANEXO II e PROCESSAMENTO/REJEIÇÃO (se houver)
                 if texto_anexo:
                     texto_relevante += f"\n\n{'='*60}\n=== ANEXO II ===\n{'='*60}\n\n{texto_anexo}"
-                if texto_proc:
-                    if oficio_rejeitado:
-                        texto_relevante += f"\n\n{'='*60}\n=== NOTA DE REJEIÇÃO ===\n{'='*60}\n\n{texto_proc}"
-                    else:
-                        texto_relevante += f"\n\n{'='*60}\n=== PROCESSAMENTO ===\n{'='*60}\n\n{texto_proc}"
+                # V3.0.2: Adicionar texto de rejeição ou processamento
+                if oficio_rejeitado and texto_rejeicao:
+                    texto_relevante += f"\n\n{'='*60}\n=== NOTA DE REJEIÇÃO ===\n{'='*60}\n\n{texto_rejeicao}"
+                elif texto_proc:
+                    texto_relevante += f"\n\n{'='*60}\n=== PROCESSAMENTO ===\n{'='*60}\n\n{texto_proc}"
                 
                 logger.info(f"📄 Texto reduzido: {len(texto_relevante):,} chars (60 páginas + anexos)")
             
@@ -1714,11 +1683,16 @@ Retorne APENAS JSON FLAT válido:"""
                 logger.info(f"📋 Usando número de ordem do título: {numero_ordem_titulo}")
                 dados['numero_ordem'] = numero_ordem_titulo
             
-            # Adicionar flag de rejeição se detectada
+            # V3.0.2: Adicionar flag de rejeição + motivo (truncado para 500 chars)
             if oficio_rejeitado:
                 dados['rejeitado'] = True
+                # Usar motivo extraído por regex se LLM não retornou
                 if motivo_rejeicao and not dados.get('motivo_rejeicao'):
                     dados['motivo_rejeicao'] = motivo_rejeicao
+                # V3.0.2: GARANTIR truncamento em 500 chars (LLM pode retornar texto longo)
+                if dados.get('motivo_rejeicao') and len(dados['motivo_rejeicao']) > 500:
+                    dados['motivo_rejeicao'] = dados['motivo_rejeicao'][:497] + "..."
+                    logger.warning(f"⚠️ V3.0.2: motivo_rejeicao truncado para 500 chars (Pydantic limit)")
             
             # Adicionar observações sobre campos não encontrados
             campos_ausentes = []

@@ -131,6 +131,8 @@ def main():
             obito = EXCLUDED.obito,
             data_obito = EXCLUDED.data_obito,
             cpf_sucessor = EXCLUDED.cpf_sucessor,
+            rejeitado = EXCLUDED.rejeitado,
+            motivo_rejeicao = EXCLUDED.motivo_rejeicao,
             timestamp_ingestao = EXCLUDED.timestamp_ingestao;
     """
 

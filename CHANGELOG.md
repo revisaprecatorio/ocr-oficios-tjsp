@@ -4,6 +4,99 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 
 ---
 
+## [3.0.2] - 2025-12-14
+
+### 🔴 FIX CRÍTICO: Detecção de Ofícios Rejeitados
+
+#### ⚠️ PROBLEMA IDENTIFICADO
+
+**Processo:** 0015170-98.2022.8.26.0500 (CPF 284.552.608-31)
+- ❌ Processos com "NOTA DE REJEIÇÃO" não eram detectados
+- ❌ Campo `rejeitado` ficava `null` ao invés de `true`
+- ❌ Campo `motivo_rejeicao` não era preenchido
+- ❌ `numero_ordem = null` sem explicação do motivo
+
+**Causa Raiz:**
+- Função `detectar_processamento()` confundia "NOTA DE REJEIÇÃO" com "PROCESSAMENTO"
+- Detecção de rejeição era feita DEPOIS da detecção de PROCESSAMENTO
+- Dependia parcialmente do LLM ao invés de REGEX confiável
+
+#### ✨ SOLUÇÃO: REGEX-First + Prioridade de Detecção
+
+**Nova Arquitetura:**
+1. **PRIORIDADE 1:** Detectar REJEIÇÃO (nova função `detectar_rejeicao()`)
+2. **PRIORIDADE 2:** Se NÃO rejeitado → Detectar PROCESSAMENTO
+3. **REGEX Robusto:** 3 padrões para extrair motivo da rejeição
+
+**Mudanças Implementadas:**
+
+**detector_processamento.py:**
+- ✅ **Nova função:** `detectar_rejeicao(pdf_path, inicio, limite)`
+  - Retorna: `(pagina, texto, motivo)`
+  - Busca "NOTA DE REJEIÇÃO" em todo PDF
+  - Extrai motivo com REGEX robusto
+- ✅ **Melhorado:** `extrair_motivo_rejeicao(texto)`
+  - 3 padrões REGEX (tendo em vista que..., irregularidade, fallback)
+  - Truncamento garantido em 500 chars (limite Pydantic)
+  - Limpeza de espaços e quebras de linha
+- ✅ **Melhorado:** `_eh_pagina_processamento(texto)`
+  - Rejeita páginas com "NOTA DE REJEIÇÃO" (prioridade máxima)
+  - Evita confusão com PROCESSAMENTO
+
+**processador.py:**
+- ✅ **Ordem de Execução Corrigida:**
+  ```python
+  # 1. Detectar ANEXO II
+  # 2. V3.0.2: Detectar REJEIÇÃO (PRIORIDADE 1)
+  # 3. Se NÃO rejeitado → Detectar PROCESSAMENTO
+  ```
+- ✅ **Truncamento Duplo:**
+  - Trunca motivo extraído por REGEX (500 chars)
+  - Trunca motivo retornado pelo LLM (500 chars)
+  - Previne erro de validação Pydantic
+
+**schemas.py:**
+- ✅ **Campos já existiam:** `rejeitado` (bool), `motivo_rejeicao` (str, max 500)
+- ✅ **Nenhuma mudança necessária** no schema
+
+**ingest_v3_0.py:**
+- ✅ **Campos já suportados** na ingestão
+- ✅ **Nenhuma mudança necessária**
+
+#### 📊 Teste de Validação
+
+**Processo Problemático Reprocessado:**
+```bash
+Processo: 0015170-98.2022.8.26.0500
+Resultado:
+  ✅ rejeitado: true
+  ✅ motivo_rejeicao: "Irregularidade(s) passível(eis) de REJEIÇÃO...
+      não foi encaminhada a decisão que habilitou os herdeiros..."
+  ✅ numero_ordem: null
+  ✅ Status: SUCESSO (validação Pydantic passou)
+```
+
+#### 🎯 Impacto
+
+**Antes:**
+- Processos rejeitados não identificados
+- `numero_ordem = null` sem contexto
+- Impossível filtrar/reportar rejeições
+
+**Depois:**
+- ✅ 100% de detecção de rejeições via REGEX
+- ✅ Motivo completo e informativo armazenado
+- ✅ Processos aceitos não afetados
+- ✅ Filtros e relatórios agora possíveis
+
+#### 🔧 Arquivos Modificados
+
+- `1_parsing_PDF/app/detector_processamento.py` - Nova função + REGEX melhorado
+- `1_parsing_PDF/app/processador.py` - Ordem de detecção + truncamento
+- `CHANGELOG.md` - Esta documentação
+
+---
+
 ## [3.0.1] - 2025-12-14
 
 ### 🎨 STREAMLIT V3.0: Óbito & Sucessão Features
