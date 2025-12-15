@@ -118,3 +118,6 @@ deploy/
 tests/*_export.csv
 # UAT V2.5.1 Legacy - PDFs muito grandes (>100 MB)
 2_ingestao/historico_evolucao_anteriores/4_UAT_refinamento_v2.5.1_LEGACY/
+
+# Outro projeto - Chatbot n8n / Integração Mercado Pago
+9_review_chatbot_n8n/
