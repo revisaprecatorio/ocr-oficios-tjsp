@@ -116,3 +116,5 @@ deploy/
 1_parsing_PDF/processo_log*.txt
 1_parsing_PDF/teste_*.txt
 tests/*_export.csv
+# UAT V2.5.1 Legacy - PDFs muito grandes (>100 MB)
+2_ingestao/historico_evolucao_anteriores/4_UAT_refinamento_v2.5.1_LEGACY/

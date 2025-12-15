@@ -6,6 +6,61 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 
 ## [3.0.2] - 2025-12-14
 
+### 🧹 MODERNIZAÇÃO: UAT V3.0 (User Acceptance Testing)
+
+#### 📦 Limpeza e Arquivamento
+
+**Problema:**
+- UAT folder (`4_UAT_refinamento/`) estava desatualizado (v2.5.1)
+- Baseado em schema antigo (50 colunas vs 35 atuais)
+- 749 MB de PDFs de validação antiga (64 arquivos, 48 processos)
+- Categorias obsoletas usando campos removidos (`cessao_credito`, `requerente_caps`)
+
+**Solução:**
+1. ✅ **Arquivado UAT v2.5.1:**
+   - Movido para `2_ingestao/historico_evolucao_anteriores/4_UAT_refinamento_v2.5.1_LEGACY/`
+   - Preserva histórico de validações passadas (749 MB)
+
+2. ✅ **Criado UAT V3.0:**
+   - Novo script `organizar_uat_v3.py` adaptado para schema 35 colunas
+   - README.md + README_UAT_V3.md (documentação completa)
+
+#### 🆕 Mudanças UAT V3.0
+
+**Categorias Adicionadas:**
+- ✅ `6_obito_sucessao/` - Processos com óbito do credor (novos campos V3.0)
+
+**Categorias Removidas:**
+- ❌ `2_cessao_credito/` - Campo `cessao_credito` não existe mais
+- ❌ `8_multiplos_credores/` - Dependia de `requerente_caps` (removido)
+
+**Categorias Mantidas (8 total):**
+- `1_anomalia_formato/` - PDFs com formato antigo (7xxxxxx)
+- `3_herdeiros_nao_rejeitados/` - Habilitação aprovada
+- `4_preferencial/` - Idoso/doença grave/PCD
+- `5_rejeitados/` - V3.0.2: Agora com detecção REGEX-first
+- `7_dados_bancarios_incompletos/` - Dados bancários vazios
+- `9_sem_juros_moratorios/` - Sem juros
+- `10_amostra_baseline/` - Amostra aleatória 10%
+- `11_processos_ok_100/` - Processos sem problemas
+
+**Campos Atualizados no Script:**
+- `requerente_caps` → `credor_nome`
+- `data_ajuizamento` → `data_base_atualizacao`
+- Adicionados: `obito`, `data_obito`, `cpf_sucessor`
+
+**Arquivos:**
+- ✅ `4_UAT_refinamento/organizar_uat_v3.py` - Script adaptado para V3.0
+- ✅ `4_UAT_refinamento/README.md` - Documentação resumida
+- ✅ `4_UAT_refinamento/README_UAT_V3.md` - Gerado automaticamente pelo script
+
+**Impacto:**
+- Schema: v2.5.1 (50 colunas) → V3.0 (35 colunas)
+- Categorias: 11 → 8 (-3, +1)
+- Espaço: 749 MB arquivados (não deletados, preservados para histórico)
+
+---
+
 ### 🔴 FIX CRÍTICO: Detecção de Ofícios Rejeitados
 
 #### ⚠️ PROBLEMA IDENTIFICADO
