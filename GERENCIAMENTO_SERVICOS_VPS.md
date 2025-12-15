@@ -483,6 +483,6 @@ Em caso de problemas:
 
 ---
 
-**Última atualização:** 16/10/2025  
-**Versão:** 1.0  
+**Última atualização:** 14/12/2025
+**Versão:** 1.0
 **Responsável:** Persival Balleste

@@ -1,17 +1,17 @@
 # 📋 Schema Completo da Tabela `esaj_detalhe_processos`
 
-Documentação completa de todas as 53 colunas da tabela PostgreSQL.
+Documentação completa de todas as 35 colunas da tabela PostgreSQL.
 
 ---
 
 ## 📊 **Resumo**
 
 - **Tabela:** `esaj_detalhe_processos`
-- **Total de colunas:** 53
+- **Total de colunas:** 35
 - **Primary Key:** `id` (auto-increment)
 - **Unique Constraint:** `(cpf, numero_processo_cnj)`
 - **Banco:** PostgreSQL na VPS (72.60.62.124:5432)
-- **Versão:** V2.6.0 (09/12/2025)
+- **Versão:** V3.0.2 (14/12/2025)
 
 ---
 
@@ -40,18 +40,16 @@ Documentação completa de todas as 53 colunas da tabela PostgreSQL.
 
 | Coluna | Tipo | Nullable | Descrição |
 |--------|------|----------|-----------|
-| `requerente_caps` | varchar | NO | Nome do requerente em MAIÚSCULAS |
-| `data_nascimento` | date | YES | Data de nascimento do credor |
-| `credor_nome` | varchar | YES | Nome do credor (pode diferir do requerente) |
+| `credor_nome` | varchar | YES | Nome do credor |
 | `credor_cpf_cnpj` | varchar | YES | CPF ou CNPJ do credor |
+| `data_nascimento` | date | YES | Data de nascimento do credor |
 
 **Exemplo:**
 ```json
 {
-  "requerente_caps": "FERNANDO SANTOS ERNESTO",
-  "data_nascimento": "1960-05-15",
   "credor_nome": "Fernando Santos Ernesto",
-  "credor_cpf_cnpj": "021.747.818-24"
+  "credor_cpf_cnpj": "021.747.818-24",
+  "data_nascimento": "1960-05-15"
 }
 ```
 
@@ -63,8 +61,6 @@ Documentação completa de todas as 53 colunas da tabela PostgreSQL.
 |--------|------|----------|-----------|
 | `numero_ordem` | varchar | YES | Número de ordem do precatório (ex: "6475/2022") |
 | `vara` | varchar | YES | Vara responsável pelo processo |
-| `processo_execucao` | varchar | YES | Número do processo de execução |
-| `processo_conhecimento` | varchar | YES | Número do processo de conhecimento |
 | `devedor_ente` | varchar | YES | Ente devedor (ex: "Município de São Paulo") |
 
 **Exemplo:**
@@ -72,8 +68,6 @@ Documentação completa de todas as 53 colunas da tabela PostgreSQL.
 {
   "numero_ordem": "6475/2022",
   "vara": "1ª VARA DE FAZENDA PÚBLICA",
-  "processo_execucao": "0035938-67.2018.8.26.0053",
-  "processo_conhecimento": null,
   "devedor_ente": "MUNICÍPIO DE SÃO PAULO"
 }
 ```
@@ -84,9 +78,8 @@ Documentação completa de todas as 53 colunas da tabela PostgreSQL.
 
 | Coluna | Tipo | Nullable | Descrição |
 |--------|------|----------|-----------|
-| `data_ajuizamento` | date | YES | Data de ajuizamento do processo |
-| `data_transito_julgado` | date | YES | Data do trânsito em julgado |
 | `data_base_atualizacao` | date | YES | Data base para atualização monetária |
+| `data_transito_julgado` | date | YES | Data do trânsito em julgado |
 | `data_nascimento` | date | YES | Data de nascimento do credor |
 
 **Formato:** `YYYY-MM-DD` (ISO 8601)
@@ -94,9 +87,8 @@ Documentação completa de todas as 53 colunas da tabela PostgreSQL.
 **Exemplo:**
 ```json
 {
-  "data_ajuizamento": "2018-01-15",
-  "data_transito_julgado": "2021-06-30",
   "data_base_atualizacao": "2022-03-01",
+  "data_transito_julgado": "2021-06-30",
   "data_nascimento": "1960-05-15"
 }
 ```
@@ -218,22 +210,21 @@ Documentação completa de todas as 53 colunas da tabela PostgreSQL.
 
 ---
 
-## 📜 **Termos Jurídicos (V2.5.3)**
+## 📜 **Termos Jurídicos**
 
 | Coluna | Tipo | Nullable | Default | Descrição |
 |--------|------|----------|---------|-----------|
 | `preferencial` | boolean | YES | FALSE | Pedido de preferência detectado |
 | `habilitacao_herdeiros` | boolean | YES | FALSE | Habilitação de herdeiros detectada (código 9270) |
-| `cessao_credito` | boolean | YES | FALSE | ⚠️ **DESATIVADO** em V2.5.3 (sempre FALSE) |
 
-**Detecção (V2.5.3):**
+**Detecção:**
 
 ### **`preferencial`**
 - Busca "preferência" ou "preferencia" (case-insensitive)
 - Pattern: `prefer[eê]ncia`
 
 ### **`habilitacao_herdeiros`**
-- **V2.5.3**: Lógica avançada com validação de CPF
+- Lógica avançada com validação de CPF
 - Busca código **9270 - Habilitação de Herdeiro de Precatório**
 - Valida estrutura "Dados da Sucessão"
 - Valida que CPF do sucessor = CPF objeto
@@ -242,18 +233,11 @@ Documentação completa de todas as 53 colunas da tabela PostgreSQL.
   - MÉDIA: 2+ indicadores sem código
   - BAIXA: 1 indicador apenas
 
-### **`cessao_credito`** ⚠️
-- **DESATIVADO em V2.5.3** (sempre retorna FALSE)
-- Removido a pedido do cliente
-- Pattern comentado no código para histórico
-- **⚠️ ALERTA**: Se houver registros com `cessao_credito=TRUE`, há erro no processamento!
-
 **Exemplo:**
 ```json
 {
   "preferencial": true,
-  "habilitacao_herdeiros": true,
-  "cessao_credito": false
+  "habilitacao_herdeiros": true
 }
 ```
 
@@ -406,7 +390,7 @@ FROM esaj_detalhe_processos;
 ### **4. Processos com dados bancários completos**
 
 ```sql
-SELECT cpf, numero_processo_cnj, requerente_caps,
+SELECT cpf, numero_processo_cnj, credor_nome,
        banco, agencia, conta, conta_tipo
 FROM esaj_detalhe_processos
 WHERE banco IS NOT NULL
@@ -417,7 +401,7 @@ WHERE banco IS NOT NULL
 ### **5. Últimos 10 processados**
 
 ```sql
-SELECT cpf, numero_processo_cnj, requerente_caps,
+SELECT cpf, numero_processo_cnj, credor_nome,
        numero_ordem, rejeitado, timestamp_ingestao
 FROM esaj_detalhe_processos
 ORDER BY timestamp_ingestao DESC
@@ -447,18 +431,7 @@ SELECT
 FROM esaj_detalhe_processos;
 ```
 
-### **8. Validação de Cessão de Crédito (V2.5.3)**
-
-```sql
--- ⚠️ Esperado: 0 registros (cessão foi desativada em V2.5.3)
-SELECT cpf, numero_processo_cnj, requerente_caps, cessao_credito
-FROM esaj_detalhe_processos
-WHERE cessao_credito = TRUE;
-```
-
-**Se retornar registros:** Há erro no processamento! Cessão foi desativada.
-
-### **9. Condições Especiais Agregadas (V2.5.3)**
+### **8. Condições Especiais Agregadas**
 
 ```sql
 SELECT
@@ -471,7 +444,7 @@ SELECT
 FROM esaj_detalhe_processos;
 ```
 
-### **10. Validação Completa V2.5.3**
+### **9. Validação Completa V3.0.2**
 
 ```sql
 SELECT
@@ -479,20 +452,19 @@ SELECT
   COUNT(*) as total,
   COUNT(CASE WHEN numero_ordem IS NOT NULL THEN 1 END) as com_ordem,
 
-  -- Saldo Final (V2.5.2)
+  -- Saldo Final (V2.5.2+)
   COUNT(CASE WHEN saldo_final IS NOT NULL THEN 1 END) as com_saldo_final,
   COUNT(CASE WHEN saldo_final > 0 THEN 1 END) as saldo_positivo,
 
-  -- Óbito e Sucessão (V2.5.3)
+  -- Óbito e Sucessão (V2.5.3+)
   COUNT(CASE WHEN obito = TRUE THEN 1 END) as com_obito,
   COUNT(CASE WHEN data_obito IS NOT NULL THEN 1 END) as com_data_obito,
   COUNT(CASE WHEN cpf_sucessor IS NOT NULL THEN 1 END) as com_cpf_sucessor,
 
-  -- Termos Jurídicos (V2.5.3)
+  -- Termos Jurídicos
   COUNT(CASE WHEN doenca_grave = TRUE THEN 1 END) as com_doenca_grave,
   COUNT(CASE WHEN habilitacao_herdeiros = TRUE THEN 1 END) as com_habilitacao,
-  COUNT(CASE WHEN preferencial = TRUE THEN 1 END) as com_preferencial,
-  COUNT(CASE WHEN cessao_credito = TRUE THEN 1 END) as com_cessao  -- Esperado: 0
+  COUNT(CASE WHEN preferencial = TRUE THEN 1 END) as com_preferencial
 
 FROM esaj_detalhe_processos;
 ```
@@ -525,7 +497,6 @@ UNIQUE (cpf, numero_processo_cnj)
 cpf NOT NULL
 numero_processo_cnj NOT NULL
 processo_origem NOT NULL
-requerente_caps NOT NULL
 ```
 
 ### **3. Validação de Negócio**
@@ -533,16 +504,33 @@ requerente_caps NOT NULL
 - ✅ Se `numero_ordem` existe → `rejeitado = FALSE`
 - ✅ Se `rejeitado = TRUE` → `numero_ordem = NULL`
 - ✅ `idoso` calculado automaticamente a partir de `data_nascimento`
-- ✅ **V2.5.2**: `saldo_final` com fallback para `valor_total_requisitado`
-- ✅ **V2.5.3**: `habilitacao_herdeiros` validada por CPF (código 9270)
-- ✅ **V2.5.3**: `cessao_credito` sempre FALSE (desativado)
+- ✅ **V2.5.2+**: `saldo_final` com fallback para `valor_total_requisitado`
+- ✅ **V2.5.3+**: `habilitacao_herdeiros` validada por CPF (código 9270)
+- ✅ **V3.0.2**: Detecção de rejeições REGEX-first com prioridade correta
 
 ---
 
 ## 🔄 **Histórico de Mudanças**
 
+### **V3.0.2 (14/12/2025)**
+- ✅ **Fix Crítico**: Detecção de rejeições REGEX-first
+- ✅ Prioridade correta: REGEX → GPT → Fallback
+- ✅ Modernização UAT: v2.5.1 → V3.0
+- ✅ Validação em produção: 1 rejeitado detectado corretamente
+
+### **V3.0 (13/12/2025)**
+- ✅ **Schema Cleanup: 50→35 colunas (-30%)**
+- ❌ **Removidos completamente (15 campos):**
+  - `cessao_credito` (antes desativado em V2.5.3)
+  - `requerente_caps` → substituído por `credor_nome`
+  - `processo_execucao`, `processo_conhecimento`
+  - `data_ajuizamento` → substituído por `data_base_atualizacao`
+  - +10 campos não utilizados
+- ✅ **Mantidos:** `saldo_final`, `habilitacao_herdeiros`, `obito`, `data_obito`, `cpf_sucessor`
+- ✅ Streamlit atualizado para V3.0 schema
+
 ### **V2.6.0 (09/12/2025)**
-- ✅ Schema consolidado com 53 colunas
+- ✅ Schema consolidado com 50 colunas
 - ✅ Validação de data quality aprimorada
 - ✅ Correção de quebra de linha em `numero_ordem`
 - ✅ Campo `banco` expandido para VARCHAR(100)
@@ -586,14 +574,14 @@ requerente_caps NOT NULL
 2. **Dados Bancários:** Extraídos do ANEXO II quando disponível
 3. **Valores Financeiros:** Sempre em formato decimal sem formatação (ex: 150000.00)
 4. **Datas:** Sempre no formato ISO (YYYY-MM-DD)
-5. **Requerente:** Sempre em MAIÚSCULAS conforme padrão TJSP
-6. **Saldo Final (V2.5.2):** Se não detectado, usa `valor_total_requisitado` como fallback
-7. **Habilitação de Herdeiros (V2.5.3):** Validação rigorosa com código 9270 + CPF
-8. **Cessão de Crédito (V2.5.3):** DESATIVADO - sempre FALSE
-9. **Óbito (V2.5.3):** Pode ser detectado mesmo sem habilitação de herdeiros
+5. **Saldo Final (V2.5.2+):** Se não detectado, usa `valor_total_requisitado` como fallback
+6. **Habilitação de Herdeiros (V2.5.3+):** Validação rigorosa com código 9270 + CPF
+7. **Óbito (V2.5.3+):** Pode ser detectado mesmo sem habilitação de herdeiros
+8. **Rejeições (V3.0.2):** Detecção REGEX-first com prioridade: REGEX → GPT → Fallback
+9. **Schema V3.0:** 15 campos removidos (cessao_credito, requerente_caps, processo_execucao, data_ajuizamento, +11)
 
 ---
 
-**Última atualização:** 09/12/2025
-**Versão:** V2.6.0
-**Total de colunas:** 53
+**Última atualização:** 14/12/2025
+**Versão:** V3.0.2
+**Total de colunas:** 35
