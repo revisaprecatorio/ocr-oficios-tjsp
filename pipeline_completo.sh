@@ -16,8 +16,10 @@ set -e  # Parar em caso de erro
 # ============================================================================
 # CONFIGURAÇÕES
 # ============================================================================
-PROJECT_ROOT="/Users/persivalballeste/Documents/@IANIA/PROJECTS/revisa/revisa/3_OCR"
-VENV_PYTHON="${PROJECT_ROOT}/.venv/bin/python3"
+#PROJECT_ROOT="/Users/persivalballeste/Documents/@IANIA/PROJECTS/revisa/revisa/3_OCR"
+PROJECT_ROOT="C:/Users/Administrator/Documents/revisa/ocr-oficios-tjsp"
+#VENV_PYTHON="${PROJECT_ROOT}/.venv/bin/python3"
+VENV_PYTHON="${PROJECT_ROOT}/env/Scripts/python.exe"
 INPUT_DATA="../data/consultas"
 OUTPUT_NAME="consultas"
 
