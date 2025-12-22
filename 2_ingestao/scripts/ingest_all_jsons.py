@@ -8,15 +8,12 @@ import os
 import sys
 import json
 import logging
+import argparse
 from pathlib import Path
 from datetime import datetime
 from dotenv import load_dotenv
 import psycopg2
 from tqdm import tqdm
-
-# Carregar variáveis de ambiente
-env_path = Path(__file__).parent.parent / ".env"
-load_dotenv(env_path)
 
 # Configurar logging
 logging.basicConfig(
@@ -24,7 +21,6 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
-
 
 def extrair_cpf_processo(json_path: Path) -> tuple:
     """Extrai CPF e número do processo do nome do arquivo"""
@@ -34,56 +30,103 @@ def extrair_cpf_processo(json_path: Path) -> tuple:
     parts = filename.split("_", 1)
     
     if len(parts) != 2:
-        raise ValueError(f"Nome de arquivo inválido: {json_path.name}")
+        # Tenta fallback se o nome não tiver "_" (ex: apenas o processo)
+        return "UNKNOWN", filename
     
     return parts[0], parts[1]
-
 
 def main():
     """Função principal"""
     
-    print("=" * 60)
-    print("📥 INGESTÃO DE TODOS OS JSONs")
-    print("=" * 60)
+    # 1. Configurar Argumentos (Compatibilidade com pipeline_completo.sh)
+    parser = argparse.ArgumentParser(description="Ingestão de JSONs para DB")
+    parser.add_argument("--input", help="Pasta de entrada dos JSONs")
+    parser.add_argument("--db-host", help="Host do banco")
+    parser.add_argument("--db-port", help="Porta do banco")
+    parser.add_argument("--db-name", help="Nome do banco")
+    parser.add_argument("--db-user", help="Usuário do banco")
+    # Senha geralmente vem via env, mas pode vir via args se necessário
     
-    # Conectar ao banco
+    args, unknown = parser.parse_known_args()
+
+    print("=" * 60)
+    print("📥 INGESTÃO DE TODOS OS JSONs (CORRIGIDO)")
+    print("=" * 60)
+
+    # 2. Carregar .env (Correção do caminho: 3 níveis acima)
+    # ingest_all_jsons.py -> scripts -> 2_ingestao -> RAIZ
+    env_path = Path(__file__).parent.parent.parent / ".env"
+    load_dotenv(env_path)
+    
+    # 3. Prioridade de Configuração: Argumentos > .env
     db_config = {
-        "host": os.getenv("DB_HOST"),
-        "port": os.getenv("DB_PORT"),
-        "database": os.getenv("DB_NAME"),
-        "user": os.getenv("DB_USER"),
-        "password": os.getenv("DB_PASSWORD")
+        "host": args.db_host or os.getenv("DB_HOST"),
+        "port": args.db_port or os.getenv("DB_PORT"),
+        "database": args.db_name or os.getenv("DB_NAME"),
+        "user": args.db_user or os.getenv("DB_USER"),
+        "password": os.getenv("DB_PASSWORD") or os.getenv("DB_PASS")
     }
+
+    # Debug das credenciais (Ocultando senha)
+    print(f"🔧 Configuração de Banco:")
+    print(f"   Host: {db_config['host']}")
+    print(f"   DB: {db_config['database']}")
+    print(f"   User: {db_config['user']}")
     
+    if not db_config['password']:
+        print("❌ ERRO: Senha do banco não encontrada (verifique DB_PASSWORD ou DB_PASS no .env)")
+        sys.exit(1)
+
     print(f"\n🔌 Conectando ao PostgreSQL...")
+    conn = None
     try:
         conn = psycopg2.connect(**db_config)
         cursor = conn.cursor()
         print("   ✅ Conectado!")
     except Exception as e:
-        print(f"   ❌ Erro: {e}")
+        print(f"   ❌ Erro de conexão: {e}")
         sys.exit(1)
     
-    # Buscar JSONs
-    json_dir = Path(__file__).parent.parent.parent / "1_parsing_PDF" / "outputs" / "json"
+    # 4. Definir pasta de JSONs
+    if args.input:
+        json_dir = Path(args.input)
+    else:
+        # Caminho padrão relativo
+        json_dir = Path(__file__).parent.parent.parent / "1_parsing_PDF" / "outputs" / "json"
     
+    # Resolver caminho absoluto se for relativo
+    if not json_dir.is_absolute():
+        # Se veio do script bash como "../...", resolve a partir do diretório atual de execução
+        # Ou ajusta relativo ao script
+        base_exec = Path(os.getcwd())
+        candidate = base_exec / json_dir
+        if candidate.exists():
+            json_dir = candidate
+        else:
+            # Tenta relativo ao script python
+            json_dir = Path(__file__).parent.parent.parent / "1_parsing_PDF" / "outputs" / "json"
+
     if not json_dir.exists():
-        print(f"❌ Pasta não encontrada: {json_dir}")
+        print(f"❌ Pasta de JSONs não encontrada: {json_dir}")
+        print(f"   (Verifique se a etapa de cópia do pipeline rodou)")
         sys.exit(1)
     
     json_files = sorted(json_dir.glob("*.json"))
-    print(f"\n📁 Pasta: {json_dir}")
-    print(f"📊 Total de JSONs: {len(json_files)}")
+    print(f"\n📁 Lendo arquivos de: {json_dir.resolve()}")
+    print(f"📊 Total de JSONs encontrados: {len(json_files)}")
     
+    if len(json_files) == 0:
+        print("⚠️  Nenhum arquivo JSON encontrado para importar.")
+        sys.exit(0)
+
     # Estatísticas
     stats = {
         "total": len(json_files),
         "sucesso": 0,
-        "erros": 0,
-        "duplicados": 0
+        "erros": 0
     }
     
-    # Query de INSERT com UPSERT (V2.5.3: inclui obito, data_obito, cpf_sucessor)
+    # Query de INSERT com UPSERT
     insert_query = """
         INSERT INTO esaj_detalhe_processos (
             cpf, numero_processo_cnj, processo_origem, requerente_caps,
@@ -135,44 +178,22 @@ def main():
             timestamp_ingestao = EXCLUDED.timestamp_ingestao;
     """
     
-    # Processar JSONs
-    print(f"\n📋 Processando JSONs...")
-    print("="*80)
-
-    for json_file in tqdm(json_files, desc="Ingerindo"):
+    print(f"\n📋 Iniciando inserção...")
+    for json_file in tqdm(json_files, desc="Processando"):
         try:
-            # Extrair CPF e processo
             cpf, numero_processo = extrair_cpf_processo(json_file)
 
-            print(f"\n📄 Lendo JSON: {json_file.name}")
-            print(f"   └─ CPF: {cpf}")
-            print(f"   └─ Processo: {numero_processo}")
-
-            # Ler JSON
             with open(json_file, 'r', encoding='utf-8') as f:
                 data = json.load(f)
 
-            # Log dos campos principais V2.5.3
-            print(f"   └─ Requerente: {data.get('requerente_caps', 'N/A')[:50]}")
-            valor_total = data.get('valor_total_requisitado', 0)
-            saldo_final = data.get('saldo_final', 0)
-            print(f"   └─ Valor Total: {valor_total}")
-            print(f"   └─ Saldo Final: {saldo_final}")
-            print(f"   └─ Preferencial: {data.get('preferencial', False)}")
-            print(f"   └─ Habilitação: {data.get('habilitacao_herdeiros', False)}")
-            print(f"   └─ Óbito: {data.get('obito', False)}")
-            print(f"   └─ Doença Grave: {data.get('doenca_grave', False)}")
-            
-            # Preparar valores (V2.5.3: inclui obito, data_obito, cpf_sucessor)
-            # Extrair apenas código do banco (primeiros 3 dígitos) se necessário
+            # Tratamento de banco (pegar apenas código)
             banco_raw = data.get('banco')
             banco = None
             if banco_raw:
-                # Se banco vier como "001 - Agência: ...", extrair apenas "001"
                 if ' - ' in banco_raw or 'Agência' in banco_raw:
                     banco = banco_raw.split()[0].strip()
                 else:
-                    banco = banco_raw[:10]  # Limitar a 10 chars
+                    banco = banco_raw[:10]
 
             valores = {
                 'cpf': cpf,
@@ -219,9 +240,9 @@ def main():
                 'preferencial': data.get('preferencial', False),
                 'habilitacao_herdeiros': data.get('habilitacao_herdeiros', False),
                 'cessao_credito': data.get('cessao_credito', False),
-                'obito': data.get('obito', False),  # V2.5.3: Novo campo
-                'data_obito': data.get('data_obito'),  # V2.5.3: Novo campo (ISO format)
-                'cpf_sucessor': data.get('cpf_sucessor'),  # V2.5.3: Novo campo
+                'obito': data.get('obito', False),
+                'data_obito': data.get('data_obito'),
+                'cpf_sucessor': data.get('cpf_sucessor'),
                 'rejeitado': data.get('rejeitado', False),
                 'motivo_rejeicao': data.get('motivo_rejeicao'),
                 'observacoes': data.get('observacoes'),
@@ -232,34 +253,24 @@ def main():
                 'timestamp_ingestao': datetime.now()
             }
             
-            # Executar INSERT
-            print(f"   └─ Inserindo/atualizando no banco...")
             cursor.execute(insert_query, valores)
             conn.commit()
-
             stats["sucesso"] += 1
-            print(f"   └─ ✅ Sucesso!")
 
         except Exception as e:
             stats["erros"] += 1
-            print(f"   └─ ❌ ERRO: {str(e)[:100]}")
-            logger.error(f"❌ {json_file.name}: {str(e)[:100]}")
+            logger.error(f"❌ {json_file.name}: {e}")
             conn.rollback()
     
-    # Fechar conexão
     cursor.close()
     conn.close()
     
-    # Resumo
     print(f"\n" + "=" * 60)
     print(f"📊 RESUMO DA INGESTÃO")
-    print("=" * 60)
-    print(f"   Total de JSONs: {stats['total']}")
+    print(f"   Total: {stats['total']}")
     print(f"   ✅ Sucesso: {stats['sucesso']}")
     print(f"   ❌ Erros: {stats['erros']}")
-    print(f"   Taxa de sucesso: {stats['sucesso']/stats['total']*100:.1f}%")
     print("=" * 60)
-
 
 if __name__ == "__main__":
     main()

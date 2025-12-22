@@ -31,6 +31,14 @@ from typing import List, Dict, Any
 from dotenv import load_dotenv
 from tqdm import tqdm  # Barra de progresso
 
+import sys
+
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
+
 # Adicionar pasta app ao path
 sys.path.insert(0, str(Path(__file__).parent))
 
@@ -54,15 +62,28 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+# def encontrar_pdfs(base_dir: str) -> List[Path]:
+#     """Encontra todos os PDFs na estrutura de pastas"""
+#     base_path = Path(base_dir)
+#     if not base_path.exists():
+#         base_path = Path(__file__).parent.parent / base_dir
+    
+#     pdfs = sorted(base_path.glob("*/*.pdf"))
+#     return pdfs
+
 def encontrar_pdfs(base_dir: str) -> List[Path]:
-    """Encontra todos os PDFs na estrutura de pastas"""
+    """Encontra todos os PDFs na estrutura de pastas (Recursivo)"""
     base_path = Path(base_dir)
     if not base_path.exists():
         base_path = Path(__file__).parent.parent / base_dir
     
-    pdfs = sorted(base_path.glob("*/*.pdf"))
+    # rglob = Recursive Glob (procura em toda a árvore de diretórios)
+    pdfs = sorted(base_path.rglob("*.pdf"))
+    
+    # Filtro opcional: ignora arquivos que começam com '._' ou temporários
+    pdfs = [p for p in pdfs if not p.name.startswith("._")]
+    
     return pdfs
-
 
 def analisar_campo(valor: Any) -> str:
     """Retorna status do campo: ✓ (presente), ✗ (ausente)"""
@@ -118,17 +139,17 @@ def gerar_csv_lote(resultados: List[Dict[str, Any]], lote_num: int, output_dir: 
                 # Básicos
                 "pdf": resultado["pdf"],
                 "cpf": resultado["cpf"],
-                "sucesso": "✓" if resultado["sucesso"] else "✗",
+                "sucesso": "" if resultado["sucesso"] else "✗",
                 "tempo_s": f"{resultado['tempo_processamento']:.1f}",
                 
                 # Detecção
                 "oficios_encontrados": resultado.get("num_oficios", 0),
-                "cpf_validado": "✓" if resultado.get("cpf_validado") else "✗",
+                "cpf_validado": "" if resultado.get("cpf_validado") else "✗",
                 
                 # Controle V2
-                "rejeitado": "⚠️" if dados.get("rejeitado") else "✗",
+                "rejeitado": "" if dados.get("rejeitado") else "✗",
                 "motivo_rejeicao": (dados.get("motivo_rejeicao", "")[:50] + "...") if dados.get("motivo_rejeicao") else "",
-                "anomalia": "⚠️" if dados.get("anomalia") else "✗",
+                "anomalia": "" if dados.get("anomalia") else "✗",
                 "descricao_anomalia": (dados.get("descricao_anomalia", "")[:50] + "...") if dados.get("descricao_anomalia") else "",
                 
                 # Campos obrigatórios
@@ -164,7 +185,7 @@ def gerar_csv_lote(resultados: List[Dict[str, Any]], lote_num: int, output_dir: 
             
             writer.writerow(row)
     
-    logger.info(f"   📄 CSV salvo: {csv_path}")
+    logger.info(f"    CSV salvo: {csv_path}")
     return csv_path
 
 
@@ -196,9 +217,9 @@ def processar_pdf(pdf_path: Path, processador: ProcessadorOficio, logs_dir: Path
         if tracker:
             try:
                 tracker.salvar(str(logs_dir))
-                logger.info(f"📄 Markdown salvo: {cpf}_{processo}_execution.md")
+                logger.info(f" Markdown salvo: {cpf}_{processo}_execution.md")
             except Exception as e_save:
-                logger.error(f"❌ Erro ao salvar Markdown: {e_save}")
+                logger.error(f" Erro ao salvar Markdown: {e_save}")
 
     except Exception as e:
         resultado["erro"] = str(e)
@@ -213,7 +234,7 @@ def processar_em_lotes(pdfs: List[Path], output_dir: Path, inicio_lote: int = 1)
     # Criar diretório de logs
     logs_dir = output_dir / "logs"
     logs_dir.mkdir(parents=True, exist_ok=True)
-    print(f"📁 Logs Markdown: {logs_dir}")
+    print(f" Logs Markdown: {logs_dir}")
 
     # Criar processador
     db_config = {
@@ -229,9 +250,9 @@ def processar_em_lotes(pdfs: List[Path], output_dir: Path, inicio_lote: int = 1)
     # Processar em lotes
     total_lotes = (len(pdfs) + TAMANHO_LOTE - 1) // TAMANHO_LOTE
     
-    print(f"\n📊 Total de PDFs: {len(pdfs)}")
-    print(f"📦 Total de lotes: {total_lotes} (tamanho: {TAMANHO_LOTE})")
-    print(f"🎯 Iniciando do lote: {inicio_lote}")
+    print(f"\n Total de PDFs: {len(pdfs)}")
+    print(f" Total de lotes: {total_lotes} (tamanho: {TAMANHO_LOTE})")
+    print(f" Iniciando do lote: {inicio_lote}")
     print()
     
     estatisticas_globais = {
@@ -243,7 +264,7 @@ def processar_em_lotes(pdfs: List[Path], output_dir: Path, inicio_lote: int = 1)
     }
     
     # Barra de progresso global
-    with tqdm(total=len(pdfs), desc="🔄 Processamento Geral", unit="PDF", 
+    with tqdm(total=len(pdfs), desc=" Processamento Geral", unit="PDF", 
               bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}]') as pbar_global:
         
         for i in range(0, len(pdfs), TAMANHO_LOTE):
@@ -256,7 +277,7 @@ def processar_em_lotes(pdfs: List[Path], output_dir: Path, inicio_lote: int = 1)
             lote_pdfs = pdfs[i:i + TAMANHO_LOTE]
             
             print(f"\n{'='*60}")
-            print(f"📦 LOTE {lote_num}/{total_lotes}")
+            print(f" LOTE {lote_num}/{total_lotes}")
             print(f"{'='*60}")
             
             resultados_lote = []
@@ -286,7 +307,7 @@ def processar_em_lotes(pdfs: List[Path], output_dir: Path, inicio_lote: int = 1)
                 # Log de erro (se houver)
                 if not resultado["sucesso"]:
                     erro_msg = resultado.get('erro', 'N/A')
-                    tqdm.write(f"      ❌ {pdf.name}: {erro_msg[:60]}")
+                    tqdm.write(f"       {pdf.name}: {erro_msg[:60]}")
             
             # Salvar JSONs individuais
             for resultado in resultados_lote:
@@ -300,12 +321,12 @@ def processar_em_lotes(pdfs: List[Path], output_dir: Path, inicio_lote: int = 1)
             
             # Resumo do lote
             sucesso_lote = sum(1 for r in resultados_lote if r["sucesso"])
-            print(f"\n   ✅ Sucesso: {sucesso_lote}/{len(lote_pdfs)}")
-            print(f"   ❌ Erros: {len(lote_pdfs) - sucesso_lote}/{len(lote_pdfs)}")
+            print(f"\n   Sucesso: {sucesso_lote}/{len(lote_pdfs)}")
+            print(f"    Erros: {len(lote_pdfs) - sucesso_lote}/{len(lote_pdfs)}")
     
     # Estatísticas finais
     print(f"{'='*60}")
-    print(f"📊 ESTATÍSTICAS FINAIS V3.0")
+    print(f" ESTATÍSTICAS FINAIS V3.0")
     print(f"{'='*60}")
     print(f"Total processado: {estatisticas_globais['total_pdfs']}")
     print(f"Sucesso: {estatisticas_globais['sucesso']} ({estatisticas_globais['sucesso']/estatisticas_globais['total_pdfs']*100:.1f}%)")
@@ -320,7 +341,7 @@ def processar_em_lotes(pdfs: List[Path], output_dir: Path, inicio_lote: int = 1)
     with open(stats_path, 'w', encoding='utf-8') as f:
         json.dump(estatisticas_globais, f, indent=2)
     
-    print(f"💾 Estatísticas salvas em: {stats_path}")
+    print(f" Estatísticas salvas em: {stats_path}")
 
 
 def main():
@@ -340,11 +361,11 @@ def main():
     output_path.mkdir(parents=True, exist_ok=True)
 
     print("="*60)
-    print("🔄 PROCESSADOR EM LOTES V3.0 - Ofícios Requisitórios TJSP")
+    print("[PROCESSADOR] PROCESSADOR EM LOTES V3.0 - Ofícios Requisitórios TJSP")
     print("="*60)
-    print(f"📁 Input: {args.input}")
-    print(f"📁 Output: {args.output}")
-    print(f"📦 Tamanho do lote: {TAMANHO_LOTE}")
+    print(f"Input: {args.input}")
+    print(f" Output: {args.output}")
+    print(f"Tamanho do lote: {TAMANHO_LOTE}")
     print()
     
     # Encontrar PDFs
@@ -352,17 +373,17 @@ def main():
     
     if args.limite:
         pdfs = pdfs[:args.limite]
-        print(f"⚠️  Limitado a {args.limite} PDFs")
+        print(f" Limitado a {args.limite} PDFs")
     
     if not pdfs:
-        print("❌ Nenhum PDF encontrado!")
+        print("Nenhum PDF encontrado!")
         return
     
     # Processar
     processar_em_lotes(pdfs, output_path, args.inicio)
 
     print("="*60)
-    print("✅ PROCESSAMENTO V3.0 CONCLUÍDO")
+    print(" PROCESSAMENTO V3.0 CONCLUÍDO")
     print("="*60)
 
 

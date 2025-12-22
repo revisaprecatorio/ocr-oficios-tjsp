@@ -1,0 +1,4 @@
+pdf,cpf,sucesso,tempo_s,oficios_encontrados,cpf_validado,rejeitado,motivo_rejeicao,anomalia,descricao_anomalia,processo_origem,requerente_caps,numero_ordem,valor_principal_liquido,valor_principal_bruto,juros_moratorios,valor_total,banco,agencia,conta,conta_tipo,vara,contrib_iprem,contrib_hspm,data_nascimento,data_base,idoso,doenca_grave,pcd,anomalias
+0220341-86.2021.8.26.0500.pdf,03730461893,,11.6,10,,✗,,✗,,✓,✗,✓,✓,✓,✓,✓,✓,✓,✓,✗,✗,✗,✗,✓,✓,✓,✗,✗,OK
+0111671-85.2020.8.26.0500.pdf,03736870876,,13.5,16,,✗,,✗,,✓,✗,✓,✓,✓,✓,✓,✓,✓,✓,✗,✗,✗,✗,✓,✓,✓,✗,✗,OK
+0137444-93.2024.8.26.0500.pdf,03736870876,,17.6,21,,✗,,✗,,✓,✗,✓,✓,✓,✓,✓,✓,✓,✓,✗,✗,✗,✗,✓,✓,✓,✗,✗,OK
