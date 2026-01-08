@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-Pipeline Consolidado de Processamento de Ofícios Requisitórios - V3.0
+Pipeline Consolidado de Processamento de Ofícios Requisitórios - V3.1
 
 Script principal para processar PDFs de ofícios em lotes.
 Utiliza ProcessadorOficio V3.0 (Schema Cleanup + Production Ready).
@@ -17,7 +17,7 @@ Uso:
     python3 processar_pipeline.py --lotes 4,5,6,7    # Processar lotes específicos
     python3 processar_pipeline.py --all --force      # Reprocessar tudo
 
-Versão: V3.0 (Schema cleanup 50→35 cols + V2.7.6 fixes)
+Versão: V3.1 (Correção ZeroDivision + UTF-8-SIG + Filtro Output)
 """
 
 import os
@@ -62,17 +62,11 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-# def encontrar_pdfs(base_dir: str) -> List[Path]:
-#     """Encontra todos os PDFs na estrutura de pastas"""
-#     base_path = Path(base_dir)
-#     if not base_path.exists():
-#         base_path = Path(__file__).parent.parent / base_dir
-    
-#     pdfs = sorted(base_path.glob("*/*.pdf"))
-#     return pdfs
-
-def encontrar_pdfs(base_dir: str) -> List[Path]:
-    """Encontra todos os PDFs na estrutura de pastas (Recursivo)"""
+def encontrar_pdfs(base_dir: str, ignore_dir: str = None) -> List[Path]:
+    """
+    Encontra todos os PDFs na estrutura de pastas (Recursivo).
+    Ignora arquivos temporários e, opcionalmente, o diretório de saída.
+    """
     base_path = Path(base_dir)
     if not base_path.exists():
         base_path = Path(__file__).parent.parent / base_dir
@@ -80,10 +74,23 @@ def encontrar_pdfs(base_dir: str) -> List[Path]:
     # rglob = Recursive Glob (procura em toda a árvore de diretórios)
     pdfs = sorted(base_path.rglob("*.pdf"))
     
-    # Filtro opcional: ignora arquivos que começam com '._' ou temporários
-    pdfs = [p for p in pdfs if not p.name.startswith("._")]
+    # Filtros de segurança
+    pdfs_filtrados = []
+    ignore_path = Path(ignore_dir).resolve() if ignore_dir else None
+
+    for p in pdfs:
+        # 1. Ignora arquivos de sistema/temporários
+        if p.name.startswith("._") or p.name.startswith("~"):
+            continue
+            
+        # 2. Ignora PDFs dentro da pasta de output (para evitar loops)
+        if ignore_path and ignore_path in p.resolve().parents:
+            continue
+            
+        pdfs_filtrados.append(p)
     
-    return pdfs
+    return pdfs_filtrados
+
 
 def analisar_campo(valor: Any) -> str:
     """Retorna status do campo: ✓ (presente), ✗ (ausente)"""
@@ -128,7 +135,8 @@ def gerar_csv_lote(resultados: List[Dict[str, Any]], lote_num: int, output_dir: 
         "anomalias"
     ]
     
-    with open(csv_path, 'w', newline='', encoding='utf-8') as f:
+    # Alterado para utf-8-sig para abrir corretamente no Excel (Windows)
+    with open(csv_path, 'w', newline='', encoding='utf-8-sig') as f:
         writer = csv.DictWriter(f, fieldnames=campos)
         writer.writeheader()
         
@@ -190,10 +198,11 @@ def gerar_csv_lote(resultados: List[Dict[str, Any]], lote_num: int, output_dir: 
 
 
 def processar_pdf(pdf_path: Path, processador: ProcessadorOficio, logs_dir: Path) -> Dict[str, Any]:
-    """Processa um único PDF com tracking completo"""
+    """Processa um único PDF com tracking completo e validação de pasta"""
+    # Inicializa estrutura padrão de falha
     resultado = {
         "pdf": pdf_path.name,
-        "cpf": pdf_path.parent.name,
+        "cpf": pdf_path.parent.name, # Valor inicial (pode ser ajustado abaixo)
         "sucesso": False,
         "erro": None,
         "num_oficios": 0,
@@ -203,21 +212,52 @@ def processar_pdf(pdf_path: Path, processador: ProcessadorOficio, logs_dir: Path
     }
 
     try:
-        # Extrair CPF e número do processo do nome do arquivo
-        cpf = pdf_path.parent.name  # CPF da pasta
+        # --- 1. Lógica aprimorada de extração de CPF ---
+        # Tenta pegar da pasta imediata
+        raw_folder_name = pdf_path.parent.name
+        
+        # Remove caracteres não numéricos para testar
+        cpf_limpo = "".join(filter(str.isdigit, raw_folder_name))
+        
+        if len(cpf_limpo) == 11:
+            cpf = cpf_limpo
+        else:
+            # Se a pasta pai não for um CPF (ex: é uma pasta temp), tenta a pasta "avô"
+            parent_folder_name = pdf_path.parent.parent.name
+            parent_cpf_limpo = "".join(filter(str.isdigit, parent_folder_name))
+            
+            if len(parent_cpf_limpo) == 11:
+                cpf = parent_cpf_limpo
+            else:
+                # Se não encontrar em nenhum lugar, mantém o original para o erro aparecer no log
+                cpf = raw_folder_name
+
+        # Atualiza o CPF no objeto de resultado
+        resultado["cpf"] = cpf
         processo = pdf_path.stem  # Número do processo sem .pdf
 
+        # --- 2. Execução segura ---
         # Criar tracker para este CPF
         tracker = TrackerExecucao(cpf=cpf, processo=processo)
 
-        # Processar com V3.0 + tracker
-        resultado = processador.processar_arquivo(str(pdf_path), cpf, tracker=tracker)
+        # Processar com V3.0
+        retorno_processador = processador.processar_arquivo(str(pdf_path), cpf, tracker=tracker)
+
+        # --- 3. Proteção contra retorno None (Correção do erro TypeError) ---
+        if retorno_processador is not None:
+            resultado = retorno_processador
+            # Garante que o CPF no resultado final seja o que determinamos aqui
+            if "cpf" not in resultado or not resultado["cpf"]:
+                resultado["cpf"] = cpf
+        else:
+            resultado["erro"] = "Processador retornou vazio (possível falha de validação interna)"
+            resultado["sucesso"] = False
 
         # Salvar Markdown
         if tracker:
             try:
                 tracker.salvar(str(logs_dir))
-                logger.info(f" Markdown salvo: {cpf}_{processo}_execution.md")
+                # logger.info(f" Markdown salvo: {cpf}_{processo}_execution.md")
             except Exception as e_save:
                 logger.error(f" Erro ao salvar Markdown: {e_save}")
 
@@ -324,16 +364,23 @@ def processar_em_lotes(pdfs: List[Path], output_dir: Path, inicio_lote: int = 1)
             print(f"\n   Sucesso: {sucesso_lote}/{len(lote_pdfs)}")
             print(f"    Erros: {len(lote_pdfs) - sucesso_lote}/{len(lote_pdfs)}")
     
-    # Estatísticas finais
+    # Estatísticas finais e Proteção contra Divisão por Zero
     print(f"{'='*60}")
-    print(f" ESTATÍSTICAS FINAIS V3.0")
+    print(f" ESTATÍSTICAS FINAIS V3.1")
     print(f"{'='*60}")
     print(f"Total processado: {estatisticas_globais['total_pdfs']}")
-    print(f"Sucesso: {estatisticas_globais['sucesso']} ({estatisticas_globais['sucesso']/estatisticas_globais['total_pdfs']*100:.1f}%)")
-    print(f"Erros: {estatisticas_globais['erros']}")
-    print(f"CPF validado: {estatisticas_globais['cpf_validado']}")
-    print(f"Tempo total: {estatisticas_globais['tempo_total']:.1f}s")
-    print(f"Tempo médio: {estatisticas_globais['tempo_total']/estatisticas_globais['total_pdfs']:.1f}s/PDF")
+    
+    if estatisticas_globais['total_pdfs'] > 0:
+        pct_sucesso = (estatisticas_globais['sucesso'] / estatisticas_globais['total_pdfs']) * 100
+        tempo_medio = estatisticas_globais['tempo_total'] / estatisticas_globais['total_pdfs']
+        print(f"Sucesso: {estatisticas_globais['sucesso']} ({pct_sucesso:.1f}%)")
+        print(f"Erros: {estatisticas_globais['erros']}")
+        print(f"CPF validado: {estatisticas_globais['cpf_validado']}")
+        print(f"Tempo total: {estatisticas_globais['tempo_total']:.1f}s")
+        print(f"Tempo médio: {tempo_medio:.1f}s/PDF")
+    else:
+        print("Nenhum arquivo processado.")
+    
     print()
     
     # Salvar estatísticas
@@ -348,7 +395,7 @@ def main():
     """Função principal"""
     import argparse
 
-    parser = argparse.ArgumentParser(description="Processar ofícios em lotes V3.0")
+    parser = argparse.ArgumentParser(description="Processar ofícios em lotes V3.1")
     parser.add_argument("--input", default=BASE_DIR, help="Diretório de entrada")
     parser.add_argument("--output", default=OUTPUT_DIR, help="Diretório de saída")
     parser.add_argument("--inicio", type=int, default=1, help="Número do lote inicial")
@@ -361,29 +408,29 @@ def main():
     output_path.mkdir(parents=True, exist_ok=True)
 
     print("="*60)
-    print("[PROCESSADOR] PROCESSADOR EM LOTES V3.0 - Ofícios Requisitórios TJSP")
+    print("[PROCESSADOR] PROCESSADOR EM LOTES V3.1 - Ofícios Requisitórios TJSP")
     print("="*60)
     print(f"Input: {args.input}")
     print(f" Output: {args.output}")
     print(f"Tamanho do lote: {TAMANHO_LOTE}")
     print()
     
-    # Encontrar PDFs
-    pdfs = encontrar_pdfs(args.input)
+    # Encontrar PDFs (passando o output para ignorar)
+    pdfs = encontrar_pdfs(args.input, ignore_dir=args.output)
     
     if args.limite:
         pdfs = pdfs[:args.limite]
         print(f" Limitado a {args.limite} PDFs")
     
     if not pdfs:
-        print("Nenhum PDF encontrado!")
+        print("Nenhum PDF encontrado para processar.")
         return
     
     # Processar
     processar_em_lotes(pdfs, output_path, args.inicio)
 
     print("="*60)
-    print(" PROCESSAMENTO V3.0 CONCLUÍDO")
+    print(" PROCESSAMENTO V3.1 CONCLUÍDO")
     print("="*60)
 
 

@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================================
-# PIPELINE COMPLETO DE PONTA A PONTA - V2.9.0 (COM LOGS DE BANCO)
+# PIPELINE COMPLETO DE PONTA A PONTA - V2.8.0 (FLUXO CONTÍNUO)
 # ============================================================================
 # 1. Limpa área de preparação
 # 2. Processa PDFs (Lê de INPUT_DATA)
@@ -9,7 +9,7 @@
 # 5. Valida resultados
 # 6. Recalcula tags
 # 7. Backup dos Outputs (JSONs)
-# 8. ARQUIVAMENTO DOS INPUTS (PDFs)
+# 8. ARQUIVAMENTO DOS INPUTS (PDFs) -> Nova Etapa
 # ============================================================================
 
 set -e  # Parar em caso de erro
@@ -29,7 +29,10 @@ VENV_PYTHON="${PROJECT_ROOT}/env/Scripts/python.exe"
 OUTPUT_NAME="consultas"
 
 # --- PASTAS DE TRABALHO ---
+# Onde o Robô joga os arquivos (Entrada)
 INPUT_DATA="C:/temp/RevisaDownloads"
+
+# Onde guardamos os PDFs JÁ PROCESSADOS (Saída/Histórico)
 ARCHIVE_DATA="C:/temp/RevisaDownloads_Processados"
 
 # ===== BANCO DE DADOS =====
@@ -46,60 +49,9 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
-# ============================================================================
-# FUNÇÃO DE LOG (INTEGRAÇÃO PYTHON)
-# ============================================================================
-log_db() {
-    local MSG="$1"
-    local NIVEL="${2:-INFO}" # Opcional, padrao INFO
-    
-    # Executa snippet Python silenciosamente para gravar no banco
-    # Exporta variaveis para o Python ler via os.environ (evita problemas com aspas no bash)
-    export LOG_DB_MSG="$MSG"
-    
-    "$VENV_PYTHON" - <<END
-import os
-import psycopg2
-try:
-    conn = psycopg2.connect(
-        host='${DB_HOST}', port='${DB_PORT}', database='${DB_NAME}', 
-        user='${DB_USER}', password='${DB_PASS}'
-    )
-    cur = conn.cursor()
-    msg = os.environ.get('LOG_DB_MSG', '')
-    
-    # Grava na tabela logs com processo = 'pipeline_sh'
-    sql = """
-        INSERT INTO public.logs (id, cpf, "timestamp", descricao, processo)
-        VALUES(nextval('logs_id_seq'::regclass), '', CURRENT_TIMESTAMP, %s, 'OCR')
-    """
-    cur.execute(sql, (msg,))
-    conn.commit()
-    conn.close()
-except Exception as e:
-    # Se falhar o log, não para o pipeline, apenas printa erro
-    print(f"Erro ao gravar log no banco: {e}")
-END
-}
-
-# Tratamento de Erro (Trap)
-handle_error() {
-    local lineno="$1"
-    local msg="❌ ERRO CRÍTICO: Pipeline abortado na linha $lineno"
-    echo -e "${RED}$msg${NC}"
-    log_db "$msg"
-    exit 1
-}
-trap 'handle_error $LINENO' ERR
-
-# ============================================================================
-# INÍCIO DA EXECUÇÃO
-# ============================================================================
-
 echo "============================================================"
-echo -e "${BLUE}🚀 PIPELINE COMPLETO V2.9.0 - INÍCIO${NC}"
+echo -e "${BLUE}🚀 PIPELINE COMPLETO V2.8.0 - INÍCIO${NC}"
 echo "============================================================"
-log_db "🚀 Pipeline Bash Iniciado (V2.9.0)"
 echo ""
 
 # ============================================================================
@@ -118,7 +70,6 @@ if [ -d "outputs/${OUTPUT_NAME}" ]; then
 fi
 
 echo "   ✅ Área de staging limpa."
-log_db "Etapa 1: Staging limpo."
 echo ""
 
 # ============================================================================
@@ -128,22 +79,19 @@ echo -e "${YELLOW}🔄 ETAPA 2: Processando PDFs em ${INPUT_DATA}...${NC}"
 
 # Verifica se tem arquivos para processar
 if [ -z "$(ls -A ${INPUT_DATA} 2>/dev/null)" ]; then
-   msg="⚠️ A pasta de entrada está vazia! Nada para processar."
-   echo -e "${RED}$msg${NC}"
-   log_db "$msg"
+   echo -e "${RED}⚠️  A pasta de entrada está vazia! Nada para processar.${NC}"
    exit 0
 fi
-
-log_db "Etapa 2: Iniciando processamento de PDFs via Python..."
 
 "${VENV_PYTHON}" -X utf8 processar_pipeline.py \
     --input "${INPUT_DATA}" \
     --output "outputs/${OUTPUT_NAME}"
 
-# Nota: Se o python falhar, o 'set -e' vai acionar o 'trap' e logar o erro.
-
+if [ $? -ne 0 ]; then
+    echo -e "${RED}❌ Erro no processamento!${NC}"
+    exit 1
+fi
 echo -e "${GREEN}✅ Processamento concluído!${NC}"
-log_db "Etapa 2: Processamento Python concluído."
 echo ""
 
 # ============================================================================
@@ -158,14 +106,12 @@ fi
 
 total_jsons=$(ls outputs/json/*.json 2>/dev/null | wc -l | tr -d ' ')
 echo "   ✅ $total_jsons JSONs novos prontos."
-log_db "Etapa 3: $total_jsons JSONs organizados para ingestão."
 echo ""
 
 # ============================================================================
 # ETAPA 4: IMPORTAR PARA BANCO
 # ============================================================================
 echo -e "${YELLOW}💾 ETAPA 4: Gravando no Banco (Incremental)...${NC}"
-log_db "Etapa 4: Iniciando ingestão no banco de dados..."
 
 SCRIPT_INGESTAO="${PROJECT_ROOT}/2_ingestao/scripts/ingest_all_jsons.py"
 
@@ -176,8 +122,11 @@ SCRIPT_INGESTAO="${PROJECT_ROOT}/2_ingestao/scripts/ingest_all_jsons.py"
   --db-name "${DB_NAME}" \
   --db-user "${DB_USER}"
 
+if [ $? -ne 0 ]; then
+    echo -e "${RED}❌ Erro na importação!${NC}"
+    exit 1
+fi
 echo -e "${GREEN}✅ Gravação concluída!${NC}"
-log_db "Etapa 4: Ingestão finalizada com sucesso."
 echo ""
 
 # ============================================================================
@@ -185,33 +134,23 @@ echo ""
 # ============================================================================
 echo -e "${YELLOW}🔍 ETAPA 5: Validando...${NC}"
 
-# Pequeno script python para contar registros e retornar output para variavel bash
-COUNT_RESULT=$("${VENV_PYTHON}" -X utf8 -c "
+"${VENV_PYTHON}" -X utf8 << PYEOF
 import psycopg2
 try:
-    conn = psycopg2.connect(host='${DB_HOST}', port='${DB_PORT}', database='${DB_NAME}', user='${DB_USER}', password='${DB_PASS}')
+    conn = psycopg2.connect(host='${DB_HOST}', port=${DB_PORT}, database='${DB_NAME}', user='${DB_USER}', password='${DB_PASS}')
     cur = conn.cursor()
-    cur.execute('SELECT COUNT(*) FROM esaj_detalhe_processos;')
-    print(cur.fetchone()[0])
+    cur.execute("SELECT COUNT(*) FROM esaj_detalhe_processos;")
+    print(f"   📊 Total de registros no banco: {cur.fetchone()[0]}")
     conn.close()
-except:
-    print('ERRO')
-")
-
-if [ "$COUNT_RESULT" == "ERRO" ]; then
-    echo -e "${RED}⚠️ Erro na validação da contagem.${NC}"
-    log_db "Etapa 5: Falha ao validar contagem no banco."
-else
-    echo "   📊 Total de registros no banco: $COUNT_RESULT"
-    log_db "Etapa 5: Validação OK. Total de registros na tabela final: $COUNT_RESULT"
-fi
+except Exception as e:
+    print(f"   ⚠️ Erro validação: {e}")
+PYEOF
 echo ""
 
 # ============================================================================
 # ETAPA 6: ATUALIZAR TAGS
 # ============================================================================
 echo -e "${YELLOW}📊 ETAPA 6: Atualizando tags...${NC}"
-log_db "Etapa 6: Recalculando tags (Idoso/Doença)..."
 cd "${PROJECT_ROOT}/2_ingestao"
 "${VENV_PYTHON}" -X utf8 scripts/recalcular_idoso.py
 echo ""
@@ -232,11 +171,10 @@ fi
 rm -rf "outputs/${OUTPUT_NAME}"/lote_* 2>/dev/null || true
 
 echo "   ✅ JSONs movidos para histórico."
-log_db "Etapa 7: Backup JSONs realizado em $BACKUP_DIR"
 echo ""
 
 # ============================================================================
-# ETAPA 8: ARQUIVAR PDFs ORIGINAIS
+# ETAPA 8: ARQUIVAR PDFs ORIGINAIS (A SOLUÇÃO)
 # ============================================================================
 echo -e "${YELLOW}📦 ETAPA 8: Arquivando PDFs processados...${NC}"
 
@@ -249,18 +187,17 @@ DESTINO_FINAL="${ARCHIVE_DATA}/${DATA_HOJE}_${TIMESTAMP}"
 mkdir -p "${DESTINO_FINAL}"
 
 # Move tudo da pasta de entrada para a pasta de arquivo
+# O comando mv move as pastas dos CPFs
 if [ -n "$(ls -A ${INPUT_DATA} 2>/dev/null)" ]; then
     mv "${INPUT_DATA}"/* "${DESTINO_FINAL}/"
-    echo -e "${GREEN}✅ PDFs movidos para:${NC} ${DESTINO_FINAL}"
-    log_db "Etapa 8: PDFs arquivados em ${DESTINO_FINAL}"
+    echo -e "${GREEN}✅ PDFs movidos de:${NC} ${INPUT_DATA}"
+    echo -e "${GREEN}   Para:${NC} ${DESTINO_FINAL}"
 else
-    echo "   ⚠️  Nada para mover."
-    log_db "Etapa 8: Nada para arquivar."
+    echo "   ⚠️  Nada para mover (pasta já estava vazia)."
 fi
 
 echo ""
 echo "============================================================"
-echo "✅ CICLO V2.9.0 CONCLUÍDO! SISTEMA PRONTO PARA NOVOS DADOS."
+echo "✅ CICLO V2.8.0 CONCLUÍDO! SISTEMA PRONTO PARA NOVOS DADOS."
 echo "============================================================"
-log_db "🏁 Pipeline Bash Finalizado com Sucesso."
 echo ""

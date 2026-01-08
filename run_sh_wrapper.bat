@@ -40,6 +40,9 @@ echo.
 REM === EXECUÇÃO SEM LOG ESCONDIDO ===
 "%BASH_EXE%" -c "export LANG=C.UTF-8; export LC_ALL=C.UTF-8; set -e; bash \"%SH_TO_RUN%\""
 
+REM Passamos %2 (o CPF ou parametro extra) para o script bash
+"%BASH_EXE%" -c "export LANG=C.UTF-8; export LC_ALL=C.UTF-8; set -e; bash \"%SH_TO_RUN%\" \"%~2\""
+
 echo.
 echo ========================================================
 echo [END] Processo finalizado.
