@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """
-Script de Ingestão de TODOS os JSONs no PostgreSQL
-Lê JSONs da pasta json/ organizada e insere no banco
+Script de Ingestão V7 - PROTEÇÃO DE DADOS & FALLBACK TOTAL
+- Fix 1: Fallback do 'valor_principal_bruto' (resolve Valor Original zerado)
+- Fix 2: SQL com COALESCE (impede que um OCR vazio apague dados existentes como Vara/Advogado)
+- Fix 3: Mantém limpeza de moeda e data
 """
 
 import os
@@ -22,43 +24,66 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-def extrair_cpf_processo(json_path: Path) -> tuple:
-    """Extrai CPF e número do processo do nome do arquivo"""
+# --- FUNÇÕES DE LIMPEZA ---
+def limpar_moeda(valor):
+    """Converte 'R$ 1.500,00' para 1500.00"""
+    if valor is None or valor == "":
+        return None
+    if isinstance(valor, (int, float)):
+        return float(valor)
+    
+    s = str(valor).strip().replace("R$", "").replace("r$", "").strip()
+    if not s:
+        return None
+
+    try:
+        if "," in s:
+            s = s.replace(".", "").replace(",", ".")
+        return float(s)
+    except Exception:
+        return None
+
+def converter_data(valor):
+    """Converte 'DD/MM/YYYY' para 'YYYY-MM-DD'"""
+    if not valor or valor == "":
+        return None
+    s = str(valor).strip()
+    try:
+        return datetime.strptime(s, "%d/%m/%Y").strftime("%Y-%m-%d")
+    except ValueError:
+        pass
+    try:
+        return datetime.strptime(s, "%Y-%m-%d").strftime("%Y-%m-%d")
+    except ValueError:
+        return None
+
+def extrair_numero_processo(json_path: Path) -> str:
     filename = json_path.stem
-    # Remover sufixos como " (1)"
     filename = filename.split(" (")[0]
-    parts = filename.split("_", 1)
-    
-    if len(parts) != 2:
-        # Tenta fallback se o nome não tiver "_" (ex: apenas o processo)
-        return "UNKNOWN", filename
-    
-    return parts[0], parts[1]
+    if "_" in filename:
+        return filename.split("_", 1)[1]
+    return filename
 
 def main():
-    """Função principal"""
-    
-    # 1. Configurar Argumentos (Compatibilidade com pipeline_completo.sh)
     parser = argparse.ArgumentParser(description="Ingestão de JSONs para DB")
     parser.add_argument("--input", help="Pasta de entrada dos JSONs")
     parser.add_argument("--db-host", help="Host do banco")
     parser.add_argument("--db-port", help="Porta do banco")
     parser.add_argument("--db-name", help="Nome do banco")
     parser.add_argument("--db-user", help="Usuário do banco")
-    # Senha geralmente vem via env, mas pode vir via args se necessário
-    
+    parser.add_argument("--cpf", required=True, help="CPF da execução")
+
     args, unknown = parser.parse_known_args()
+    cpf_execucao = args.cpf.strip()
 
     print("=" * 60)
-    print("📥 INGESTÃO DE TODOS OS JSONs (CORRIGIDO)")
+    print("📥 INGESTÃO V7 (SAFE UPDATE & FULL FALLBACK)")
+    print(f"👤 CPF DA EXECUÇÃO: {cpf_execucao}")
     print("=" * 60)
 
-    # 2. Carregar .env (Correção do caminho: 3 níveis acima)
-    # ingest_all_jsons.py -> scripts -> 2_ingestao -> RAIZ
     env_path = Path(__file__).parent.parent.parent / ".env"
     load_dotenv(env_path)
-    
-    # 3. Prioridade de Configuração: Argumentos > .env
+
     db_config = {
         "host": args.db_host or os.getenv("DB_HOST"),
         "port": args.db_port or os.getenv("DB_PORT"),
@@ -67,206 +92,232 @@ def main():
         "password": os.getenv("DB_PASSWORD") or os.getenv("DB_PASS")
     }
 
-    # Debug das credenciais (Ocultando senha)
-    print(f"🔧 Configuração de Banco:")
-    print(f"   Host: {db_config['host']}")
-    print(f"   DB: {db_config['database']}")
-    print(f"   User: {db_config['user']}")
-    
-    if not db_config['password']:
-        print("❌ ERRO: Senha do banco não encontrada (verifique DB_PASSWORD ou DB_PASS no .env)")
+    if not db_config["password"]:
+        print("❌ ERRO: Senha do banco não encontrada")
         sys.exit(1)
 
-    print(f"\n🔌 Conectando ao PostgreSQL...")
-    conn = None
     try:
         conn = psycopg2.connect(**db_config)
         cursor = conn.cursor()
-        print("   ✅ Conectado!")
+        print("🔌 Conectado ao PostgreSQL")
     except Exception as e:
-        print(f"   ❌ Erro de conexão: {e}")
+        print(f"❌ Erro de conexão: {e}")
         sys.exit(1)
-    
-    # 4. Definir pasta de JSONs
+
     if args.input:
         json_dir = Path(args.input)
     else:
-        # Caminho padrão relativo
         json_dir = Path(__file__).parent.parent.parent / "1_parsing_PDF" / "outputs" / "json"
-    
-    # Resolver caminho absoluto se for relativo
-    if not json_dir.is_absolute():
-        # Se veio do script bash como "../...", resolve a partir do diretório atual de execução
-        # Ou ajusta relativo ao script
-        base_exec = Path(os.getcwd())
-        candidate = base_exec / json_dir
-        if candidate.exists():
-            json_dir = candidate
-        else:
-            # Tenta relativo ao script python
-            json_dir = Path(__file__).parent.parent.parent / "1_parsing_PDF" / "outputs" / "json"
 
     if not json_dir.exists():
         print(f"❌ Pasta de JSONs não encontrada: {json_dir}")
-        print(f"   (Verifique se a etapa de cópia do pipeline rodou)")
         sys.exit(1)
-    
+
     json_files = sorted(json_dir.glob("*.json"))
-    print(f"\n📁 Lendo arquivos de: {json_dir.resolve()}")
-    print(f"📊 Total de JSONs encontrados: {len(json_files)}")
     
-    if len(json_files) == 0:
-        print("⚠️  Nenhum arquivo JSON encontrado para importar.")
+    if not json_files:
+        print("⚠️ Nenhum JSON encontrado.")
         sys.exit(0)
 
-    # Estatísticas
-    stats = {
-        "total": len(json_files),
-        "sucesso": 0,
-        "erros": 0
-    }
-    
-    # Query de INSERT com UPSERT
-    insert_query = """
-        INSERT INTO esaj_detalhe_processos (
-            cpf, numero_processo_cnj, processo_origem, requerente_caps,
-            numero_ordem, vara, processo_execucao, processo_conhecimento,
-            data_ajuizamento, data_transito_julgado, data_base_atualizacao, data_nascimento,
-            advogado_nome, advogado_oab, credor_nome, credor_cpf_cnpj, devedor_ente,
-            banco, agencia, conta, conta_tipo, tipo_levantamento,
-            dados_bancarios_advogado, cpf_titular_conta,
-            valor_principal_liquido, valor_principal_bruto, juros_moratorios,
-            valor_total_requisitado, saldo_final, contrib_previdenciaria_iprem, contrib_previdenciaria_hspm,
-            valor_compensado, contribuicao_social, salario_pericial,
-            assist_tecnico, custas, despesas, multas,
-            idoso, doenca_grave, pcd,
-            preferencial, habilitacao_herdeiros, cessao_credito,
-            obito, data_obito, cpf_sucessor,
-            rejeitado, motivo_rejeicao, observacoes, anomalia, descricao_anomalia,
-            process_diagnostico, caminho_pdf, timestamp_ingestao
-        ) VALUES (
-            %(cpf)s, %(numero_processo_cnj)s, %(processo_origem)s, %(requerente_caps)s,
-            %(numero_ordem)s, %(vara)s, %(processo_execucao)s, %(processo_conhecimento)s,
-            %(data_ajuizamento)s, %(data_transito_julgado)s, %(data_base_atualizacao)s, %(data_nascimento)s,
-            %(advogado_nome)s, %(advogado_oab)s, %(credor_nome)s, %(credor_cpf_cnpj)s, %(devedor_ente)s,
-            %(banco)s, %(agencia)s, %(conta)s, %(conta_tipo)s, %(tipo_levantamento)s,
-            %(dados_bancarios_advogado)s, %(cpf_titular_conta)s,
-            %(valor_principal_liquido)s, %(valor_principal_bruto)s, %(juros_moratorios)s,
-            %(valor_total_requisitado)s, %(saldo_final)s, %(contrib_previdenciaria_iprem)s, %(contrib_previdenciaria_hspm)s,
-            %(valor_compensado)s, %(contribuicao_social)s, %(salario_pericial)s,
-            %(assist_tecnico)s, %(custas)s, %(despesas)s, %(multas)s,
-            %(idoso)s, %(doenca_grave)s, %(pcd)s,
-            %(preferencial)s, %(habilitacao_herdeiros)s, %(cessao_credito)s,
-            %(obito)s, %(data_obito)s, %(cpf_sucessor)s,
-            %(rejeitado)s, %(motivo_rejeicao)s, %(observacoes)s, %(anomalia)s, %(descricao_anomalia)s,
-            %(process_diagnostico)s, %(caminho_pdf)s, %(timestamp_ingestao)s
-        )
-        ON CONFLICT (cpf, numero_processo_cnj)
-        DO UPDATE SET
-            processo_origem = EXCLUDED.processo_origem,
-            requerente_caps = EXCLUDED.requerente_caps,
-            numero_ordem = EXCLUDED.numero_ordem,
-            vara = EXCLUDED.vara,
-            data_nascimento = EXCLUDED.data_nascimento,
-            saldo_final = EXCLUDED.saldo_final,
-            preferencial = EXCLUDED.preferencial,
-            habilitacao_herdeiros = EXCLUDED.habilitacao_herdeiros,
-            cessao_credito = EXCLUDED.cessao_credito,
-            obito = EXCLUDED.obito,
-            data_obito = EXCLUDED.data_obito,
-            cpf_sucessor = EXCLUDED.cpf_sucessor,
-            timestamp_ingestao = EXCLUDED.timestamp_ingestao;
+    stats = {"total": len(json_files), "sucesso": 0, "erros": 0, "atualizados": 0, "inseridos": 0}
+
+    # Query Upsert Checks
+    check_query = """
+        SELECT 1 FROM public.esaj_detalhe_processos 
+        WHERE cpf = %(cpf)s AND numero_processo_cnj = %(numero_processo_cnj)s
     """
     
-    print(f"\n📋 Iniciando inserção...")
-    for json_file in tqdm(json_files, desc="Processando"):
-        try:
-            cpf, numero_processo = extrair_cpf_processo(json_file)
+    insert_query = """
+        INSERT INTO public.esaj_detalhe_processos (
+            cpf, numero_processo_cnj, processo_origem, requerente_caps, numero_ordem, vara,
+            processo_execucao, processo_conhecimento, data_ajuizamento, data_transito_julgado,
+            data_base_atualizacao, data_nascimento, advogado_nome, advogado_oab,
+            credor_nome, credor_cpf_cnpj, devedor_ente, banco, agencia, conta,
+            conta_tipo, tipo_levantamento, dados_bancarios_advogado, cpf_titular_conta,
+            valor_principal_liquido, valor_principal_bruto, juros_moratorios, valor_total_requisitado, saldo_final,
+            contrib_previdenciaria_iprem, contrib_previdenciaria_hspm, valor_compensado, contribuicao_social,
+            salario_pericial, assist_tecnico, custas, despesas, multas,
+            idoso, doenca_grave, pcd, preferencial, habilitacao_herdeiros, cessao_credito,
+            obito, data_obito, cpf_sucessor,
+            rejeitado, motivo_rejeicao, observacoes, anomalia, descricao_anomalia, process_diagnostico,
+            caminho_pdf, timestamp_ingestao
+        ) VALUES (
+            %(cpf)s, %(numero_processo_cnj)s, %(processo_origem)s, %(requerente_caps)s, %(numero_ordem)s, %(vara)s,
+            %(processo_execucao)s, %(processo_conhecimento)s, %(data_ajuizamento)s, %(data_transito_julgado)s,
+            %(data_base_atualizacao)s, %(data_nascimento)s, %(advogado_nome)s, %(advogado_oab)s,
+            %(credor_nome)s, %(credor_cpf_cnpj)s, %(devedor_ente)s, %(banco)s, %(agencia)s, %(conta)s,
+            %(conta_tipo)s, %(tipo_levantamento)s, %(dados_bancarios_advogado)s, %(cpf_titular_conta)s,
+            %(valor_principal_liquido)s, %(valor_principal_bruto)s, %(juros_moratorios)s, %(valor_total_requisitado)s, %(saldo_final)s,
+            %(contrib_previdenciaria_iprem)s, %(contrib_previdenciaria_hspm)s, %(valor_compensado)s, %(contribuicao_social)s,
+            %(salario_pericial)s, %(assist_tecnico)s, %(custas)s, %(despesas)s, %(multas)s,
+            %(idoso)s, %(doenca_grave)s, %(pcd)s, %(preferencial)s, %(habilitacao_herdeiros)s, %(cessao_credito)s,
+            %(obito)s, %(data_obito)s, %(cpf_sucessor)s,
+            %(rejeitado)s, %(motivo_rejeicao)s, %(observacoes)s, %(anomalia)s, %(descricao_anomalia)s, %(process_diagnostico)s,
+            %(caminho_pdf)s, %(timestamp_ingestao)s
+        )
+    """
 
-            with open(json_file, 'r', encoding='utf-8') as f:
+    # --- [FIX CRÍTICO] UPDATE INTELIGENTE (COALESCE) ---
+    # Só substitui o valor no banco se o novo valor (do JSON) NÃO for nulo.
+    # Se o novo for nulo, mantém o antigo.
+    update_query = """
+        UPDATE public.esaj_detalhe_processos SET
+            processo_origem = COALESCE(%(processo_origem)s, processo_origem),
+            requerente_caps = COALESCE(%(requerente_caps)s, requerente_caps),
+            numero_ordem = COALESCE(%(numero_ordem)s, numero_ordem),
+            vara = COALESCE(%(vara)s, vara),
+            processo_execucao = COALESCE(%(processo_execucao)s, processo_execucao),
+            processo_conhecimento = COALESCE(%(processo_conhecimento)s, processo_conhecimento),
+            data_ajuizamento = COALESCE(%(data_ajuizamento)s, data_ajuizamento),
+            data_transito_julgado = COALESCE(%(data_transito_julgado)s, data_transito_julgado),
+            data_nascimento = COALESCE(%(data_nascimento)s, data_nascimento),
+            advogado_nome = COALESCE(%(advogado_nome)s, advogado_nome),
+            advogado_oab = COALESCE(%(advogado_oab)s, advogado_oab),
+            credor_nome = COALESCE(%(credor_nome)s, credor_nome),
+            credor_cpf_cnpj = COALESCE(%(credor_cpf_cnpj)s, credor_cpf_cnpj),
+            devedor_ente = COALESCE(%(devedor_ente)s, devedor_ente),
+            
+            -- Valores: Sobrescreve, pois cálculo novo é prioridade
+            saldo_final = %(saldo_final)s,
+            data_base_atualizacao = %(data_base_atualizacao)s,
+            banco = %(banco)s,
+            agencia = %(agencia)s,
+            conta = %(conta)s,
+            conta_tipo = %(conta_tipo)s,
+            tipo_levantamento = %(tipo_levantamento)s,
+            
+            valor_total_requisitado = %(valor_total_requisitado)s,
+            valor_principal_liquido = %(valor_principal_liquido)s,
+            valor_principal_bruto = %(valor_principal_bruto)s,
+            juros_moratorios = %(juros_moratorios)s,
+            
+            motivo_rejeicao = %(motivo_rejeicao)s,
+            rejeitado = %(rejeitado)s,
+            doenca_grave = %(doenca_grave)s,
+            idoso = %(idoso)s,
+            pcd = %(pcd)s,
+            preferencial = %(preferencial)s,
+            obito = %(obito)s,
+            
+            observacoes = %(observacoes)s,
+            timestamp_ingestao = %(timestamp_ingestao)s,
+            caminho_pdf = %(caminho_pdf)s
+        WHERE cpf = %(cpf)s AND numero_processo_cnj = %(numero_processo_cnj)s
+    """
+
+    print("\n📋 Processando JSONs com Update Inteligente...\n")
+
+    for json_file in tqdm(json_files, desc="Ingestão"):
+        try:
+            numero_processo = extrair_numero_processo(json_file)
+            
+            with open(json_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
 
-            # Tratamento de banco (pegar apenas código)
-            banco_raw = data.get('banco')
-            banco = None
-            if banco_raw:
-                if ' - ' in banco_raw or 'Agência' in banco_raw:
-                    banco = banco_raw.split()[0].strip()
-                else:
-                    banco = banco_raw[:10]
-
+            # --- Mapeamento Inicial ---
             valores = {
-                'cpf': cpf,
-                'numero_processo_cnj': numero_processo,
-                'processo_origem': data.get('processo_origem'),
-                'requerente_caps': data.get('requerente_caps'),
-                'numero_ordem': data.get('numero_ordem'),
-                'vara': data.get('vara'),
-                'processo_execucao': data.get('processo_execucao'),
-                'processo_conhecimento': data.get('processo_conhecimento'),
-                'data_ajuizamento': data.get('data_ajuizamento'),
-                'data_transito_julgado': data.get('data_transito_julgado'),
-                'data_base_atualizacao': data.get('data_base_atualizacao'),
-                'data_nascimento': data.get('data_nascimento'),
-                'advogado_nome': data.get('advogado_nome'),
-                'advogado_oab': data.get('advogado_oab'),
-                'credor_nome': data.get('credor_nome'),
-                'credor_cpf_cnpj': data.get('credor_cpf_cnpj'),
-                'devedor_ente': data.get('devedor_ente'),
-                'banco': banco,
-                'agencia': data.get('agencia'),
-                'conta': data.get('conta'),
-                'conta_tipo': data.get('conta_tipo'),
-                'tipo_levantamento': data.get('tipo_levantamento'),
-                'dados_bancarios_advogado': data.get('dados_bancarios_advogado', False),
-                'cpf_titular_conta': data.get('cpf_titular_conta'),
-                'valor_principal_liquido': data.get('valor_principal_liquido'),
-                'valor_principal_bruto': data.get('valor_principal_bruto'),
-                'juros_moratorios': data.get('juros_moratorios'),
-                'valor_total_requisitado': data.get('valor_total_requisitado'),
-                'saldo_final': data.get('saldo_final'),
-                'contrib_previdenciaria_iprem': data.get('contrib_previdenciaria_iprem'),
-                'contrib_previdenciaria_hspm': data.get('contrib_previdenciaria_hspm'),
-                'valor_compensado': data.get('valor_compensado'),
-                'contribuicao_social': data.get('contribuicao_social'),
-                'salario_pericial': data.get('salario_pericial'),
-                'assist_tecnico': data.get('assist_tecnico'),
-                'custas': data.get('custas'),
-                'despesas': data.get('despesas'),
-                'multas': data.get('multas'),
-                'idoso': data.get('idoso', False),
-                'doenca_grave': data.get('doenca_grave', False),
-                'pcd': data.get('pcd', False),
-                'preferencial': data.get('preferencial', False),
-                'habilitacao_herdeiros': data.get('habilitacao_herdeiros', False),
-                'cessao_credito': data.get('cessao_credito', False),
-                'obito': data.get('obito', False),
-                'data_obito': data.get('data_obito'),
-                'cpf_sucessor': data.get('cpf_sucessor'),
-                'rejeitado': data.get('rejeitado', False),
-                'motivo_rejeicao': data.get('motivo_rejeicao'),
-                'observacoes': data.get('observacoes'),
-                'anomalia': data.get('anomalia', False),
-                'descricao_anomalia': data.get('descricao_anomalia'),
-                'process_diagnostico': data.get('process_diagnostico', False),
-                'caminho_pdf': f"../data/consultas/{cpf}/{numero_processo}.pdf",
-                'timestamp_ingestao': datetime.now()
+                "cpf": cpf_execucao,
+                "numero_processo_cnj": numero_processo,
+                "data_base_atualizacao": converter_data(data.get("data_base_atualizacao")),
+                "data_ajuizamento": converter_data(data.get("data_ajuizamento")),
+                "data_transito_julgado": converter_data(data.get("data_transito_julgado")),
+                "data_nascimento": converter_data(data.get("data_nascimento")),
+                "data_obito": converter_data(data.get("data_obito")),
+                
+                # Valores com limpeza
+                "valor_principal_liquido": limpar_moeda(data.get("valor_principal_liquido")),
+                "valor_principal_bruto": limpar_moeda(data.get("valor_principal_bruto")),
+                "juros_moratorios": limpar_moeda(data.get("juros_moratorios")),
+                "valor_total_requisitado": limpar_moeda(data.get("valor_total_requisitado")),
+                "saldo_final": limpar_moeda(data.get("saldo_final")),
+                "contrib_previdenciaria_iprem": limpar_moeda(data.get("contrib_previdenciaria_iprem")),
+                "contrib_previdenciaria_hspm": limpar_moeda(data.get("contrib_previdenciaria_hspm")),
+                "valor_compensado": limpar_moeda(data.get("valor_compensado")),
+                "contribuicao_social": limpar_moeda(data.get("contribuicao_social")),
+                "salario_pericial": limpar_moeda(data.get("salario_pericial")),
+                "custas": limpar_moeda(data.get("custas")),
+                "despesas": limpar_moeda(data.get("despesas")),
+                "multas": limpar_moeda(data.get("multas")),
+                "assist_tecnico": limpar_moeda(data.get("assist_tecnico")),
+
+                # Restante dos campos
+                "processo_origem": data.get("processo_origem"),
+                "requerente_caps": data.get("requerente_caps"),
+                "numero_ordem": data.get("numero_ordem"),
+                "vara": data.get("vara"),
+                "processo_execucao": data.get("processo_execucao"),
+                "processo_conhecimento": data.get("processo_conhecimento"),
+                "advogado_nome": data.get("advogado_nome"),
+                "advogado_oab": data.get("advogado_oab"),
+                "credor_nome": data.get("credor_nome"),
+                "credor_cpf_cnpj": data.get("credor_cpf_cnpj"),
+                "devedor_ente": data.get("devedor_ente"),
+                "banco": data.get("banco"),
+                "agencia": data.get("agencia"),
+                "conta": data.get("conta"),
+                "conta_tipo": data.get("conta_tipo"),
+                "tipo_levantamento": data.get("tipo_levantamento"),
+                "cpf_titular_conta": data.get("cpf_titular_conta"),
+                "cpf_sucessor": data.get("cpf_sucessor"),
+                "motivo_rejeicao": data.get("motivo_rejeicao"),
+                "observacoes": data.get("observacoes"),
+                "descricao_anomalia": data.get("descricao_anomalia"),
+                "dados_bancarios_advogado": bool(data.get("dados_bancarios_advogado")),
+                "idoso": bool(data.get("idoso")),
+                "doenca_grave": bool(data.get("doenca_grave")),
+                "pcd": bool(data.get("pcd")),
+                "preferencial": bool(data.get("preferencial")),
+                "habilitacao_herdeiros": bool(data.get("habilitacao_herdeiros")),
+                "cessao_credito": bool(data.get("cessao_credito")),
+                "obito": bool(data.get("obito")),
+                "rejeitado": bool(data.get("rejeitado")),
+                "anomalia": bool(data.get("anomalia")),
+                "process_diagnostico": bool(data.get("process_diagnostico")),
+                "caminho_pdf": f"../data/consultas/{cpf_execucao}/{numero_processo}.pdf",
+                "timestamp_ingestao": datetime.now()
             }
+
+            # --- LÓGICA DE FALLBACK APRIMORADA ---
+            # Se faltar detalhe, usa o Total
+            v_total = valores["valor_total_requisitado"]
             
-            cursor.execute(insert_query, valores)
+            if v_total and v_total > 0:
+                if not valores["saldo_final"]:
+                    valores["saldo_final"] = v_total
+                
+                if not valores["valor_principal_liquido"]:
+                    valores["valor_principal_liquido"] = v_total
+                
+                # [NOVO] Garante que Valor Original não fique zero
+                if not valores["valor_principal_bruto"]:
+                    valores["valor_principal_bruto"] = v_total
+
+            # Upsert
+            cursor.execute(check_query, valores)
+            existe = cursor.fetchone()
+
+            if existe:
+                cursor.execute(update_query, valores)
+                stats["atualizados"] += 1
+            else:
+                cursor.execute(insert_query, valores)
+                stats["inseridos"] += 1
+            
             conn.commit()
             stats["sucesso"] += 1
 
         except Exception as e:
-            stats["erros"] += 1
-            logger.error(f"❌ {json_file.name}: {e}")
             conn.rollback()
-    
+            stats["erros"] += 1
+            print(f"❌ ERRO no arquivo {json_file.name}: {str(e)}")
+            logger.exception(e)
+
     cursor.close()
     conn.close()
-    
-    print(f"\n" + "=" * 60)
-    print(f"📊 RESUMO DA INGESTÃO")
+
+    print("\n" + "=" * 60)
+    print("📊 RESUMO DA INGESTÃO")
+    print(f"   CPF: {cpf_execucao}")
     print(f"   Total: {stats['total']}")
     print(f"   ✅ Sucesso: {stats['sucesso']}")
     print(f"   ❌ Erros: {stats['erros']}")

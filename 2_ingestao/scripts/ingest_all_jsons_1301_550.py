@@ -1,0 +1,276 @@
+#!/usr/bin/env python3
+"""
+Script de Ingestão de TODOS os JSONs no PostgreSQL
+Lê JSONs da pasta json/ organizada e insere no banco
+"""
+
+import os
+import sys
+import json
+import logging
+import argparse
+from pathlib import Path
+from datetime import datetime
+from dotenv import load_dotenv
+import psycopg2
+from tqdm import tqdm
+
+# Configurar logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+def extrair_cpf_processo(json_path: Path) -> tuple:
+    """Extrai CPF e número do processo do nome do arquivo"""
+    filename = json_path.stem
+    # Remover sufixos como " (1)"
+    filename = filename.split(" (")[0]
+    parts = filename.split("_", 1)
+    
+    if len(parts) != 2:
+        # Tenta fallback se o nome não tiver "_" (ex: apenas o processo)
+        return "UNKNOWN", filename
+    
+    return parts[0], parts[1]
+
+def main():
+    """Função principal"""
+    
+    # 1. Configurar Argumentos (Compatibilidade com pipeline_completo.sh)
+    parser = argparse.ArgumentParser(description="Ingestão de JSONs para DB")
+    parser.add_argument("--input", help="Pasta de entrada dos JSONs")
+    parser.add_argument("--db-host", help="Host do banco")
+    parser.add_argument("--db-port", help="Porta do banco")
+    parser.add_argument("--db-name", help="Nome do banco")
+    parser.add_argument("--db-user", help="Usuário do banco")
+    # Senha geralmente vem via env, mas pode vir via args se necessário
+    
+    args, unknown = parser.parse_known_args()
+
+    print("=" * 60)
+    print("📥 INGESTÃO DE TODOS OS JSONs (CORRIGIDO)")
+    print("=" * 60)
+
+    # 2. Carregar .env (Correção do caminho: 3 níveis acima)
+    # ingest_all_jsons.py -> scripts -> 2_ingestao -> RAIZ
+    env_path = Path(__file__).parent.parent.parent / ".env"
+    load_dotenv(env_path)
+    
+    # 3. Prioridade de Configuração: Argumentos > .env
+    db_config = {
+        "host": args.db_host or os.getenv("DB_HOST"),
+        "port": args.db_port or os.getenv("DB_PORT"),
+        "database": args.db_name or os.getenv("DB_NAME"),
+        "user": args.db_user or os.getenv("DB_USER"),
+        "password": os.getenv("DB_PASSWORD") or os.getenv("DB_PASS")
+    }
+
+    # Debug das credenciais (Ocultando senha)
+    print(f"🔧 Configuração de Banco:")
+    print(f"   Host: {db_config['host']}")
+    print(f"   DB: {db_config['database']}")
+    print(f"   User: {db_config['user']}")
+    
+    if not db_config['password']:
+        print("❌ ERRO: Senha do banco não encontrada (verifique DB_PASSWORD ou DB_PASS no .env)")
+        sys.exit(1)
+
+    print(f"\n🔌 Conectando ao PostgreSQL...")
+    conn = None
+    try:
+        conn = psycopg2.connect(**db_config)
+        cursor = conn.cursor()
+        print("   ✅ Conectado!")
+    except Exception as e:
+        print(f"   ❌ Erro de conexão: {e}")
+        sys.exit(1)
+    
+    # 4. Definir pasta de JSONs
+    if args.input:
+        json_dir = Path(args.input)
+    else:
+        # Caminho padrão relativo
+        json_dir = Path(__file__).parent.parent.parent / "1_parsing_PDF" / "outputs" / "json"
+    
+    # Resolver caminho absoluto se for relativo
+    if not json_dir.is_absolute():
+        # Se veio do script bash como "../...", resolve a partir do diretório atual de execução
+        # Ou ajusta relativo ao script
+        base_exec = Path(os.getcwd())
+        candidate = base_exec / json_dir
+        if candidate.exists():
+            json_dir = candidate
+        else:
+            # Tenta relativo ao script python
+            json_dir = Path(__file__).parent.parent.parent / "1_parsing_PDF" / "outputs" / "json"
+
+    if not json_dir.exists():
+        print(f"❌ Pasta de JSONs não encontrada: {json_dir}")
+        print(f"   (Verifique se a etapa de cópia do pipeline rodou)")
+        sys.exit(1)
+    
+    json_files = sorted(json_dir.glob("*.json"))
+    print(f"\n📁 Lendo arquivos de: {json_dir.resolve()}")
+    print(f"📊 Total de JSONs encontrados: {len(json_files)}")
+    
+    if len(json_files) == 0:
+        print("⚠️  Nenhum arquivo JSON encontrado para importar.")
+        sys.exit(0)
+
+    # Estatísticas
+    stats = {
+        "total": len(json_files),
+        "sucesso": 0,
+        "erros": 0
+    }
+    
+    # Query de INSERT com UPSERT
+    insert_query = """
+        INSERT INTO esaj_detalhe_processos (
+            cpf, numero_processo_cnj, processo_origem, requerente_caps,
+            numero_ordem, vara, processo_execucao, processo_conhecimento,
+            data_ajuizamento, data_transito_julgado, data_base_atualizacao, data_nascimento,
+            advogado_nome, advogado_oab, credor_nome, credor_cpf_cnpj, devedor_ente,
+            banco, agencia, conta, conta_tipo, tipo_levantamento,
+            dados_bancarios_advogado, cpf_titular_conta,
+            valor_principal_liquido, valor_principal_bruto, juros_moratorios,
+            valor_total_requisitado, saldo_final, contrib_previdenciaria_iprem, contrib_previdenciaria_hspm,
+            valor_compensado, contribuicao_social, salario_pericial,
+            assist_tecnico, custas, despesas, multas,
+            idoso, doenca_grave, pcd,
+            preferencial, habilitacao_herdeiros, cessao_credito,
+            obito, data_obito, cpf_sucessor,
+            rejeitado, motivo_rejeicao, observacoes, anomalia, descricao_anomalia,
+            process_diagnostico, caminho_pdf, timestamp_ingestao
+        ) VALUES (
+            %(cpf)s, %(numero_processo_cnj)s, %(processo_origem)s, %(requerente_caps)s,
+            %(numero_ordem)s, %(vara)s, %(processo_execucao)s, %(processo_conhecimento)s,
+            %(data_ajuizamento)s, %(data_transito_julgado)s, %(data_base_atualizacao)s, %(data_nascimento)s,
+            %(advogado_nome)s, %(advogado_oab)s, %(credor_nome)s, %(credor_cpf_cnpj)s, %(devedor_ente)s,
+            %(banco)s, %(agencia)s, %(conta)s, %(conta_tipo)s, %(tipo_levantamento)s,
+            %(dados_bancarios_advogado)s, %(cpf_titular_conta)s,
+            %(valor_principal_liquido)s, %(valor_principal_bruto)s, %(juros_moratorios)s,
+            %(valor_total_requisitado)s, %(saldo_final)s, %(contrib_previdenciaria_iprem)s, %(contrib_previdenciaria_hspm)s,
+            %(valor_compensado)s, %(contribuicao_social)s, %(salario_pericial)s,
+            %(assist_tecnico)s, %(custas)s, %(despesas)s, %(multas)s,
+            %(idoso)s, %(doenca_grave)s, %(pcd)s,
+            %(preferencial)s, %(habilitacao_herdeiros)s, %(cessao_credito)s,
+            %(obito)s, %(data_obito)s, %(cpf_sucessor)s,
+            %(rejeitado)s, %(motivo_rejeicao)s, %(observacoes)s, %(anomalia)s, %(descricao_anomalia)s,
+            %(process_diagnostico)s, %(caminho_pdf)s, %(timestamp_ingestao)s
+        )
+        ON CONFLICT (cpf, numero_processo_cnj)
+        DO UPDATE SET
+            processo_origem = EXCLUDED.processo_origem,
+            requerente_caps = EXCLUDED.requerente_caps,
+            numero_ordem = EXCLUDED.numero_ordem,
+            vara = EXCLUDED.vara,
+            data_nascimento = EXCLUDED.data_nascimento,
+            saldo_final = EXCLUDED.saldo_final,
+            preferencial = EXCLUDED.preferencial,
+            habilitacao_herdeiros = EXCLUDED.habilitacao_herdeiros,
+            cessao_credito = EXCLUDED.cessao_credito,
+            obito = EXCLUDED.obito,
+            data_obito = EXCLUDED.data_obito,
+            cpf_sucessor = EXCLUDED.cpf_sucessor,
+            timestamp_ingestao = EXCLUDED.timestamp_ingestao;
+    """
+    
+    print(f"\n📋 Iniciando inserção...")
+    for json_file in tqdm(json_files, desc="Processando"):
+        try:
+            cpf, numero_processo = extrair_cpf_processo(json_file)
+
+            with open(json_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+
+            # Tratamento de banco (pegar apenas código)
+            banco_raw = data.get('banco')
+            banco = None
+            if banco_raw:
+                if ' - ' in banco_raw or 'Agência' in banco_raw:
+                    banco = banco_raw.split()[0].strip()
+                else:
+                    banco = banco_raw[:10]
+
+            valores = {
+                'cpf': cpf,
+                'numero_processo_cnj': numero_processo,
+                'processo_origem': data.get('processo_origem'),
+                'requerente_caps': data.get('requerente_caps'),
+                'numero_ordem': data.get('numero_ordem'),
+                'vara': data.get('vara'),
+                'processo_execucao': data.get('processo_execucao'),
+                'processo_conhecimento': data.get('processo_conhecimento'),
+                'data_ajuizamento': data.get('data_ajuizamento'),
+                'data_transito_julgado': data.get('data_transito_julgado'),
+                'data_base_atualizacao': data.get('data_base_atualizacao'),
+                'data_nascimento': data.get('data_nascimento'),
+                'advogado_nome': data.get('advogado_nome'),
+                'advogado_oab': data.get('advogado_oab'),
+                'credor_nome': data.get('credor_nome'),
+                'credor_cpf_cnpj': data.get('credor_cpf_cnpj'),
+                'devedor_ente': data.get('devedor_ente'),
+                'banco': banco,
+                'agencia': data.get('agencia'),
+                'conta': data.get('conta'),
+                'conta_tipo': data.get('conta_tipo'),
+                'tipo_levantamento': data.get('tipo_levantamento'),
+                'dados_bancarios_advogado': data.get('dados_bancarios_advogado', False),
+                'cpf_titular_conta': data.get('cpf_titular_conta'),
+                'valor_principal_liquido': data.get('valor_principal_liquido'),
+                'valor_principal_bruto': data.get('valor_principal_bruto'),
+                'juros_moratorios': data.get('juros_moratorios'),
+                'valor_total_requisitado': data.get('valor_total_requisitado'),
+                'saldo_final': data.get('saldo_final'),
+                'contrib_previdenciaria_iprem': data.get('contrib_previdenciaria_iprem'),
+                'contrib_previdenciaria_hspm': data.get('contrib_previdenciaria_hspm'),
+                'valor_compensado': data.get('valor_compensado'),
+                'contribuicao_social': data.get('contribuicao_social'),
+                'salario_pericial': data.get('salario_pericial'),
+                'assist_tecnico': data.get('assist_tecnico'),
+                'custas': data.get('custas'),
+                'despesas': data.get('despesas'),
+                'multas': data.get('multas'),
+                'idoso': data.get('idoso', False),
+                'doenca_grave': data.get('doenca_grave', False),
+                'pcd': data.get('pcd', False),
+                'preferencial': data.get('preferencial', False),
+                'habilitacao_herdeiros': data.get('habilitacao_herdeiros', False),
+                'cessao_credito': data.get('cessao_credito', False),
+                'obito': data.get('obito', False),
+                'data_obito': data.get('data_obito'),
+                'cpf_sucessor': data.get('cpf_sucessor'),
+                'rejeitado': data.get('rejeitado', False),
+                'motivo_rejeicao': data.get('motivo_rejeicao'),
+                'observacoes': data.get('observacoes'),
+                'anomalia': data.get('anomalia', False),
+                'descricao_anomalia': data.get('descricao_anomalia'),
+                'process_diagnostico': data.get('process_diagnostico', False),
+                'caminho_pdf': f"../data/consultas/{cpf}/{numero_processo}.pdf",
+                'timestamp_ingestao': datetime.now()
+            }
+            
+            cursor.execute(insert_query, valores)
+            conn.commit()
+            stats["sucesso"] += 1
+
+        except Exception as e:
+            stats["erros"] += 1
+            logger.error(f"❌ {json_file.name}: {e}")
+            conn.rollback()
+    
+    cursor.close()
+    conn.close()
+    
+    print(f"\n" + "=" * 60)
+    print(f"📊 RESUMO DA INGESTÃO")
+    print(f"   Total: {stats['total']}")
+    print(f"   ✅ Sucesso: {stats['sucesso']}")
+    print(f"   ❌ Erros: {stats['erros']}")
+    print("=" * 60)
+
+if __name__ == "__main__":
+    main()

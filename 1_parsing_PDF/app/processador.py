@@ -30,6 +30,7 @@ import logging
 import time
 import re
 from pathlib import Path
+import psycopg2
 from typing import Dict, Any, Optional, List
 from datetime import datetime
 from decimal import Decimal
@@ -95,7 +96,23 @@ class ProcessadorOficio:
         logger.info("✅ V2.5.3: Habilitação herdeiros + Óbito + Doença grave")
         logger.info("✅ V2.5.2: Saldo final")
         logger.info("=" * 80)
-    
+
+    def _gravar_log_banco(self, cpf: str, descricao: str, processo: str = 'OCR'):
+        """Grava na tabela public.logs com processo fixo OCR."""
+        query = "INSERT INTO public.logs (cpf, descricao, processo) VALUES (%s, %s, %s)"
+        conn = None
+        try:
+            cpf_limpo = ''.join(filter(str.isdigit, str(cpf)))[:11]
+            conn = psycopg2.connect(**self.db_config)
+            cur = conn.cursor()
+            cur.execute(query, (cpf_limpo, descricao, processo))
+            conn.commit()
+            cur.close()
+        except Exception as e:
+            logger.error(f"❌ Erro ao gravar log: {e}")
+        finally:
+            if conn: conn.close()
+
     def processar_arquivo(self, pdf_path: str, cpf_numerico: str, tracker: Optional[TrackerExecucao] = None) -> Dict[str, Any]:
         """
         Processa um único arquivo PDF com validação de CPF.
@@ -112,6 +129,7 @@ class ProcessadorOficio:
             Dict com resultado do processamento
         """
         inicio = time.time()
+        pdf_nome = Path(pdf_path).name
         
         try:
             logger.info(f"🔄 Iniciando processamento V2: {pdf_path}")
@@ -209,6 +227,8 @@ class ProcessadorOficio:
             
             if not oficio_correto:
                 logger.warning(f"⚠️ CPF {cpf_formatado} não encontrado em nenhum ofício")
+                msg=f"CPF {cpf_formatado} não encontrado em nenhum ofício"
+                self._gravar_log_banco(cpf_numerico,msg)
                 return self._criar_resultado_erro(
                     cpf_numerico,
                     pdf_path,
@@ -229,6 +249,21 @@ class ProcessadorOficio:
             for pagina in doc:
                 texto_completo_pdf += pagina.get_text() + "\n"
             doc.close()
+             
+            # --- INÍCIO DA CORREÇÃO VARA ---
+            vara_detectada = None
+            try:
+                # Busca nos primeiros 3000 caracteres do PDF bruto
+                match_vara = re.search(
+                    r'(?i)(\d+[ªºa]?\s*Vara\s*(?:da|de|do)?\s*(?:Fazenda|Juizado|Cível|Acidentes|Execuções)[^\n]*)', 
+                    texto_completo_pdf[:3000] 
+                )
+                if match_vara:
+                    vara_detectada = match_vara.group(1).strip().replace('\n', ' ')
+                    logger.info(f"🏛️ Vara detectada via REGEX: {vara_detectada}")
+            except Exception as e:
+                logger.warning(f"⚠️ Erro ao tentar detectar vara via regex: {e}")
+                self._gravar_log_banco(cpf_numerico,"Erro ao tentar detectar vara via regex")
 
             # Detectar termos jurídicos (V2.5.3: inclui doença grave)
             termos_juridicos = self.detector_termos.detectar_termos(texto_completo_pdf, cpf_formatado)
@@ -335,6 +370,7 @@ class ProcessadorOficio:
                         texto_anexo = secao_credor
                     else:
                         logger.warning(f"⚠️ Não conseguiu extrair seção, usando ANEXO II completo")
+                        self._gravar_log_banco(cpf_numerico,"Não conseguiu extrair seção, usando ANEXO II completo")
                         if tracker:
                             tracker.adicionar_item("Usando ANEXO II completo (seção não extraída)", nivel=2, emoji="⚠️")
                 else:
@@ -369,6 +405,7 @@ class ProcessadorOficio:
             if pagina_rejeicao:
                 oficio_rejeitado = True
                 logger.warning(f"⚠️ V3.0.2: OFÍCIO REJEITADO detectado na página {pagina_rejeicao}")
+                self._gravar_log_banco(cpf_numerico,f"⚠️ V3.0.2: OFÍCIO REJEITADO detectado na página {pagina_rejeicao}")
                 if motivo_rejeicao:
                     logger.info(f"   📝 Motivo: {motivo_rejeicao[:150]}...")
                 if tracker:
@@ -413,6 +450,7 @@ class ProcessadorOficio:
                             tracker.adicionar_resultado(f"V2.7.5 GLOBAL: numero_ordem = {numero_ordem_global}", sucesso=True, nivel=1)
                     else:
                         logger.warning("⚠️ V2.7.5: numero_ordem NÃO encontrado mesmo com busca global")
+                        self._gravar_log_banco(cpf_numerico,"V2.7.5: numero_ordem NÃO encontrado mesmo com busca global")
                         if tracker:
                             tracker.adicionar_resultado("V2.7.5 GLOBAL: numero_ordem não encontrado", sucesso=False, nivel=1)
             
@@ -427,6 +465,7 @@ class ProcessadorOficio:
             
             if num_paginas > 100 and not texto_anexo and not texto_proc and not gemini_disponivel:
                 logger.warning(f"⚠️ Ofício muito grande ({num_paginas} páginas) sem ANEXO II/PROCESSAMENTO")
+                self._gravar_log_banco(cpf_numerico,f" Ofício muito grande ({num_paginas} páginas) sem ANEXO II/PROCESSAMENTO")
                 logger.info(f"🔧 Aplicando CHUNKING: primeiras 50 + últimas 50 páginas")
                 
                 # Extrair apenas primeiras 50 + últimas 50 páginas
@@ -456,6 +495,7 @@ class ProcessadorOficio:
                 texto_relevante += f"\n\n{'='*60}\n=== ANEXO II ===\n{'='*60}\n\n{texto_anexo}"
             else:
                 logger.warning("⚠️ ANEXO II não encontrado")
+                self._gravar_log_banco(cpf_numerico,"ANEXO II não encontrado")
 
             # V3.0.2: Adicionar NOTA DE REJEIÇÃO ou PROCESSAMENTO ao texto relevante
             if oficio_rejeitado and texto_rejeicao:
@@ -540,6 +580,7 @@ class ProcessadorOficio:
             
             if not dados_oficio:
                 logger.error("❌ Falha na extração LLM")
+                self._gravar_log_banco(cpf_numerico,"Falha na extração LLM")
                 return self._criar_resultado_erro(
                     cpf_numerico,
                     pdf_path,
@@ -560,6 +601,14 @@ class ProcessadorOficio:
                 dados_depois = len([k for k, v in dados_oficio.items() if v])
                 logger.info(f"📊 Campos preenchidos: {dados_antes} → {dados_depois}")
             
+            # --- INSERIR ESTE BLOCO AQUI ---
+            if vara_detectada:
+                vara_llm = dados_oficio.get('vara')
+                if not vara_llm or len(str(vara_llm)) < 3 or "informado" in str(vara_llm).lower():
+                    dados_oficio['vara'] = vara_detectada
+                    logger.info(f"✅ Vara injetada via Regex: {vara_detectada}")
+            # ------------------------------
+
             # 8. Validar CPF extraído vs CPF esperado (FIX v2.4.3)
             cpf_extraido = dados_oficio.get('credor_cpf_cnpj', '')
             if cpf_extraido:
@@ -573,6 +622,7 @@ class ProcessadorOficio:
                     logger.error(f"   CPF extraído (LLM): {cpf_extraido} ({cpf_extraido_limpo})")
                     logger.error(f"   Nome extraído: {dados_oficio.get('requerente_caps', 'N/A')}")
                     logger.warning("⚠️ Possível PDF multi-creditor com dados conflitantes")
+                    self._gravar_log_banco(cpf_numerico,f" CPF MISMATCH! LLM extraiu dados do credor ERRADO!")
                     
                     # Marcar como erro crítico
                     return self._criar_resultado_erro(
@@ -625,6 +675,7 @@ class ProcessadorOficio:
 
                 # V2.7.4: Log completo do erro
                 logger.error(f"❌ V2.7.4: Erro na validação Pydantic:")
+                self._gravar_log_banco(cpf_numerico,"V2.7.4: Erro na validação Pydantic:")
                 logger.error(f"   Tipo: {type(e).__name__}")
                 logger.error(f"   Mensagem: {str(e)}")
                 logger.error(f"   Dados tentados: {list(dados_oficio.keys())[:10]}...")  # V2.7.4: Log campos
@@ -658,6 +709,7 @@ class ProcessadorOficio:
                         
                     except Exception as e2:
                         logger.error(f"❌ Fallback OpenAI também falhou: {e2}")
+                        self._gravar_log_banco(cpf_numerico,f"Fallback OpenAI também falhou: {e2}")
                         return {
                             "cpf": cpf_numerico,
                             "pdf": Path(pdf_path).name,
@@ -841,6 +893,7 @@ class ProcessadorOficio:
             
         except Exception as e:
             logger.error(f"❌ Erro no processamento V2: {e}")
+            self._gravar_log_banco(cpf_numerico,f" Erro no processamento V2: {e}")
             import traceback
             traceback.print_exc()
 
@@ -875,6 +928,7 @@ class ProcessadorOficio:
             
             if not cpf.isdigit() or len(cpf) != 11:
                 logger.error(f"CPF inválido: {cpf} (deve ter 11 dígitos)")
+                self._gravar_log_banco(cpf,f"CPF inválido: {cpf} (deve ter 11 dígitos)")
                 return None
             
             return cpf
@@ -1097,6 +1151,7 @@ class ProcessadorOficio:
 
         except Exception as e:
             logger.error(f"❌ Ambos LLMs falharam! Último erro (OpenAI): {e}")
+            
             return None
     
     def _construir_prompt_llm(
@@ -1331,7 +1386,7 @@ OUTROS VALORES:
 - multas: Multas (número)
 
 OUTRAS INFORMAÇÕES:
-- vara: Vara responsável
+- vara: Vara responsável (Busque no CABEÇALHO/Endereçamento: "Excelentíssimo... da X Vara...", "Juízo da X Vara...")
 - credor_nome: Nome do credor
 - credor_cpf_cnpj: CPF/CNPJ do credor
 - devedor_ente: Ente devedor

@@ -1,91 +1,87 @@
 #!/bin/bash
 # ============================================================================
-# PIPELINE COMPLETO DE PONTA A PONTA - V2.9.0 (COM LOGS DE BANCO)
-# ============================================================================
-# 1. Limpa área de preparação
-# 2. Processa PDFs (Lê de INPUT_DATA)
-# 3. Organiza arquivos JSON
-# 4. Importa para PostgreSQL (Incremental)
-# 5. Valida resultados
-# 6. Recalcula tags
-# 7. Backup dos Outputs (JSONs)
-# 8. ARQUIVAMENTO DOS INPUTS (PDFs)
+# PIPELINE COMPLETO DE PONTA A PONTA - V3.0.0
+# (OCR + INGESTÃO + VALIDAÇÃO FORTE + CÁLCULO)
 # ============================================================================
 
-set -e  # Parar em caso de erro
+set -e
+set -o pipefail
 
-# --- Forçar UTF-8 ---
+# ----------------------------------------------------------------------------
+# FORÇAR UTF-8 (WINDOWS SAFE)
+# ----------------------------------------------------------------------------
 export LANG=C.UTF-8
 export LC_ALL=C.UTF-8
 export PYTHONUTF8=1
 export PYTHONIOENCODING=utf-8
 export PYTHONLEGACYWINDOWSSTDIO=0
+export CI=true
+export NON_INTERACTIVE=true
 
-# ============================================================================
+# ----------------------------------------------------------------------------
 # CONFIGURAÇÕES
-# ============================================================================
+# ----------------------------------------------------------------------------
 PROJECT_ROOT="C:/Users/Administrator/Documents/revisa/ocr-oficios-tjsp"
 VENV_PYTHON="${PROJECT_ROOT}/env/Scripts/python.exe"
 OUTPUT_NAME="consultas"
 
-# --- PASTAS DE TRABALHO ---
-INPUT_DATA="C:/temp/RevisaDownloads"
+CPF="$1"
+
+if [ -z "$CPF" ]; then
+  echo "❌ CPF não informado para o pipeline OCR"
+  exit 1
+fi
+
+INPUT_DATA="C:/temp/RevisaDownloads/${CPF}"
 ARCHIVE_DATA="C:/temp/RevisaDownloads_Processados"
 
-# ===== BANCO DE DADOS =====
 DB_HOST="72.60.62.124"
 DB_PORT="5432"
 DB_NAME="n8n"
 DB_USER="admin"
 DB_PASS="BetaAgent2024SecureDB"
 
-# Cores
+CALC_PROJECT="C:/Users/Administrator/Documents/revisa/calc-precatorio-tjsp"
+CALC_SCRIPT="${CALC_PROJECT}/main.py"
+
+# ----------------------------------------------------------------------------
+# CORES
+# ----------------------------------------------------------------------------
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
-# ============================================================================
-# FUNÇÃO DE LOG (INTEGRAÇÃO PYTHON)
-# ============================================================================
+# ----------------------------------------------------------------------------
+# LOG NO BANCO (BEST-EFFORT)
+# ----------------------------------------------------------------------------
 log_db() {
-    local MSG="$1"
-    local NIVEL="${2:-INFO}" # Opcional, padrao INFO
-    
-    # Executa snippet Python silenciosamente para gravar no banco
-    # Exporta variaveis para o Python ler via os.environ (evita problemas com aspas no bash)
-    export LOG_DB_MSG="$MSG"
-    
-    "$VENV_PYTHON" - <<END
-import os
-import psycopg2
+    export LOG_DB_MSG="$1"
+    "${VENV_PYTHON}" - <<END || true
+import os, psycopg2
 try:
     conn = psycopg2.connect(
-        host='${DB_HOST}', port='${DB_PORT}', database='${DB_NAME}', 
-        user='${DB_USER}', password='${DB_PASS}'
+        host='${DB_HOST}', port='${DB_PORT}',
+        database='${DB_NAME}', user='${DB_USER}', password='${DB_PASS}'
     )
     cur = conn.cursor()
-    msg = os.environ.get('LOG_DB_MSG', '')
-    
-    # Grava na tabela logs com processo = 'pipeline_sh'
-    sql = """
+    cur.execute("""
         INSERT INTO public.logs (id, cpf, "timestamp", descricao, processo)
-        VALUES(nextval('logs_id_seq'::regclass), '', CURRENT_TIMESTAMP, %s, 'OCR')
-    """
-    cur.execute(sql, (msg,))
+        VALUES (nextval('logs_id_seq'), %s, CURRENT_TIMESTAMP, %s, 'PIPELINE')
+    """, ('${CPF}', os.environ.get("LOG_DB_MSG","")))
     conn.commit()
     conn.close()
 except Exception as e:
-    # Se falhar o log, não para o pipeline, apenas printa erro
-    print(f"Erro ao gravar log no banco: {e}")
+    print(f"[LOG_DB_ERRO] {e}")
 END
 }
 
-# Tratamento de Erro (Trap)
+# ----------------------------------------------------------------------------
+# TRATAMENTO DE ERRO GLOBAL
+# ----------------------------------------------------------------------------
 handle_error() {
-    local lineno="$1"
-    local msg="❌ ERRO CRÍTICO: Pipeline abortado na linha $lineno"
+    msg="❌ ERRO CRÍTICO: Pipeline abortado na linha $1 (CPF=${CPF})"
     echo -e "${RED}$msg${NC}"
     log_db "$msg"
     exit 1
@@ -93,79 +89,69 @@ handle_error() {
 trap 'handle_error $LINENO' ERR
 
 # ============================================================================
-# INÍCIO DA EXECUÇÃO
+# INÍCIO
 # ============================================================================
-
 echo "============================================================"
-echo -e "${BLUE}🚀 PIPELINE COMPLETO V2.9.0 - INÍCIO${NC}"
+echo -e "${BLUE}🚀 PIPELINE COMPLETO V3.0.0 — CPF ${CPF}${NC}"
 echo "============================================================"
-log_db "🚀 Pipeline Bash Iniciado (V2.9.0)"
-echo ""
+log_db "Pipeline iniciado"
 
 # ============================================================================
-# ETAPA 1: LIMPEZA DE PREPARAÇÃO
+# ETAPA 1 — LIMPEZA
 # ============================================================================
 echo -e "${YELLOW}📁 ETAPA 1: Preparando ambiente...${NC}"
 cd "${PROJECT_ROOT}/1_parsing_PDF"
 
-if [ -d "outputs/json" ]; then
-    rm -f outputs/json/*.json 2>/dev/null || true
-fi
+rm -f outputs/json/*.json 2>/dev/null || true
+rm -rf "outputs/${OUTPUT_NAME}/lote_"* 2>/dev/null || true
+rm -f "outputs/${OUTPUT_NAME}"/*.json 2>/dev/null || true
 
-if [ -d "outputs/${OUTPUT_NAME}" ]; then
-    rm -rf "outputs/${OUTPUT_NAME}"/lote_* 2>/dev/null || true
-    rm -f "outputs/${OUTPUT_NAME}"/*.json 2>/dev/null || true
-fi
-
-echo "   ✅ Área de staging limpa."
-log_db "Etapa 1: Staging limpo."
-echo ""
+log_db "Etapa 1: staging limpo"
 
 # ============================================================================
-# ETAPA 2: PROCESSAR PDFs
+# ETAPA 2 — PROCESSAMENTO DE PDFs
 # ============================================================================
 echo -e "${YELLOW}🔄 ETAPA 2: Processando PDFs em ${INPUT_DATA}...${NC}"
 
-# Verifica se tem arquivos para processar
-if [ -z "$(ls -A ${INPUT_DATA} 2>/dev/null)" ]; then
-   msg="⚠️ A pasta de entrada está vazia! Nada para processar."
-   echo -e "${RED}$msg${NC}"
-   log_db "$msg"
-   exit 0
+if [ ! -d "${INPUT_DATA}" ] || [ -z "$(ls -A "${INPUT_DATA}" 2>/dev/null)" ]; then
+    msg="❌ Pasta de entrada vazia para CPF ${CPF}. Abortando."
+    echo -e "${RED}$msg${NC}"
+    log_db "$msg"
+    exit 1
 fi
-
-log_db "Etapa 2: Iniciando processamento de PDFs via Python..."
 
 "${VENV_PYTHON}" -X utf8 processar_pipeline.py \
     --input "${INPUT_DATA}" \
     --output "outputs/${OUTPUT_NAME}"
 
-# Nota: Se o python falhar, o 'set -e' vai acionar o 'trap' e logar o erro.
-
-echo -e "${GREEN}✅ Processamento concluído!${NC}"
-log_db "Etapa 2: Processamento Python concluído."
-echo ""
+log_db "Etapa 2: PDFs processados"
 
 # ============================================================================
-# ETAPA 3: ORGANIZAR JSONs
+# ETAPA 3 — CENTRALIZAÇÃO DE JSONs
 # ============================================================================
-echo -e "${YELLOW}📦 ETAPA 3: Centralizando arquivos...${NC}"
+echo -e "${YELLOW}📦 ETAPA 3: Centralizando JSONs...${NC}"
 mkdir -p outputs/json
 
-if [ -d "outputs/${OUTPUT_NAME}" ]; then
-    find "outputs/${OUTPUT_NAME}" -name "*.json" -type f ! -name "estatisticas_globais.json" -exec cp {} outputs/json/ \; 2>/dev/null || true
+find "outputs/${OUTPUT_NAME}" \
+  -name "*.json" \
+  ! -name "estatisticas_globais.json" \
+  -exec cp {} outputs/json/ \;
+
+TOTAL_JSONS=$(ls outputs/json/*.json 2>/dev/null | wc -l | tr -d ' ')
+
+if [ "$TOTAL_JSONS" -eq 0 ]; then
+    msg="❌ Nenhum JSON gerado para CPF ${CPF}. Abortando pipeline."
+    echo -e "${RED}$msg${NC}"
+    log_db "$msg"
+    exit 1
 fi
 
-total_jsons=$(ls outputs/json/*.json 2>/dev/null | wc -l | tr -d ' ')
-echo "   ✅ $total_jsons JSONs novos prontos."
-log_db "Etapa 3: $total_jsons JSONs organizados para ingestão."
-echo ""
+log_db "Etapa 3: ${TOTAL_JSONS} JSONs preparados"
 
 # ============================================================================
-# ETAPA 4: IMPORTAR PARA BANCO
+# ETAPA 4 — INGESTÃO NO BANCO (CPF-SAFE)
 # ============================================================================
-echo -e "${YELLOW}💾 ETAPA 4: Gravando no Banco (Incremental)...${NC}"
-log_db "Etapa 4: Iniciando ingestão no banco de dados..."
+echo -e "${YELLOW}💾 ETAPA 4: Ingestão no banco...${NC}"
 
 SCRIPT_INGESTAO="${PROJECT_ROOT}/2_ingestao/scripts/ingest_all_jsons.py"
 
@@ -174,93 +160,98 @@ SCRIPT_INGESTAO="${PROJECT_ROOT}/2_ingestao/scripts/ingest_all_jsons.py"
   --db-host "${DB_HOST}" \
   --db-port "${DB_PORT}" \
   --db-name "${DB_NAME}" \
-  --db-user "${DB_USER}"
+  --db-user "${DB_USER}" \
+  --cpf "${CPF}"
 
-echo -e "${GREEN}✅ Gravação concluída!${NC}"
-log_db "Etapa 4: Ingestão finalizada com sucesso."
-echo ""
+log_db "Etapa 4: ingestão executada"
 
 # ============================================================================
-# ETAPA 5: VALIDAÇÃO
+# ETAPA 5 — VALIDAÇÃO FORTE (FAIL FAST)
 # ============================================================================
-echo -e "${YELLOW}🔍 ETAPA 5: Validando...${NC}"
+echo -e "${YELLOW}🔍 ETAPA 5: Validação de ingestão por CPF...${NC}"
 
-# Pequeno script python para contar registros e retornar output para variavel bash
-COUNT_RESULT=$("${VENV_PYTHON}" -X utf8 -c "
+COUNT=$("${VENV_PYTHON}" - <<END
 import psycopg2
-try:
-    conn = psycopg2.connect(host='${DB_HOST}', port='${DB_PORT}', database='${DB_NAME}', user='${DB_USER}', password='${DB_PASS}')
-    cur = conn.cursor()
-    cur.execute('SELECT COUNT(*) FROM esaj_detalhe_processos;')
-    print(cur.fetchone()[0])
-    conn.close()
-except:
-    print('ERRO')
-")
+conn = psycopg2.connect(
+ host='${DB_HOST}', port='${DB_PORT}',
+ database='${DB_NAME}', user='${DB_USER}', password='${DB_PASS}'
+)
+cur = conn.cursor()
+cur.execute("SELECT count(*) FROM esaj_detalhe_processos WHERE cpf = %s", ('${CPF}',))
+print(cur.fetchone()[0])
+conn.close()
+END
+)
 
-if [ "$COUNT_RESULT" == "ERRO" ]; then
-    echo -e "${RED}⚠️ Erro na validação da contagem.${NC}"
-    log_db "Etapa 5: Falha ao validar contagem no banco."
-else
-    echo "   📊 Total de registros no banco: $COUNT_RESULT"
-    log_db "Etapa 5: Validação OK. Total de registros na tabela final: $COUNT_RESULT"
+if [ "$COUNT" -eq 0 ]; then
+    msg="❌ Ingestão falhou: nenhum registro gravado para CPF ${CPF}. Abortando."
+    echo -e "${RED}$msg${NC}"
+    log_db "$msg"
+    exit 1
 fi
-echo ""
+
+log_db "Etapa 5: validação OK — ${COUNT} registros no banco"
 
 # ============================================================================
-# ETAPA 6: ATUALIZAR TAGS
+# ETAPA 6 — TAGS
 # ============================================================================
-echo -e "${YELLOW}📊 ETAPA 6: Atualizando tags...${NC}"
-log_db "Etapa 6: Recalculando tags (Idoso/Doença)..."
+echo -e "${YELLOW}📊 ETAPA 6: Recalculando tags...${NC}"
 cd "${PROJECT_ROOT}/2_ingestao"
+
 "${VENV_PYTHON}" -X utf8 scripts/recalcular_idoso.py
-echo ""
+
+log_db "Etapa 6: tags recalculadas"
 
 # ============================================================================
-# ETAPA 7: BACKUP DOS OUTPUTS (JSONs)
+# ETAPA 7 — BACKUP JSONs (SÓ APÓS INGESTÃO OK)
 # ============================================================================
-echo -e "${YELLOW}🧹 ETAPA 7: Backup dos JSONs...${NC}"
+echo -e "${YELLOW}🧹 ETAPA 7: Backup JSONs...${NC}"
 cd "${PROJECT_ROOT}/1_parsing_PDF"
+
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-BACKUP_DIR="outputs/historico_processado/$TIMESTAMP"
+BACKUP_DIR="outputs/historico_processado/${CPF}/${TIMESTAMP}"
 mkdir -p "$BACKUP_DIR"
 
-if [ -d "outputs/json" ]; then
-    mv outputs/json/*.json "$BACKUP_DIR/" 2>/dev/null || true
-fi
-# Limpa lixo temporário
-rm -rf "outputs/${OUTPUT_NAME}"/lote_* 2>/dev/null || true
+mv outputs/json/*.json "$BACKUP_DIR/"
 
-echo "   ✅ JSONs movidos para histórico."
-log_db "Etapa 7: Backup JSONs realizado em $BACKUP_DIR"
-echo ""
+log_db "Etapa 7: JSONs movidos para ${BACKUP_DIR}"
 
 # ============================================================================
-# ETAPA 8: ARQUIVAR PDFs ORIGINAIS
+# ETAPA 8 — ARQUIVAR PDFs
 # ============================================================================
-echo -e "${YELLOW}📦 ETAPA 8: Arquivando PDFs processados...${NC}"
+echo -e "${YELLOW}📦 ETAPA 8: Arquivando PDFs...${NC}"
 
-# Cria a pasta de arquivo se não existir
-mkdir -p "${ARCHIVE_DATA}"
-
-# Cria uma subpasta com a data de hoje para organizar o arquivo
 DATA_HOJE=$(date +%Y-%m-%d)
-DESTINO_FINAL="${ARCHIVE_DATA}/${DATA_HOJE}_${TIMESTAMP}"
+DESTINO_FINAL="${ARCHIVE_DATA}/${CPF}/${DATA_HOJE}_${TIMESTAMP}"
 mkdir -p "${DESTINO_FINAL}"
 
-# Move tudo da pasta de entrada para a pasta de arquivo
-if [ -n "$(ls -A ${INPUT_DATA} 2>/dev/null)" ]; then
-    mv "${INPUT_DATA}"/* "${DESTINO_FINAL}/"
-    echo -e "${GREEN}✅ PDFs movidos para:${NC} ${DESTINO_FINAL}"
-    log_db "Etapa 8: PDFs arquivados em ${DESTINO_FINAL}"
-else
-    echo "   ⚠️  Nada para mover."
-    log_db "Etapa 8: Nada para arquivar."
+mv "${INPUT_DATA}"/* "${DESTINO_FINAL}/"
+
+log_db "Etapa 8: PDFs arquivados em ${DESTINO_FINAL}"
+
+# ============================================================================
+# ETAPA 9 — CÁLCULO FINAL (DB-DRIVEN REAL)
+# ============================================================================
+echo -e "${YELLOW}🧮 ETAPA 9: Executando cálculo final (DB-driven)...${NC}"
+log_db "Etapa 9: iniciando cálculo final"
+
+if [ ! -f "$CALC_SCRIPT" ]; then
+    msg="❌ Script de cálculo não encontrado: ${CALC_SCRIPT}"
+    echo -e "${RED}$msg${NC}"
+    log_db "$msg"
+    exit 1
 fi
 
-echo ""
+"${VENV_PYTHON}" -X utf8 "$CALC_SCRIPT" --cpf "${CPF}"
+
+log_db "Etapa 9: cálculo final executado"
+
+# ============================================================================
+# FIM
+# ============================================================================
 echo "============================================================"
-echo "✅ CICLO V2.9.0 CONCLUÍDO! SISTEMA PRONTO PARA NOVOS DADOS."
+echo -e "${GREEN}✅ PIPELINE FINALIZADO COM SUCESSO — CPF ${CPF}${NC}"
 echo "============================================================"
-log_db "🏁 Pipeline Bash Finalizado com Sucesso."
-echo ""
+log_db "Pipeline finalizado com sucesso"
+
+exit 0
