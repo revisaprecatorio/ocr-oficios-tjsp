@@ -5,7 +5,32 @@
 Sistema de extração automatizada de dados de Ofícios Requisitórios do TJSP a partir de PDFs nativos para banco PostgreSQL.
 
 **Versão Atual:** V3.0 (13/12/2025)
-**Última Atualização:** 13/12/2025
+**Última Atualização:** 07/03/2026
+
+---
+
+## 🚀 **PENDENTE: DetectorSaldoFinal V2.0.0 (07/03/2026)**
+
+**Status:** ✅ TESTADO LOCALMENTE - AGUARDANDO DEPLOY VPS
+
+### Resumo
+- **Problema:** V1.0.0 não detectava saldo final com quebras de linha (taxa: 30-40%)
+- **Solução:** Novos padrões regex com suporte a quebras de linha (taxa esperada: 95%+)
+- **Testes:** 2/2 PDFs detectados localmente (100% sucesso)
+- **Arquivo:** `1_parsing_PDF/app/detector_saldo_final.py` (V1.0.0 → V2.0.0)
+
+### Deploy
+```bash
+# Ver documentação completa
+cat DETECTOR_SALDO_FINAL_V2_CHANGELOG.md
+
+# Commit + Push
+git add 1_parsing_PDF/app/detector_saldo_final.py DETECTOR_SALDO_FINAL_V2_CHANGELOG.md
+git commit -m "feat: DetectorSaldoFinal V2.0.0 - suporte a quebras de linha"
+git push origin main
+```
+
+**Documentação:** `DETECTOR_SALDO_FINAL_V2_CHANGELOG.md`
 
 ---
 
