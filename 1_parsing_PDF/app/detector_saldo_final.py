@@ -1,9 +1,10 @@
 """
 DetectorSaldoFinal - Detecta "Saldo Final" em PDFs de precatórios
-Versão: 2.0.0
-Data: 07/03/2026
+Versão: 2.1.0
+Data: 14/03/2026
 
 Detecta valor de "Saldo Final" após pagamentos parciais em documentos DEPRE.
+V2.1.0: Prioridade ajustada - captura valor da linha TOTAL (não VALOR PRINCIPAL).
 V2.0.0: Padrões regex corrigidos para detectar quebras de linha e texto intermediário.
 Se não encontrado, o processador usará fallback (valor_total_requisitado).
 """
@@ -45,12 +46,14 @@ class DetectorSaldoFinal:
             re.IGNORECASE | re.MULTILINE | re.DOTALL
         )
 
-        # Pattern 2: "SALDO FINAL" + "TOTAL" na linha seguinte (V2.0.0)
-        # Matches: "SALDO FINAL\n...\nTOTAL  R$ 243.228,11"
+        # Pattern 2: "SALDO FINAL APÓS O PAGAMENTO" + "TOTAL" (V2.1.0)
+        # Matches: "SALDO FINAL APÓS O PAGAMENTO\n...\nTOTAL  R$ 243.228,11"
+        # Limitado a 500 caracteres após título para evitar capturar TOTAL de outras seções
+        # Usa word boundary para evitar capturar SUB-TOTAL
         self.pattern_saldo_com_total = re.compile(
-            r'SALDO\s+FINAL[^\n]*\n'  # SALDO FINAL + resto da linha
-            r'(?:.*?\n)*?'  # Linhas intermediárias
-            r'TOTAL\s+R?\$?\s*([\d.,]+)',  # TOTAL com valor
+            r'SALDO\s+FINAL\s+AP[ÓO]S\s+O?\s*PAGAMENTO[^\n]*\n'  # Título completo
+            r'(?:(?!SALDO\s+FINAL).){0,500}?'  # Até 500 chars, sem outro SALDO FINAL
+            r'(?:^|\n)TOTAL\s+R?\$?\s*([\d.,]+)',  # TOTAL no início da linha (não SUB-TOTAL)
             re.IGNORECASE | re.MULTILINE | re.DOTALL
         )
 
@@ -61,7 +64,7 @@ class DetectorSaldoFinal:
             re.IGNORECASE
         )
 
-        logger.info("DetectorSaldoFinal V2.0.0 inicializado (com suporte a quebras de linha)")
+        logger.info("DetectorSaldoFinal V2.1.0 inicializado (prioridade TOTAL)")
 
     def extrair_saldo_final(self, texto_completo: str) -> Optional[Decimal]:
         """
@@ -84,22 +87,24 @@ class DetectorSaldoFinal:
             logger.warning("Texto vazio fornecido para detecção de saldo final")
             return None
 
-        # V2.0.0: Tentar Pattern 1 (mais específico - com quebra de linha)
-        match = self.pattern_saldo_apos_pag.search(texto_completo)
-        if match:
-            valor_str = match.group(1)
-            valor_decimal = self._converter_valor_br(valor_str)
-            if valor_decimal:
-                logger.info(f"💰 Saldo Final detectado (V2.0.0 - após pagamento com quebra de linha): R$ {valor_decimal:,.2f}")
-                return valor_decimal
-
-        # V2.0.0: Tentar Pattern 2 (SALDO FINAL + TOTAL)
+        # V2.1.0: PRIORIDADE 1 - Pattern 2 (SALDO FINAL + TOTAL)
+        # Busca linha "TOTAL" após "SALDO FINAL APÓS O PAGAMENTO"
         match = self.pattern_saldo_com_total.search(texto_completo)
         if match:
             valor_str = match.group(1)
             valor_decimal = self._converter_valor_br(valor_str)
             if valor_decimal:
-                logger.info(f"💰 Saldo Final detectado (V2.0.0 - SALDO FINAL + TOTAL): R$ {valor_decimal:,.2f}")
+                logger.info(f"💰 Saldo Final detectado (V2.1.0 - SALDO FINAL + TOTAL): R$ {valor_decimal:,.2f}")
+                return valor_decimal
+
+        # V2.0.0: PRIORIDADE 2 - Pattern 1 (VALOR PRINCIPAL - fallback)
+        # Usado quando não há linha TOTAL
+        match = self.pattern_saldo_apos_pag.search(texto_completo)
+        if match:
+            valor_str = match.group(1)
+            valor_decimal = self._converter_valor_br(valor_str)
+            if valor_decimal:
+                logger.info(f"💰 Saldo Final detectado (V2.0.0 - VALOR PRINCIPAL): R$ {valor_decimal:,.2f}")
                 return valor_decimal
 
         # Pattern 3: Genérico (fallback - compatibilidade)
@@ -112,7 +117,7 @@ class DetectorSaldoFinal:
                 return valor_decimal
 
         # Nenhum padrão encontrado
-        logger.debug("Saldo Final não detectado no PDF (V2.0.0)")
+        logger.debug("Saldo Final não detectado no PDF (V2.1.0)")
         return None
 
     def extrair_saldo_com_contexto(self, texto_completo: str) -> Dict[str, Any]:
@@ -137,11 +142,11 @@ class DetectorSaldoFinal:
         if not texto_completo:
             return resultado
 
-        # V2.0.0: Buscar com Pattern 1 (quebra de linha)
-        match = self.pattern_saldo_apos_pag.search(texto_completo)
+        # V2.1.0: Buscar com Pattern 2 PRIMEIRO (TOTAL)
+        match = self.pattern_saldo_com_total.search(texto_completo)
         if not match:
-            # Tentar Pattern 2 (SALDO FINAL + TOTAL)
-            match = self.pattern_saldo_com_total.search(texto_completo)
+            # Tentar Pattern 1 (VALOR PRINCIPAL - fallback)
+            match = self.pattern_saldo_apos_pag.search(texto_completo)
         if not match:
             # Tentar Pattern 3 (genérico - fallback)
             match = self.pattern_saldo_generico.search(texto_completo)
