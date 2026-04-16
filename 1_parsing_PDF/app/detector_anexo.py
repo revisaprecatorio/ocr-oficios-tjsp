@@ -573,3 +573,249 @@ class DetectorAnexoII:
             logger.error(f"❌ Erro ao pré-extrair dados: {e}")
         
         return dados
+    
+    def _eh_pagina_credor_no_anexo(self, texto: str) -> bool:
+        """
+        Verifica se a página é uma página de credor dentro do ANEXO II,
+        SEM exigir o texto "ANEXO II" (para credores 2, 3, ... N).
+        
+        V2.6.1: Critério leve para detectar páginas de credores subsequentes
+        ao título do ANEXO II, que não repetem o cabeçalho "ANEXO II".
+        
+        Args:
+            texto: Texto da página
+        
+        Returns:
+            True se a página contém dados de credor de ANEXO II
+        """
+        texto_upper = texto.upper()
+        
+        # Deve ter estrutura de credor numerado (Credor nº: N)
+        tem_credor = bool(re.search(r'CREDOR\s+N[ºO]\.?:\s*\d+', texto, re.I))
+        if not tem_credor:
+            return False
+        
+        # Deve ter CPF formatado
+        tem_cpf = bool(re.search(r'\d{3}\.\d{3}\.\d{3}-\d{2}', texto))
+        
+        # Deve ter campos típicos de ANEXO II
+        tem_estrutura = (
+            'CPF/CNPJ' in texto_upper or
+            'DATA DO NASCIMENTO' in texto_upper or
+            'NOME:' in texto_upper
+        )
+        
+        # Deve ter valores financeiros
+        tem_valor = (
+            'VALOR TOTAL' in texto_upper or
+            'VALOR REQUISITADO' in texto_upper or
+            'TOTAL DESTE REQUERENTE' in texto_upper or
+            ('VALOR' in texto_upper and 'R$' in texto_upper)
+        )
+        
+        # Excluir DECISÃO judicial (falso positivo)
+        eh_decisao = (
+            ('PROCESSO DIGITAL' in texto_upper or 'DECISÃO' in texto_upper)
+            and 'JUIZ' in texto_upper
+        )
+        
+        return tem_credor and tem_cpf and tem_estrutura and tem_valor and not eh_decisao
+
+    def indexar_anexos_por_cpf(self, pdf_path: str) -> dict:
+        """
+        Indexa todos os ANEXOS II do PDF por CPF do credor.
+        
+        V2.6.1: Abordagem 2 fases para suportar PDFs multi-credor.
+        
+        Estratégia:
+        FASE 1: Localizar a página-título do ANEXO II (com "ANEXO II" + Credor nº 1)
+        FASE 2: A partir do título, varrer páginas com critério leve que não exige
+                "ANEXO II" no texto — captura credores 2, 3, ..., N.
+        
+        Motivação: Em precatórios multi-credor, apenas a primeira página do ANEXO II
+        repete o cabeçalho "ANEXO II". As páginas dos demais credores não o repetem.
+        
+        Args:
+            pdf_path: Caminho do PDF
+        
+        Returns:
+            Dict no formato:
+            {
+                "12879585830": {
+                    "pagina": 100,
+                    "cpf_formatado": "128.795.858-30",
+                    "credor_nome": "Luiz Marcos Bezerra da Silva",
+                    "texto": "...",
+                    "tipo": "credor"
+                }
+            }
+        """
+        logger.info(f"🔍 V2.6.1: Indexando ANEXOS II por CPF em {Path(pdf_path).name}...")
+        
+        anexos_indexados = {}
+        
+        try:
+            pdf_path = str(Path(pdf_path).resolve())
+            doc = pymupdf.open(pdf_path)
+            total_paginas = len(doc)
+            
+            # === FASE 1: Localizar página-título do ANEXO II ===
+            pagina_inicio = None
+            
+            for page_num in range(total_paginas):
+                texto_pagina = doc.load_page(page_num).get_text()
+                
+                if self._eh_titulo_anexo_ii(texto_pagina):
+                    pagina_inicio = page_num
+                    logger.info(f"📌 V2.6.1: Título ANEXO II na página {page_num + 1}")
+                    break
+            
+            # Fallback: qualquer página com "ANEXO II" detectado
+            if pagina_inicio is None:
+                for page_num in range(total_paginas):
+                    texto_pagina = doc.load_page(page_num).get_text()
+                    if self._eh_pagina_anexo_ii(texto_pagina):
+                        pagina_inicio = page_num
+                        logger.info(f"📌 V2.6.1: Primeira página ANEXO II (fallback) na página {page_num + 1}")
+                        break
+            
+            if pagina_inicio is None:
+                logger.warning(f"⚠️ V2.6.1: Nenhum ANEXO II encontrado em {Path(pdf_path).name}")
+                doc.close()
+                return {}
+            
+            # === FASE 2: Varrer a partir do título com critério leve ===
+            logger.info(f"🔍 V2.6.1: Varrendo páginas {pagina_inicio + 1} a {total_paginas} por credores...")
+            
+            for page_num in range(pagina_inicio, total_paginas):
+                texto_pagina = doc.load_page(page_num).get_text()
+                
+                # Aceita: página com "ANEXO II" OU página de credor (sem "ANEXO II")
+                eh_anexo_strict = self._eh_pagina_anexo_ii(texto_pagina)
+                eh_credor_leve = self._eh_pagina_credor_no_anexo(texto_pagina)
+                
+                if not eh_anexo_strict and not eh_credor_leve:
+                    continue
+                
+                logger.debug(f"   📄 Página {page_num + 1}: credor detectado (strict={eh_anexo_strict}, leve={eh_credor_leve})")
+                
+                # Extrair todos os CPFs formatados da página
+                cpfs_encontrados = re.findall(r'\d{3}\.\d{3}\.\d{3}-\d{2}', texto_pagina)
+                
+                if not cpfs_encontrados:
+                    logger.debug(f"   ⚠️ Página {page_num + 1}: Nenhum CPF formatado encontrado")
+                    continue
+                
+                # Para cada CPF, determinar se é credor ou advogado
+                for cpf_formatado in set(cpfs_encontrados):
+                    cpf_limpo = cpf_formatado.replace('.', '').replace('-', '')
+                    
+                    tipo = self._determinar_tipo_cpf(texto_pagina, cpf_formatado)
+                    
+                    if tipo == 'credor':
+                        credor_nome = self._extrair_nome_credor(texto_pagina, cpf_formatado)
+                        
+                        if cpf_limpo not in anexos_indexados:
+                            anexos_indexados[cpf_limpo] = {
+                                'pagina': page_num,  # 0-indexed
+                                'cpf_formatado': cpf_formatado,
+                                'credor_nome': credor_nome,
+                                'texto': texto_pagina,
+                                'tipo': tipo
+                            }
+                            logger.info(f"   ✅ CPF {cpf_formatado} indexado (página {page_num + 1})")
+                            if credor_nome:
+                                logger.info(f"      Nome: {credor_nome}")
+                        else:
+                            logger.debug(f"   ⚠️ CPF {cpf_formatado} já indexado (pág. {anexos_indexados[cpf_limpo]['pagina'] + 1})")
+                    else:
+                        logger.debug(f"   ⚠️ CPF {cpf_formatado} ignorado (tipo: {tipo})")
+            
+            doc.close()
+            
+            logger.info(f"📊 V2.6.1: Indexação concluída - {len(anexos_indexados)} credor(es) encontrado(s)")
+            
+            return anexos_indexados
+            
+        except Exception as e:
+            logger.error(f"❌ Erro ao indexar ANEXOS II: {e}")
+            return {}
+    
+    def _determinar_tipo_cpf(self, texto: str, cpf_formatado: str) -> str:
+        """
+        Determina se CPF pertence a credor ou advogado baseado no contexto.
+        
+        V2.6.0: Lógica refinada para evitar falsos positivos
+        - Verifica se CPF está DEPOIS de "Dados do Advogado"
+        - Prioriza "Credor nº:" sobre "Dados do Advogado"
+        
+        Args:
+            texto: Texto da página
+            cpf_formatado: CPF no formato XXX.XXX.XXX-XX
+        
+        Returns:
+            'credor' ou 'advogado'
+        """
+        # Encontrar posição do CPF
+        pos_cpf = texto.find(cpf_formatado)
+        if pos_cpf == -1:
+            return 'desconhecido'
+        
+        # Extrair contexto ANTES do CPF (300 chars) para verificar cabeçalho
+        inicio_contexto = max(0, pos_cpf - 300)
+        contexto_antes = texto[inicio_contexto:pos_cpf].upper()
+        
+        # Verificar se "Dados do Advogado" aparece ANTES do CPF (últimos 100 chars)
+        contexto_antes_proximo = texto[max(0, pos_cpf - 100):pos_cpf].upper()
+        if 'DADOS DO ADVOGADO' in contexto_antes_proximo or 'ADVOGADO(A)' in contexto_antes_proximo:
+            return 'advogado'
+        
+        # Verificar se "Credor nº:" aparece ANTES do CPF
+        if re.search(r'CREDOR\s+N[ºO]\.?:\s*\d+', contexto_antes):
+            return 'credor'
+        
+        # Verificar estrutura "Nome:" + "CPF/CNPJ:" sem "Advogado"
+        if 'NOME:' in contexto_antes and 'CPF/CNPJ' in contexto_antes:
+            # Se tem "Advogado" no contexto antes, é advogado
+            if 'ADVOGADO' in contexto_antes:
+                return 'advogado'
+            else:
+                return 'credor'
+        
+        # Default: assumir credor se não for explicitamente advogado
+        return 'credor'
+    
+    def _extrair_nome_credor(self, texto: str, cpf_formatado: str) -> str:
+        """
+        Extrai nome do credor próximo ao CPF.
+        
+        Args:
+            texto: Texto da página
+            cpf_formatado: CPF no formato XXX.XXX.XXX-XX
+        
+        Returns:
+            Nome do credor ou string vazia
+        """
+        try:
+            # Encontrar posição do CPF
+            pos_cpf = texto.find(cpf_formatado)
+            if pos_cpf == -1:
+                return ""
+            
+            # Extrair contexto (500 chars antes do CPF)
+            inicio = max(0, pos_cpf - 500)
+            contexto = texto[inicio:pos_cpf + 50]
+            
+            # Buscar padrão "Nome: XXXX" ou "NOME: XXXX"
+            match = re.search(r'Nome:\s*([^\n]+)', contexto, re.IGNORECASE)
+            if match:
+                nome = match.group(1).strip()
+                # Limpar nome (remover CPF/CNPJ se aparecer)
+                nome = re.sub(r'\d{3}\.\d{3}\.\d{3}-\d{2}', '', nome).strip()
+                return nome
+            
+            return ""
+            
+        except Exception as e:
+            logger.debug(f"Erro ao extrair nome: {e}")
+            return ""

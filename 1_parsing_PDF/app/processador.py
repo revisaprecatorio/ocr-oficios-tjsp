@@ -113,6 +113,40 @@ class ProcessadorOficio:
         finally:
             if conn: conn.close()
 
+    def _atualizar_estado_consulta_esaj(self, cpf: str, numero_processo: str, estado: str):
+        """Atualiza current_state em consultas_esaj para o CPF/processo informado.
+        
+        processos é JSONB com formato: {"lista": [{"numero": "0024354-44.2023.8.26.0500", ...}]}
+        Filtra pelo numero_processo dentro da lista para atualizar apenas o registro correto.
+        """
+        cpf_limpo = ''.join(filter(str.isdigit, str(cpf)))[:11]
+        cpf_fmt = f"{cpf_limpo[:3]}.{cpf_limpo[3:6]}.{cpf_limpo[6:9]}-{cpf_limpo[9:]}" if len(cpf_limpo) == 11 else cpf_limpo
+        query = """
+            UPDATE consultas_esaj
+            SET current_state = %s
+            WHERE cpf = %s
+              AND EXISTS (
+                SELECT 1 FROM jsonb_array_elements(processos->'lista') AS p
+                WHERE p->>'numero' = %s
+              )
+        """
+        conn = None
+        try:
+            conn = psycopg2.connect(**self.db_config)
+            cur = conn.cursor()
+            cur.execute(query, (estado, cpf_limpo, numero_processo))
+            rows = cur.rowcount
+            conn.commit()
+            cur.close()
+            if rows > 0:
+                logger.info(f"✅ consultas_esaj atualizado: CPF={cpf_fmt}, processo={numero_processo}, state={estado} ({rows} linha(s))")
+            else:
+                logger.warning(f"⚠️ consultas_esaj: nenhuma linha atualizada (CPF={cpf_fmt}, processo={numero_processo})")
+        except Exception as e:
+            logger.error(f"❌ Erro ao atualizar consultas_esaj: {e}")
+        finally:
+            if conn: conn.close()
+
     def processar_arquivo(self, pdf_path: str, cpf_numerico: str, tracker: Optional[TrackerExecucao] = None) -> Dict[str, Any]:
         """
         Processa um único arquivo PDF com validação de CPF.
@@ -141,13 +175,16 @@ class ProcessadorOficio:
                     tracker.adicionar_erro("PDF inválido ou corrompido")
                 return None
 
-            # 1. Extrair CPF da pasta
-            cpf_numerico = self._extrair_cpf_pasta(pdf_path)
+            # 1. Extrair CPF da pasta (ou usar CPF passado como parâmetro)
+            # V2.6.0: Se CPF foi passado como parâmetro, usar ele (para testes)
+            # Caso contrário, extrair da estrutura de pastas (produção)
             if not cpf_numerico:
-                logger.error(f"❌ CPF inválido na pasta: {Path(pdf_path).parent.name}")
-                if tracker:
-                    tracker.adicionar_erro(f"CPF inválido: {Path(pdf_path).parent.name}")
-                return None
+                cpf_numerico = self._extrair_cpf_pasta(pdf_path)
+                if not cpf_numerico:
+                    logger.error(f"❌ CPF inválido na pasta: {Path(pdf_path).parent.name}")
+                    if tracker:
+                        tracker.adicionar_erro(f"CPF inválido: {Path(pdf_path).parent.name}")
+                    return None
 
             cpf_formatado = self._formatar_cpf(cpf_numerico)
             logger.info(f"📋 CPF esperado: {cpf_formatado}")
@@ -166,8 +203,66 @@ class ProcessadorOficio:
                 logger.warning(f"⚠️ PDF ANTIGO detectado: {processo_numero} (formato 7xxxxxx)")
                 logger.warning(f"⚠️ PDFs antigos podem ter estrutura diferente e menor taxa de sucesso")
             
+            # 1.5. V2.6.0: NOVA ESTRATÉGIA - Indexar ANEXOS II por CPF ANTES de buscar ofícios
+            if tracker:
+                tracker.adicionar_linha_vazia()
+                tracker.adicionar_secao("## 1.5. Indexação de ANEXOS II por CPF V2.6.0")
+                tracker.adicionar_item("Indexando todos os ANEXOS II do PDF...", nivel=0, emoji="🔍")
+            
+            logger.info("🔍 V2.6.0: Indexando ANEXOS II por CPF...")
+            anexos_indexados = self.detector_anexo.indexar_anexos_por_cpf(pdf_path)
+            
+            if tracker:
+                tracker.adicionar_detalhes("Total de credores", len(anexos_indexados), nivel=1)
+                if anexos_indexados:
+                    tracker.adicionar_subsecao("CPFs indexados:", nivel=1)
+                    for cpf_limpo, dados in list(anexos_indexados.items())[:5]:  # Mostrar até 5
+                        tracker.adicionar_item(f"{dados['cpf_formatado']} - {dados['credor_nome'] or '(sem nome)'}", nivel=2)
+                    if len(anexos_indexados) > 5:
+                        tracker.adicionar_item(f"... e mais {len(anexos_indexados) - 5} credor(es)", nivel=2)
+            
+            # V2.6.0: Validar se CPF esperado está no índice
+            if cpf_numerico not in anexos_indexados:
+                logger.error(f"❌ V2.6.0: CPF {cpf_formatado} NÃO encontrado em nenhum ANEXO II!")
+                logger.error(f"   CPF esperado: {cpf_formatado} ({cpf_numerico})")
+                
+                if anexos_indexados:
+                    logger.error(f"   CPF(s) encontrado(s) em ANEXO II:")
+                    for cpf_limpo, dados in anexos_indexados.items():
+                        logger.error(f"      • {dados['cpf_formatado']} - {dados['credor_nome'] or '(sem nome)'}")
+                    
+                    msg = f"ANEXO II encontrado no PDF, mas nenhum pertence ao CPF esperado.\n"
+                    msg += f"CPF esperado: {cpf_formatado}.\n"
+                    msg += f"CPF(s) encontrado(s): {', '.join([d['cpf_formatado'] for d in anexos_indexados.values()])}"
+                else:
+                    msg = f"Nenhum ANEXO II detectado no PDF para qualquer CPF"
+                
+                self._gravar_log_banco(cpf_numerico, msg)
+                
+                if tracker:
+                    tracker.adicionar_erro(msg)
+                
+                return self._criar_resultado_erro(
+                    cpf_numerico,
+                    pdf_path,
+                    msg
+                )
+            
+            # V2.6.0: CPF encontrado no índice - usar dados do índice
+            dados_anexo_indexado = anexos_indexados[cpf_numerico]
+            logger.info(f"✅ V2.6.0: CPF {cpf_formatado} encontrado no ANEXO II!")
+            logger.info(f"   Página: {dados_anexo_indexado['pagina'] + 1}")
+            logger.info(f"   Credor: {dados_anexo_indexado['credor_nome'] or '(não extraído)'}")
+            logger.info(f"   Tipo: {dados_anexo_indexado['tipo']}")
+            
+            if tracker:
+                tracker.adicionar_resultado(f"✅ CPF encontrado no ANEXO II (página {dados_anexo_indexado['pagina'] + 1})", sucesso=True, nivel=1)
+                if dados_anexo_indexado['credor_nome']:
+                    tracker.adicionar_detalhes("Credor", dados_anexo_indexado['credor_nome'], nivel=2)
+            
             # 2. Buscar todos os ofícios no PDF
             if tracker:
+                tracker.adicionar_linha_vazia()
                 tracker.adicionar_secao("## 2. Detecção de Ofícios")
                 tracker.adicionar_item("Buscando todos os ofícios no PDF...", nivel=0, emoji="🔍")
 
@@ -313,9 +408,11 @@ class ProcessadorOficio:
                     tracker.adicionar_detalhes("CPF Sucessor", resultado_habilitacao['cpf_sucessor'], nivel=1)
                 tracker.adicionar_linha_vazia()
 
-            # 4. Detectar ANEXO II (após ofício correto)
+            # 4. Detectar ANEXO II (após ofício correto) - MANTIDO PARA COMPATIBILIDADE
+            # V2.6.0: Indexação já foi feita no início (linha 172), dados em dados_anexo_indexado
             if tracker:
-                tracker.adicionar_secao("## 5. Detecção ANEXO II")
+                tracker.adicionar_linha_vazia()
+                tracker.adicionar_secao("## 5. Detecção ANEXO II (Método Tradicional)")
                 tracker.adicionar_item("Buscando ANEXO II a partir do fim do ofício...", nivel=0, emoji="🔍")
 
             # V2.5.0: Retorna também página do TÍTULO do ANEXO II
@@ -335,48 +432,34 @@ class ProcessadorOficio:
                 if tracker:
                     tracker.adicionar_resultado("ANEXO II não encontrado", sucesso=False, nivel=1)
 
-            # 4.1. V2.5.0: Buscar CPF APÓS ANEXO II e extrair seção focada
-            pagina_credor = -1
+            # 4.1. V2.6.0: Usar página do ANEXO II indexado (mais confiável)
+            pagina_credor = dados_anexo_indexado['pagina']  # Já temos do índice!
             secao_credor = ""
+            
+            logger.info(f"🔍 V2.6.0: Usando página do ANEXO II indexado: {pagina_credor + 1}")
+            if tracker:
+                tracker.adicionar_item(f"Extraindo seção do credor (página {pagina_credor + 1})...", nivel=1, emoji="🔍")
 
-            if pagina_titulo_anexo >= 0:
-                logger.info(f"🔍 Buscando CPF {cpf_formatado} após ANEXO II...")
+            # Extrair seção focada do credor
+            secao_credor = self.detector_anexo.extrair_secao_credor_no_anexo(
+                pdf_path,
+                pagina_credor,
+                cpf_formatado
+            )
+
+            if secao_credor:
+                logger.info(f"✅ Seção do credor extraída ({len(secao_credor)} chars)")
                 if tracker:
-                    tracker.adicionar_item(f"Buscando CPF `{cpf_formatado}` no ANEXO II...", nivel=1, emoji="🔍")
-
-                pagina_credor = self.detector.buscar_cpf_no_pdf(
-                    pdf_path,
-                    cpf_formatado,
-                    inicio=pagina_titulo_anexo
-                )
-
-                if pagina_credor >= 0:
-                    logger.info(f"✅ CPF encontrado na página {pagina_credor + 1}")
-                    if tracker:
-                        tracker.adicionar_resultado(f"CPF encontrado: página {pagina_credor + 1}", sucesso=True, nivel=2)
-
-                    # Extrair seção focada do credor
-                    secao_credor = self.detector_anexo.extrair_secao_credor_no_anexo(
-                        pdf_path,
-                        pagina_credor,
-                        cpf_formatado
-                    )
-
-                    if secao_credor:
-                        logger.info(f"✅ Seção do credor extraída ({len(secao_credor)} chars)")
-                        if tracker:
-                            tracker.adicionar_resultado(f"Seção extraída: {len(secao_credor)} caracteres", sucesso=True, nivel=2)
-                        # Substituir texto_anexo pela seção focada
-                        texto_anexo = secao_credor
-                    else:
-                        logger.warning(f"⚠️ Não conseguiu extrair seção, usando ANEXO II completo")
-                        self._gravar_log_banco(cpf_numerico,"Não conseguiu extrair seção, usando ANEXO II completo")
-                        if tracker:
-                            tracker.adicionar_item("Usando ANEXO II completo (seção não extraída)", nivel=2, emoji="⚠️")
-                else:
-                    logger.warning(f"⚠️ CPF não encontrado após ANEXO II")
-                    if tracker:
-                        tracker.adicionar_resultado("CPF não encontrado no ANEXO II", sucesso=False, nivel=2)
+                    tracker.adicionar_resultado(f"Seção extraída: {len(secao_credor)} caracteres", sucesso=True, nivel=2)
+                # Usar seção focada como texto do ANEXO II
+                texto_anexo = secao_credor
+            else:
+                logger.warning(f"⚠️ Não conseguiu extrair seção, usando texto completo da página")
+                self._gravar_log_banco(cpf_numerico,"Não conseguiu extrair seção, usando texto completo da página")
+                if tracker:
+                    tracker.adicionar_item("Usando texto completo da página (seção não extraída)", nivel=2, emoji="⚠️")
+                # Fallback: usar texto da página indexada
+                texto_anexo = dados_anexo_indexado['texto']
 
             if tracker:
                 tracker.adicionar_linha_vazia()
@@ -475,7 +558,8 @@ class ProcessadorOficio:
                 doc = pymupdf.open(pdf_path)
                 texto_chunk = ""
                 for pag in paginas_chunk:
-                    texto_chunk += doc.load_page(pag).get_text() + "\n"
+                    if 0 <= pag - 1 < len(doc):  # FIX: paginas são 1-indexed, load_page espera 0-indexed
+                        texto_chunk += doc.load_page(pag - 1).get_text() + "\n"
                 doc.close()
                 
                 texto_relevante = texto_chunk
@@ -526,7 +610,8 @@ class ProcessadorOficio:
                 doc = pymupdf.open(pdf_path)
                 texto_chunk = ""
                 for pag in paginas_chunk:
-                    texto_chunk += doc.load_page(pag).get_text() + "\n"
+                    if 0 <= pag - 1 < len(doc):  # FIX: paginas são 1-indexed, load_page espera 0-indexed
+                        texto_chunk += doc.load_page(pag - 1).get_text() + "\n"
                 doc.close()
                 
                 texto_relevante = texto_chunk
@@ -969,6 +1054,9 @@ class ProcessadorOficio:
         Returns:
             Dict com resultado do erro
         """
+        numero_processo = Path(pdf_path).stem
+        self._atualizar_estado_consulta_esaj(cpf, numero_processo, 'MANUAL_PROCESS')
+
         return {
             "cpf": cpf,
             "pdf": Path(pdf_path).name,

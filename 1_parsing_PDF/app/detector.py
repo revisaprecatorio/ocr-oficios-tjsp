@@ -25,6 +25,25 @@ class DetectorOficio:
     """
     
     def __init__(self):
+        # V2.6.0: Lista de rejeição explícita (documentos que NÃO são ofícios)
+        self.termos_rejeicao = [
+            "PETIÇÃO",
+            "PROCURAÇÃO",
+            "DECISÃO",
+            "DESPACHO",
+            "CERTIDÃO",
+            "TERMO DE DECLARAÇÃO",
+            "DADOS DO ADVOGADO",
+            "SENTENÇA",
+            "ACÓRDÃO",
+            "RECURSO",
+            "AGRAVO",
+            "APELAÇÃO",
+            "EMBARGOS",
+            "CONTESTAÇÃO",
+            "MANIFESTAÇÃO"
+        ]
+        
         # Critério 1A: Títulos específicos de ofícios requisitórios
         self.keywords_titulo = [
             "OFÍCIO REQUISITÓRIO Nº",
@@ -228,6 +247,8 @@ class DetectorOficio:
         """
         Avalia quantos critérios de detecção são atendidos pelo texto.
         
+        V2.6.0: Adiciona rejeição explícita de documentos não-ofício
+        
         Args:
             texto: Texto da página a ser analisada
             
@@ -236,6 +257,12 @@ class DetectorOficio:
         """
         criterios_atendidos = 0
         texto_upper = texto.upper()
+        
+        # V2.6.0: REJEIÇÃO EXPLÍCITA - Se página contém termo de rejeição, retornar 0
+        for termo in self.termos_rejeicao:
+            if termo in texto_upper:
+                logger.debug(f"   ❌ Página rejeitada: contém '{termo}'")
+                return 0  # Não é ofício
         
         # Critério 1: Validação hierárquica de ofício requisitório
         score_criterio1 = 0
@@ -259,8 +286,13 @@ class DetectorOficio:
         if "VALOR GLOBAL DA REQUISIÇÃO" in texto_upper or "REQUERENTE:" in texto_upper:
             score_criterio1 += 1
         
-        # Critério 1 atendido se score >= 5 (garantindo elementos essenciais)
-        if score_criterio1 >= 5:
+        # 1E: V2.6.0: Indicadores adicionais de ofício requisitório (peso 2)
+        if "CREDOR(S):" in texto_upper or "CREDORES:" in texto_upper:
+            score_criterio1 += 2
+        
+        # V2.6.0: Critério 1 atendido se score >= 6 (threshold aumentado)
+        # Garante que apenas documentos com múltiplos elementos essenciais sejam aceitos
+        if score_criterio1 >= 6:
             criterios_atendidos += 1
         
         # Critério 2: Padrão CNJ
