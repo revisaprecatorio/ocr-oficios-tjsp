@@ -147,6 +147,53 @@ class ProcessadorOficio:
         finally:
             if conn: conn.close()
 
+    def _registrar_ocr_no_tracking(self, cpf: str, numero_processo: str, erro_msg: str):
+        """Insere evento OCR_ERRO em process_tracking seguindo o padrão de event log do sistema.
+        
+        Busca o consulta_id em consultas_esaj pelo CPF + número do processo (JSONB),
+        depois insere linha em process_tracking com etapa='OCR', evento='OCR_ERRO'.
+        """
+        cpf_limpo = ''.join(filter(str.isdigit, str(cpf)))[:11]
+        conn = None
+        try:
+            conn = psycopg2.connect(**self.db_config)
+            cur = conn.cursor()
+
+            # Buscar consulta_id vinculado ao processo
+            cur.execute("""
+                SELECT id, whatsapp_phone_number FROM consultas_esaj
+                WHERE cpf = %s
+                  AND EXISTS (
+                    SELECT 1 FROM jsonb_array_elements(processos->'lista') AS p
+                    WHERE p->>'numero' = %s
+                  )
+                ORDER BY created_at DESC LIMIT 1
+            """, (cpf_limpo, numero_processo))
+            row = cur.fetchone()
+            consulta_id = row[0] if row else None
+            whatsapp = row[1] if row else None
+
+            detalhes = json.dumps({
+                "processo": numero_processo,
+                "node": "OCR Pipeline",
+                "workflow": "processar_pipeline"
+            })
+
+            cur.execute("""
+                INSERT INTO process_tracking
+                    (consulta_id, cpf, whatsapp_phone_number, etapa, evento,
+                     retries, concluido, erro, mensagem_erro, detalhes, timestamp_evento)
+                VALUES (%s, %s, %s, 'OCR', 'OCR_ERRO', 0, false, true, %s, %s, NOW())
+            """, (consulta_id, cpf_limpo, whatsapp, erro_msg[:500], detalhes))
+
+            conn.commit()
+            cur.close()
+            logger.info(f"✅ process_tracking: OCR_ERRO registrado (CPF={cpf_limpo}, processo={numero_processo}, consulta_id={consulta_id})")
+        except Exception as e:
+            logger.error(f"❌ Erro ao registrar OCR_ERRO em process_tracking: {e}")
+        finally:
+            if conn: conn.close()
+
     def processar_arquivo(self, pdf_path: str, cpf_numerico: str, tracker: Optional[TrackerExecucao] = None) -> Dict[str, Any]:
         """
         Processa um único arquivo PDF com validação de CPF.
@@ -1056,6 +1103,7 @@ class ProcessadorOficio:
         """
         numero_processo = Path(pdf_path).stem
         self._atualizar_estado_consulta_esaj(cpf, numero_processo, 'MANUAL_PROCESS')
+        self._registrar_ocr_no_tracking(cpf, numero_processo, erro)
 
         return {
             "cpf": cpf,
