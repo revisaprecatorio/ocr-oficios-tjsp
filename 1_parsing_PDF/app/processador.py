@@ -367,6 +367,25 @@ class ProcessadorOficio:
                 else:
                     logger.error(f"❌ FALLBACK falhou - CPF não encontrado mesmo com busca direta")
             
+            # V2.6.2: FALLBACK multi-credor
+            # CPF confirmado no ANEXO II mas não mencionado no corpo do ofício.
+            # Ocorre em precatórios com N credores: cada CPF fica apenas no ANEXO II,
+            # não no ofício principal. Usar o ofício imediatamente anterior ao ANEXO II.
+            if not oficio_correto and cpf_numerico in anexos_indexados and todos_oficios:
+                pagina_anexo = dados_anexo_indexado['pagina'] + 1  # 0-indexed → 1-indexed
+                candidatos = [o for o in todos_oficios if max(o['paginas']) < pagina_anexo]
+                oficio_correto = candidatos[-1] if candidatos else todos_oficios[0]
+                logger.warning(
+                    f"⚠️ FALLBACK multi-credor: CPF só no ANEXO II (pág {pagina_anexo}), "
+                    f"usando ofício páginas {oficio_correto['paginas']}"
+                )
+                if tracker:
+                    tracker.adicionar_resultado(
+                        f"⚠️ FALLBACK multi-credor: CPF confirmado no ANEXO II (pág {pagina_anexo}), "
+                        f"ofício páginas {oficio_correto['paginas']}",
+                        sucesso=True, nivel=1
+                    )
+
             if not oficio_correto:
                 logger.warning(f"⚠️ CPF {cpf_formatado} não encontrado em nenhum ofício")
                 msg=f"CPF {cpf_formatado} não encontrado em nenhum ofício"
