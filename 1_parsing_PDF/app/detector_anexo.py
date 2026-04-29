@@ -47,6 +47,26 @@ class DetectorAnexoII:
         # Padrão para detectar estrutura tabular do ANEXO II
         self.padrao_credor = re.compile(r"CREDOR\s+N[ºO]\.?:\s*\d+", re.I)
 
+    def _normalizar_cpfs_no_texto(self, texto: str) -> str:
+        """Converte CPFs sem formatação em contexto CPF/CNPJ/RNE para XXX.XXX.XXX-XX.
+
+        Ex: 'CPF/CNPJ/RNE: 09226629838' → 'CPF/CNPJ/RNE: 092.266.298-38'
+
+        Permite que todos os regex downstream detectem CPFs mesmo quando
+        o PDF omite os pontos e o traço na formatação.
+        """
+        def _fmt(m):
+            prefixo = m.group(1)
+            cpf = m.group(2)
+            return f"{prefixo}{cpf[:3]}.{cpf[3:6]}.{cpf[6:9]}-{cpf[9:]}"
+
+        return re.sub(
+            r'(CPF/CNPJ(?:/RNE)?:\s*)(\d{11})\b',
+            _fmt,
+            texto,
+            flags=re.IGNORECASE
+        )
+
     def detectar_anexo_ii(self, pdf_path: str, inicio: int = 0) -> Tuple[List[int], str, int]:
         """
         Detecta páginas contendo ANEXO II no PDF.
@@ -432,6 +452,8 @@ class DetectorAnexoII:
             page = doc.load_page(pagina_credor)
             texto_pagina = page.get_text()
             doc.close()
+            # V2.6.3: Normalizar CPFs sem formatação para encontrar posição correta
+            texto_pagina = self._normalizar_cpfs_no_texto(texto_pagina)
             
             # Encontrar posição do CPF
             pos_cpf = texto_pagina.find(cpf_formatado)
@@ -502,6 +524,8 @@ class DetectorAnexoII:
         
         try:
             logger.info("📋 Pré-extraindo dados com regex...")
+            # V2.6.3: Normalizar CPFs sem formatação antes de extrair
+            texto_secao = self._normalizar_cpfs_no_texto(texto_secao)
             
             # CPF/CNPJ
             cpf_match = re.search(r'CPF/CNPJ(?:/RNE)?:\s*(\d{3}\.\d{3}\.\d{3}-\d{2})', texto_secao, re.IGNORECASE)
@@ -688,7 +712,9 @@ class DetectorAnexoII:
             logger.info(f"🔍 V2.6.1: Varrendo páginas {pagina_inicio + 1} a {total_paginas} por credores...")
             
             for page_num in range(pagina_inicio, total_paginas):
-                texto_pagina = doc.load_page(page_num).get_text()
+                texto_pagina_raw = doc.load_page(page_num).get_text()
+                # V2.6.3: Normalizar CPFs sem formatação antes de qualquer regex
+                texto_pagina = self._normalizar_cpfs_no_texto(texto_pagina_raw)
                 
                 # Aceita: página com "ANEXO II" OU página de credor (sem "ANEXO II")
                 eh_anexo_strict = self._eh_pagina_anexo_ii(texto_pagina)
@@ -699,7 +725,7 @@ class DetectorAnexoII:
                 
                 logger.debug(f"   📄 Página {page_num + 1}: credor detectado (strict={eh_anexo_strict}, leve={eh_credor_leve})")
                 
-                # Extrair todos os CPFs formatados da página
+                # Extrair todos os CPFs formatados da página (já normalizados)
                 cpfs_encontrados = re.findall(r'\d{3}\.\d{3}\.\d{3}-\d{2}', texto_pagina)
                 
                 if not cpfs_encontrados:
@@ -720,7 +746,7 @@ class DetectorAnexoII:
                                 'pagina': page_num,  # 0-indexed
                                 'cpf_formatado': cpf_formatado,
                                 'credor_nome': credor_nome,
-                                'texto': texto_pagina,
+                                'texto': texto_pagina,  # texto normalizado
                                 'tipo': tipo
                             }
                             logger.info(f"   ✅ CPF {cpf_formatado} indexado (página {page_num + 1})")
