@@ -130,6 +130,12 @@ class OficioRequisitorio(BaseModel):
         description="Saldo final após pagamento parcial. Se não houver pagamento parcial, igual a valor_total_requisitado. Campo detectado via regex ou LLM."
     )
 
+    # V2.5.2+: Data base da seção SALDO FINAL APÓS O PAGAMENTO
+    data_saldo_final: Optional[date] = Field(
+        None,
+        description="Data base da seção SALDO FINAL APÓS O PAGAMENTO (ex: 28/12/2023). Extraída da linha 'VALOR PRINCIPAL em DD/MM/YYYY'."
+    )
+
     # V3.0: REMOVED contrib_previdenciaria_iprem, contrib_previdenciaria_hspm, valor_compensado, custas (0% filled)
     
     # ===== CAMPOS OPCIONAIS - PREFERÊNCIAS =====

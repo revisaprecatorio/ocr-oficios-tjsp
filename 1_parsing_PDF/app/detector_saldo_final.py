@@ -11,7 +11,8 @@ Se não encontrado, o processador usará fallback (valor_total_requisitado).
 
 import re
 import logging
-from typing import Optional, Dict, Any
+from datetime import date
+from typing import Optional, Dict, Any, Tuple
 from decimal import Decimal
 
 logger = logging.getLogger(__name__)
@@ -55,6 +56,14 @@ class DetectorSaldoFinal:
             r'(?:(?!SALDO\s+FINAL).){0,500}?'  # Até 500 chars, sem outro SALDO FINAL
             r'(?:^|\n)TOTAL\s+R?\$?\s*([\d.,]+)',  # TOTAL no início da linha (não SUB-TOTAL)
             re.IGNORECASE | re.MULTILINE | re.DOTALL
+        )
+
+        # Pattern 4: Data base na linha "VALOR PRINCIPAL em DD/MM/YYYY" dentro da seção SALDO FINAL
+        # Matches: "SALDO FINAL APÓS O PAGAMENTO\nVALOR PRINCIPAL em 28/12/2023  R$ ..."
+        self._pattern_data_saldo = re.compile(
+            r'SALDO\s+FINAL\s+AP[ÓO]S\s+O?\s*PAGAMENTO.*?'
+            r'VALOR\s+PRINCIPAL\s+em\s+(\d{2}/\d{2}/\d{4})',
+            re.IGNORECASE | re.DOTALL
         )
 
         # Pattern 3: "Saldo Final" genérico (fallback - mantido para compatibilidade)
@@ -164,6 +173,55 @@ class DetectorSaldoFinal:
             logger.debug(f"Contexto saldo final: {resultado['contexto'][:150]}...")
 
         return resultado
+
+    def extrair_saldo_e_data(self, texto_completo: str) -> Tuple[Optional[Decimal], Optional[date]]:
+        """
+        Extrai saldo final E data base da seção SALDO FINAL APÓS O PAGAMENTO.
+
+        A data corresponde à linha "VALOR PRINCIPAL em DD/MM/YYYY" dentro da seção.
+        O método `extrair_saldo_final()` existente não é modificado.
+
+        Args:
+            texto_completo: Texto completo extraído do PDF
+
+        Returns:
+            Tuple (saldo: Optional[Decimal], data_saldo: Optional[date])
+            Se saldo não detectado: (None, None)
+            Se saldo detectado mas data ausente: (saldo, None)
+        """
+        saldo = self.extrair_saldo_final(texto_completo)
+        if not saldo or not texto_completo:
+            return None, None
+
+        data_saldo = None
+        match_data = self._pattern_data_saldo.search(texto_completo)
+        if match_data:
+            data_saldo = self._converter_data_br(match_data.group(1))
+            if data_saldo:
+                logger.info(f"📅 Data saldo final detectada: {data_saldo}")
+            else:
+                logger.warning(f"⚠️ Data saldo final encontrada mas não convertida: {match_data.group(1)}")
+        else:
+            logger.debug("Data base do saldo final não detectada no PDF")
+
+        return saldo, data_saldo
+
+    def _converter_data_br(self, data_str: str) -> Optional[date]:
+        """
+        Converte data no formato DD/MM/YYYY para objeto date Python.
+
+        Args:
+            data_str: String com data (ex: "28/12/2023")
+
+        Returns:
+            date ou None se conversão falhar
+        """
+        try:
+            dia, mes, ano = data_str.strip().split('/')
+            return date(int(ano), int(mes), int(dia))
+        except Exception as e:
+            logger.error(f"Erro ao converter data '{data_str}': {e}")
+            return None
 
     def _converter_valor_br(self, valor_str: str) -> Optional[Decimal]:
         """

@@ -960,16 +960,21 @@ class ProcessadorOficio:
 
             # 8.2.1. V2.5.2: Detectar saldo final com fallback
             if not oficio_validado.saldo_final:
-                # Tentar detectar saldo final via regex no texto completo
-                saldo_detectado = self.detector_saldo.extrair_saldo_final(texto_completo_pdf)
+                # Tentar detectar saldo final E data via regex no texto completo
+                saldo_detectado, data_saldo_detectada = self.detector_saldo.extrair_saldo_e_data(texto_completo_pdf)
                 if saldo_detectado:
                     oficio_validado.saldo_final = saldo_detectado
+                    oficio_validado.data_saldo_final = data_saldo_detectada
                     logger.info(f"💰 Saldo Final detectado via regex: R$ {saldo_detectado:,.2f}")
+                    if data_saldo_detectada:
+                        logger.info(f"📅 Data Saldo Final: {data_saldo_detectada}")
                     if tracker:
                         tracker.adicionar_detalhes("Saldo Final", saldo_detectado, nivel=0)
                         tracker.adicionar_item("(detectado via regex)", nivel=1)
+                        if data_saldo_detectada:
+                            tracker.adicionar_detalhes("Data Saldo Final", data_saldo_detectada, nivel=1)
                 elif oficio_validado.valor_total_requisitado:
-                    # Fallback: usar valor_total_requisitado
+                    # Fallback: usar valor_total_requisitado (sem data)
                     oficio_validado.saldo_final = oficio_validado.valor_total_requisitado
                     logger.info(f"📊 Saldo Final (fallback): R$ {oficio_validado.saldo_final:,.2f} (= valor_total_requisitado)")
                     if tracker:

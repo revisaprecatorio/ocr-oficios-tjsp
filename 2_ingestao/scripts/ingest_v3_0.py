@@ -99,7 +99,7 @@ def main():
             credor_nome, credor_cpf_cnpj, devedor_ente,
             banco, agencia, conta,
             valor_principal_liquido, valor_principal_bruto, juros_moratorios,
-            valor_total_requisitado, saldo_final,
+            valor_total_requisitado, saldo_final, data_saldo_final,
             idoso, doenca_grave, pcd,
             preferencial, habilitacao_herdeiros,
             obito, data_obito, cpf_sucessor,
@@ -112,7 +112,7 @@ def main():
             %(credor_nome)s, %(credor_cpf_cnpj)s, %(devedor_ente)s,
             %(banco)s, %(agencia)s, %(conta)s,
             %(valor_principal_liquido)s, %(valor_principal_bruto)s, %(juros_moratorios)s,
-            %(valor_total_requisitado)s, %(saldo_final)s,
+            %(valor_total_requisitado)s, %(saldo_final)s, %(data_saldo_final)s,
             %(idoso)s, %(doenca_grave)s, %(pcd)s,
             %(preferencial)s, %(habilitacao_herdeiros)s,
             %(obito)s, %(data_obito)s, %(cpf_sucessor)s,
@@ -126,6 +126,7 @@ def main():
             vara = EXCLUDED.vara,
             data_nascimento = EXCLUDED.data_nascimento,
             saldo_final = EXCLUDED.saldo_final,
+            data_saldo_final = EXCLUDED.data_saldo_final,
             preferencial = EXCLUDED.preferencial,
             habilitacao_herdeiros = EXCLUDED.habilitacao_herdeiros,
             obito = EXCLUDED.obito,
@@ -198,6 +199,7 @@ def main():
                 'juros_moratorios': data.get('juros_moratorios'),
                 'valor_total_requisitado': data.get('valor_total_requisitado'),
                 'saldo_final': data.get('saldo_final'),
+                'data_saldo_final': data.get('data_saldo_final'),
 
                 # Preferências
                 'idoso': data.get('idoso', False),
