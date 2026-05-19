@@ -1,16 +1,21 @@
 """
 DetectorSaldoFinal - Detecta "Saldo Final" em PDFs de precatórios
-Versão: 2.1.0
-Data: 14/03/2026
+Versão: 3.0.0
+Data: 19/05/2026
 
-Detecta valor de "Saldo Final" após pagamentos parciais em documentos DEPRE.
+V3.0.0: Novos padrões + isolamento por credor + campos de origem + fallbacks completos.
+- Novo: padrões "Saldo Final em DD/MM/AA" e "Valores para Pagamento em DD/MM/AAAA"
+- Novo: ResultadoSaldoFinal dataclass com campos de rastreabilidade de origem
+- Novo: extrair_saldo_e_data_com_origem() com isolamento de contexto por credor
+- Novo: suporte a ano com 2 dígitos (29/03/19 → 2019-03-29)
+- Novo: _obter_contexto_saldo_credor() para PDFs multi-credor
 V2.1.0: Prioridade ajustada - captura valor da linha TOTAL (não VALOR PRINCIPAL).
 V2.0.0: Padrões regex corrigidos para detectar quebras de linha e texto intermediário.
-Se não encontrado, o processador usará fallback (valor_total_requisitado).
 """
 
 import re
 import logging
+from dataclasses import dataclass, field
 from datetime import date
 from typing import Optional, Dict, Any, Tuple
 from decimal import Decimal
@@ -18,244 +23,346 @@ from decimal import Decimal
 logger = logging.getLogger(__name__)
 
 
+@dataclass
+class ResultadoSaldoFinal:
+    """Resultado estruturado da extração de saldo final com rastreabilidade de origem."""
+    saldo_final: Optional[Decimal] = None
+    data_saldo_final: Optional[date] = None
+    origem_saldo_final: Optional[str] = None
+    origem_data_saldo_final: Optional[str] = None
+    contexto: Optional[str] = None
+
+
 class DetectorSaldoFinal:
     """
     Detector de "Saldo Final" em demonstrativos DEPRE.
 
-    Busca padrões como:
-    - "Saldo final após pagamento: R$ XX.XXX,XX"
-    - "Saldo Final: R$ XX.XXX,XX"
-    - Tabelas DEPRE com coluna "Saldo Final"
+    V3.0.0 — Hierarquia de detecção:
+    1. SALDO FINAL APÓS O PAGAMENTO (padrões existentes V2.x)
+    2. Saldo Final em DD/MM/AA(AA)  [NOVO]
+    3. Valores para Pagamento em DD/MM/AAAA  [NOVO]
+    4. Saldo Final genérico (fallback compatibilidade)
 
     Uso:
         detector = DetectorSaldoFinal()
-        saldo = detector.extrair_saldo_final(texto_pdf)
+        resultado = detector.extrair_saldo_e_data_com_origem(texto_pdf, cpf="24768225829")
     """
 
     def __init__(self):
         """Inicializa os padrões regex para detecção de saldo final."""
 
+        # --- PADRÕES V2.x (SALDO FINAL APÓS O PAGAMENTO) ---
+
         # Pattern 1: "SALDO FINAL APÓS O PAGAMENTO" com quebra de linha (V2.0.0)
-        # Matches: "SALDO FINAL APÓS O PAGAMENTO\nVALOR PRINCIPAL em 23/05/2025  R$ 51.435,50"
-        # Aceita quebras de linha, texto intermediário e variações de formatação
         self.pattern_saldo_apos_pag = re.compile(
-            r'SALDO\s+FINAL\s+AP[ÓO]S\s+O?\s*PAGAMENTO\s*[\n\r\s]*'  # Título
-            r'(?:.*?[\n\r])*?'  # Linhas intermediárias (opcional)
-            r'(?:TOTAL|VALOR\s+PRINCIPAL)?\s*'  # Pode ter "TOTAL" ou "VALOR PRINCIPAL"
-            r'(?:em\s+\d{2}/\d{2}/\d{4})?\s*'  # Data opcional (DD/MM/YYYY)
-            r'R?\$?\s*([\d.,]+)',  # Valor
+            r'SALDO\s+FINAL\s+AP[ÓO]S\s+O?\s*PAGAMENTO\s*[\n\r\s]*'
+            r'(?:.*?[\n\r])*?'
+            r'(?:TOTAL|VALOR\s+PRINCIPAL)?\s*'
+            r'(?:em\s+\d{2}/\d{2}/\d{4})?\s*'
+            r'R?\$?\s*([\d.,]+)',
             re.IGNORECASE | re.MULTILINE | re.DOTALL
         )
 
-        # Pattern 2: "SALDO FINAL APÓS O PAGAMENTO" + "TOTAL" (V2.1.0)
-        # Matches: "SALDO FINAL APÓS O PAGAMENTO\n...\nTOTAL  R$ 243.228,11"
-        # Limitado a 500 caracteres após título para evitar capturar TOTAL de outras seções
-        # Usa word boundary para evitar capturar SUB-TOTAL
+        # Pattern 2: "SALDO FINAL APÓS O PAGAMENTO" + linha "TOTAL" (V2.1.0)
+        # Captura TOTAL no início de linha (exclui SUB-TOTAL), formato "TOTAL\nVALOR\nR$" ou "TOTAL R$ VALOR"
         self.pattern_saldo_com_total = re.compile(
-            r'SALDO\s+FINAL\s+AP[ÓO]S\s+O?\s*PAGAMENTO[^\n]*\n'  # Título completo
-            r'(?:(?!SALDO\s+FINAL).){0,500}?'  # Até 500 chars, sem outro SALDO FINAL
-            r'(?:^|\n)TOTAL\s+R?\$?\s*([\d.,]+)',  # TOTAL no início da linha (não SUB-TOTAL)
+            r'SALDO\s+FINAL\s+AP[ÓO]S\s+O?\s*PAGAMENTO[^\n]*\n'
+            r'(?:(?!SALDO\s+FINAL).){0,500}?'
+            r'(?:^|\n)TOTAL\s+R?\$?\s*([\d.,]+)',
             re.IGNORECASE | re.MULTILINE | re.DOTALL
         )
 
-        # Pattern 4: Data base na linha "VALOR PRINCIPAL em DD/MM/YYYY" dentro da seção SALDO FINAL
-        # Matches: "SALDO FINAL APÓS O PAGAMENTO\nVALOR PRINCIPAL em 28/12/2023  R$ ..."
+        # Pattern: data "VALOR PRINCIPAL em DD/MM/YYYY" no bloco SALDO FINAL APÓS O PAGAMENTO
         self._pattern_data_saldo = re.compile(
             r'SALDO\s+FINAL\s+AP[ÓO]S\s+O?\s*PAGAMENTO.*?'
             r'VALOR\s+PRINCIPAL\s+em\s+(\d{2}/\d{2}/\d{4})',
             re.IGNORECASE | re.DOTALL
         )
 
-        # Pattern 3: "Saldo Final" genérico (fallback - mantido para compatibilidade)
-        # Matches: "Saldo Final: R$ 62.606,38", "SALDO FINAL R$ 62606.38"
+        # --- PADRÕES V3.0 (NOVOS) ---
+
+        # Pattern "Saldo Final em DD/MM/AA(AA)" + TOTAL
+        # Formato multiline do DEPRE: TOTAL\n         48.783,56\nR$
+        # Formato inline: TOTAL R$ 48.783,56
+        # Exclusão: não cruza para outro bloco "Saldo Final em"
+        self.pattern_saldo_final_em = re.compile(
+            r'Saldo\s+Final\s+em\s+(\d{2}/\d{2}/\d{2,4})'
+            r'(?:(?!Saldo\s+Final\s+em).){0,1500}?'
+            r'(?:^|\n)\s*TOTAL\b\s*(?:R?\$\s*)?([\d.,]+)',
+            re.IGNORECASE | re.DOTALL | re.MULTILINE
+        )
+
+        # Pattern "Valores para Pagamento em DD/MM/AAAA" + TOTAL
+        self.pattern_valores_para_pagamento = re.compile(
+            r'Valores\s+para\s+Pagamento\s+em\s+(\d{2}/\d{2}/\d{4})'
+            r'(?:(?!Valores\s+para\s+Pagamento).){0,1500}?'
+            r'(?:^|\n)\s*TOTAL\b\s*(?:R?\$\s*)?([\d.,]+)',
+            re.IGNORECASE | re.DOTALL | re.MULTILINE
+        )
+
+        # Pattern 3: "Saldo Final" genérico (fallback - compatibilidade)
         self.pattern_saldo_generico = re.compile(
             r'Saldo\s+[Ff]inal:?\s*R?\$?\s*([\d.,]+)',
             re.IGNORECASE
         )
 
-        logger.info("DetectorSaldoFinal V2.1.0 inicializado (prioridade TOTAL)")
+        logger.info("DetectorSaldoFinal V3.0.0 inicializado (novos padrões + origem)")
+
+    # =========================================================================
+    # MÉTODO PRINCIPAL V3.0
+    # =========================================================================
+
+    def extrair_saldo_e_data_com_origem(
+        self,
+        texto_completo: str,
+        cpf: Optional[str] = None
+    ) -> ResultadoSaldoFinal:
+        """
+        Extrai saldo final e data com rastreabilidade de origem.
+
+        Isola o contexto do credor (CPF) quando fornecido para evitar capturar
+        dados de outro credor em PDFs multi-credor.
+
+        Args:
+            texto_completo: Texto completo extraído do PDF
+            cpf: CPF do credor (com ou sem formatação) para isolamento de contexto
+
+        Returns:
+            ResultadoSaldoFinal com saldo, data e campos de origem
+        """
+        if not texto_completo:
+            return ResultadoSaldoFinal()
+
+        contexto = self._obter_contexto_saldo_credor(texto_completo, cpf) if cpf else texto_completo
+
+        # Prioridade 1: SALDO FINAL APÓS O PAGAMENTO (padrão V2.x — mais específico)
+        match = self.pattern_saldo_com_total.search(contexto)
+        if match:
+            valor = self._converter_valor_br(match.group(1))
+            if valor:
+                data_match = self._pattern_data_saldo.search(contexto)
+                data = self._converter_data_br_2dig(data_match.group(1)) if data_match else None
+                logger.info(f"💰 Saldo Final [saldo_apos_pagamento]: R$ {valor:,.2f} | data={data}")
+                return ResultadoSaldoFinal(
+                    saldo_final=valor,
+                    data_saldo_final=data,
+                    origem_saldo_final="saldo_apos_pagamento",
+                    origem_data_saldo_final="valor_principal_em_no_bloco_saldo_apos_pagamento" if data else None,
+                    contexto=contexto[:300]
+                )
+
+        match = self.pattern_saldo_apos_pag.search(contexto)
+        if match:
+            valor = self._converter_valor_br(match.group(1))
+            if valor:
+                data_match = self._pattern_data_saldo.search(contexto)
+                data = self._converter_data_br_2dig(data_match.group(1)) if data_match else None
+                logger.info(f"💰 Saldo Final [saldo_apos_pagamento_v1]: R$ {valor:,.2f} | data={data}")
+                return ResultadoSaldoFinal(
+                    saldo_final=valor,
+                    data_saldo_final=data,
+                    origem_saldo_final="saldo_apos_pagamento",
+                    origem_data_saldo_final="valor_principal_em_no_bloco_saldo_apos_pagamento" if data else None,
+                    contexto=contexto[:300]
+                )
+
+        # Prioridade 2: Saldo Final em DD/MM/AA(AA)
+        match = self.pattern_saldo_final_em.search(contexto)
+        if match:
+            data = self._converter_data_br_2dig(match.group(1))
+            valor = self._converter_valor_br(match.group(2))
+            if valor:
+                logger.info(f"💰 Saldo Final [saldo_final_em]: R$ {valor:,.2f} | data={data}")
+                return ResultadoSaldoFinal(
+                    saldo_final=valor,
+                    data_saldo_final=data,
+                    origem_saldo_final="saldo_final_em",
+                    origem_data_saldo_final="titulo_saldo_final_em" if data else None,
+                    contexto=contexto[:300]
+                )
+
+        # Prioridade 3: Valores para Pagamento em DD/MM/AAAA
+        match = self.pattern_valores_para_pagamento.search(contexto)
+        if match:
+            data = self._converter_data_br_2dig(match.group(1))
+            valor = self._converter_valor_br(match.group(2))
+            if valor:
+                logger.info(f"💰 Saldo Final [valores_para_pagamento]: R$ {valor:,.2f} | data={data}")
+                return ResultadoSaldoFinal(
+                    saldo_final=valor,
+                    data_saldo_final=data,
+                    origem_saldo_final="valores_para_pagamento",
+                    origem_data_saldo_final="titulo_valores_para_pagamento" if data else None,
+                    contexto=contexto[:300]
+                )
+
+        # Prioridade 4: Saldo Final genérico (fallback compatibilidade)
+        match = self.pattern_saldo_generico.search(contexto)
+        if match:
+            valor = self._converter_valor_br(match.group(1))
+            if valor:
+                logger.info(f"💰 Saldo Final [saldo_final_generico]: R$ {valor:,.2f}")
+                return ResultadoSaldoFinal(
+                    saldo_final=valor,
+                    data_saldo_final=None,
+                    origem_saldo_final="saldo_final_generico",
+                    origem_data_saldo_final=None,
+                    contexto=contexto[:300]
+                )
+
+        logger.debug("Saldo Final não detectado (V3.0.0) — processador aplicará fallbacks")
+        return ResultadoSaldoFinal()
+
+    # =========================================================================
+    # ISOLAMENTO DE CONTEXTO POR CREDOR (V3.0)
+    # =========================================================================
+
+    def _obter_contexto_saldo_credor(self, texto: str, cpf: str) -> str:
+        """
+        Isola o bloco de cálculo do credor alvo para evitar capturar saldo de outro credor.
+
+        Estratégia: encontra blocos delimitados por "Calculo referente a" e retorna
+        o bloco que contém o CPF. Se não houver estrutura de blocos, retorna o texto completo.
+
+        Args:
+            texto: Texto completo do PDF
+            cpf: CPF do credor (com ou sem formatação)
+
+        Returns:
+            Texto do bloco isolado, ou texto completo como fallback
+        """
+        cpf_numerico = re.sub(r'\D', '', cpf)
+        if len(cpf_numerico) < 11:
+            return texto
+
+        cpf_fmt = f"{cpf_numerico[:3]}.{cpf_numerico[3:6]}.{cpf_numerico[6:9]}-{cpf_numerico[9:]}"
+        cpf_pattern = re.compile(
+            re.escape(cpf_numerico) + '|' + re.escape(cpf_fmt),
+            re.IGNORECASE
+        )
+
+        blocos_inicio = [m.start() for m in re.finditer(r'Calculo referente a', texto, re.IGNORECASE)]
+
+        if not blocos_inicio:
+            return texto
+
+        blocos_inicio.append(len(texto))
+
+        # Percorre os blocos e expande enquanto o bloco contiver o CPF alvo
+        for i in range(len(blocos_inicio) - 1):
+            chunk = texto[blocos_inicio[i]:blocos_inicio[i + 1]]
+            if cpf_pattern.search(chunk):
+                # Achou o bloco inicial; expande se blocos consecutivos também tiverem o CPF
+                fim_idx = i + 1
+                while fim_idx < len(blocos_inicio) - 1:
+                    next_chunk = texto[blocos_inicio[fim_idx]:blocos_inicio[fim_idx + 1]]
+                    if cpf_pattern.search(next_chunk):
+                        fim_idx += 1
+                    else:
+                        break
+                contexto = texto[blocos_inicio[i]:blocos_inicio[fim_idx]]
+                logger.debug(f"Contexto isolado para CPF {cpf_fmt}: {len(contexto)} chars")
+                return contexto
+
+        # CPF não encontrado em nenhum bloco — janela ao redor da última ocorrência
+        match_cpf = list(cpf_pattern.finditer(texto))
+        if match_cpf:
+            pos = match_cpf[-1].start()
+            inicio = max(0, pos - 500)
+            fim = min(len(texto), pos + 10000)
+            logger.warning(f"CPF {cpf_fmt} fora de bloco 'Calculo referente a' — usando janela")
+            return texto[inicio:fim]
+
+        logger.warning(f"CPF {cpf_fmt} não encontrado no texto — usando texto completo")
+        return texto
+
+    # =========================================================================
+    # MÉTODOS RETROCOMPATÍVEIS (V2.x)
+    # =========================================================================
 
     def extrair_saldo_final(self, texto_completo: str) -> Optional[Decimal]:
         """
         Extrai valor de "Saldo Final" do texto completo do PDF.
-
-        Args:
-            texto_completo: Texto completo extraído do PDF
-
-        Returns:
-            Decimal com o valor do saldo final, ou None se não encontrado
-
-        Example:
-            >>> detector = DetectorSaldoFinal()
-            >>> texto = "Saldo final após pagamento: R$ 62.606,38"
-            >>> saldo = detector.extrair_saldo_final(texto)
-            >>> print(saldo)
-            Decimal('62606.38')
+        Mantido para compatibilidade — internamente chama extrair_saldo_e_data_com_origem().
         """
         if not texto_completo:
             logger.warning("Texto vazio fornecido para detecção de saldo final")
             return None
-
-        # V2.1.0: PRIORIDADE 1 - Pattern 2 (SALDO FINAL + TOTAL)
-        # Busca linha "TOTAL" após "SALDO FINAL APÓS O PAGAMENTO"
-        match = self.pattern_saldo_com_total.search(texto_completo)
-        if match:
-            valor_str = match.group(1)
-            valor_decimal = self._converter_valor_br(valor_str)
-            if valor_decimal:
-                logger.info(f"💰 Saldo Final detectado (V2.1.0 - SALDO FINAL + TOTAL): R$ {valor_decimal:,.2f}")
-                return valor_decimal
-
-        # V2.0.0: PRIORIDADE 2 - Pattern 1 (VALOR PRINCIPAL - fallback)
-        # Usado quando não há linha TOTAL
-        match = self.pattern_saldo_apos_pag.search(texto_completo)
-        if match:
-            valor_str = match.group(1)
-            valor_decimal = self._converter_valor_br(valor_str)
-            if valor_decimal:
-                logger.info(f"💰 Saldo Final detectado (V2.0.0 - VALOR PRINCIPAL): R$ {valor_decimal:,.2f}")
-                return valor_decimal
-
-        # Pattern 3: Genérico (fallback - compatibilidade)
-        match = self.pattern_saldo_generico.search(texto_completo)
-        if match:
-            valor_str = match.group(1)
-            valor_decimal = self._converter_valor_br(valor_str)
-            if valor_decimal:
-                logger.info(f"💰 Saldo Final detectado (genérico - fallback): R$ {valor_decimal:,.2f}")
-                return valor_decimal
-
-        # Nenhum padrão encontrado
-        logger.debug("Saldo Final não detectado no PDF (V2.1.0)")
-        return None
-
-    def extrair_saldo_com_contexto(self, texto_completo: str) -> Dict[str, Any]:
-        """
-        Extrai saldo final E retorna contexto (snippet) para validação.
-
-        Args:
-            texto_completo: Texto completo extraído do PDF
-
-        Returns:
-            Dict com valor e contexto:
-            {
-                'saldo_final': Decimal ou None,
-                'contexto': str com snippet onde foi encontrado
-            }
-        """
-        resultado = {
-            'saldo_final': None,
-            'contexto': None
-        }
-
-        if not texto_completo:
-            return resultado
-
-        # V2.1.0: Buscar com Pattern 2 PRIMEIRO (TOTAL)
-        match = self.pattern_saldo_com_total.search(texto_completo)
-        if not match:
-            # Tentar Pattern 1 (VALOR PRINCIPAL - fallback)
-            match = self.pattern_saldo_apos_pag.search(texto_completo)
-        if not match:
-            # Tentar Pattern 3 (genérico - fallback)
-            match = self.pattern_saldo_generico.search(texto_completo)
-
-        if match:
-            # Extrair valor
-            valor_str = match.group(1)
-            resultado['saldo_final'] = self._converter_valor_br(valor_str)
-
-            # Extrair contexto (100 chars antes e depois)
-            inicio = max(0, match.start() - 100)
-            fim = min(len(texto_completo), match.end() + 100)
-            resultado['contexto'] = texto_completo[inicio:fim].strip()
-
-            logger.debug(f"Contexto saldo final: {resultado['contexto'][:150]}...")
-
-        return resultado
+        resultado = self.extrair_saldo_e_data_com_origem(texto_completo)
+        return resultado.saldo_final
 
     def extrair_saldo_e_data(self, texto_completo: str) -> Tuple[Optional[Decimal], Optional[date]]:
         """
-        Extrai saldo final E data base da seção SALDO FINAL APÓS O PAGAMENTO.
+        Extrai saldo final e data.
+        Mantido para compatibilidade — internamente chama extrair_saldo_e_data_com_origem().
+        """
+        resultado = self.extrair_saldo_e_data_com_origem(texto_completo)
+        return resultado.saldo_final, resultado.data_saldo_final
 
-        A data corresponde à linha "VALOR PRINCIPAL em DD/MM/YYYY" dentro da seção.
-        O método `extrair_saldo_final()` existente não é modificado.
+    def extrair_saldo_com_contexto(self, texto_completo: str) -> Dict[str, Any]:
+        """
+        Extrai saldo final e retorna contexto para validação.
+        Mantido para compatibilidade.
+        """
+        resultado = self.extrair_saldo_e_data_com_origem(texto_completo)
+        return {
+            'saldo_final': resultado.saldo_final,
+            'contexto': resultado.contexto
+        }
+
+    # =========================================================================
+    # HELPERS
+    # =========================================================================
+
+    def _converter_data_br_2dig(self, data_str: str) -> Optional[date]:
+        """
+        Converte data no formato DD/MM/YYYY ou DD/MM/YY para objeto date Python.
+
+        Regra para ano com 2 dígitos:
+          00-49 → 2000-2049
+          50-99 → 1950-1999
 
         Args:
-            texto_completo: Texto completo extraído do PDF
-
-        Returns:
-            Tuple (saldo: Optional[Decimal], data_saldo: Optional[date])
-            Se saldo não detectado: (None, None)
-            Se saldo detectado mas data ausente: (saldo, None)
-        """
-        saldo = self.extrair_saldo_final(texto_completo)
-        if not saldo or not texto_completo:
-            return None, None
-
-        data_saldo = None
-        match_data = self._pattern_data_saldo.search(texto_completo)
-        if match_data:
-            data_saldo = self._converter_data_br(match_data.group(1))
-            if data_saldo:
-                logger.info(f"📅 Data saldo final detectada: {data_saldo}")
-            else:
-                logger.warning(f"⚠️ Data saldo final encontrada mas não convertida: {match_data.group(1)}")
-        else:
-            logger.debug("Data base do saldo final não detectada no PDF")
-
-        return saldo, data_saldo
-
-    def _converter_data_br(self, data_str: str) -> Optional[date]:
-        """
-        Converte data no formato DD/MM/YYYY para objeto date Python.
-
-        Args:
-            data_str: String com data (ex: "28/12/2023")
+            data_str: String com data (ex: "28/12/2023" ou "29/03/19")
 
         Returns:
             date ou None se conversão falhar
         """
         try:
-            dia, mes, ano = data_str.strip().split('/')
-            return date(int(ano), int(mes), int(dia))
+            partes = data_str.strip().split('/')
+            if len(partes) != 3:
+                return None
+            dia, mes, ano_str = partes
+            ano = int(ano_str)
+            if len(ano_str) == 2:
+                ano = 2000 + ano if ano < 50 else 1900 + ano
+            return date(ano, int(mes), int(dia))
         except Exception as e:
             logger.error(f"Erro ao converter data '{data_str}': {e}")
             return None
+
+    def _converter_data_br(self, data_str: str) -> Optional[date]:
+        """Converte data DD/MM/YYYY. Mantido para compatibilidade."""
+        return self._converter_data_br_2dig(data_str)
 
     def _converter_valor_br(self, valor_str: str) -> Optional[Decimal]:
         """
         Converte valor monetário brasileiro (formato: 1.234,56) para Decimal.
 
-        Args:
-            valor_str: String com valor (ex: "62.606,38", "1234,56")
-
-        Returns:
-            Decimal ou None se conversão falhar
-
         Examples:
             "62.606,38" → Decimal('62606.38')
             "1.234.567,89" → Decimal('1234567.89')
-            "62606,38" → Decimal('62606.38')
         """
         try:
-            # Limpar espaços
             valor_limpo = valor_str.strip()
-
-            # Remover pontos de milhar e converter vírgula para ponto
             if ',' in valor_limpo:
-                # Formato brasileiro: 1.234,56
-                valor_limpo = valor_limpo.replace('.', '')  # Remove pontos de milhar
-                valor_limpo = valor_limpo.replace(',', '.')  # Converte vírgula em ponto
+                valor_limpo = valor_limpo.replace('.', '').replace(',', '.')
             elif '.' in valor_limpo and valor_limpo.count('.') > 1:
-                # Múltiplos pontos = milhares (ex: 1.234.567)
                 partes = valor_limpo.split('.')
                 valor_limpo = ''.join(partes[:-1]) + '.' + partes[-1]
 
-            # Converter para Decimal
             valor_decimal = Decimal(valor_limpo)
 
-            # Validar se é um valor razoável (>= R$ 0,01 e <= R$ 100 milhões)
             if valor_decimal < Decimal('0.01') or valor_decimal > Decimal('100000000'):
                 logger.warning(f"Valor fora do range esperado: R$ {valor_decimal:,.2f}")
                 return None
@@ -270,36 +377,43 @@ class DetectorSaldoFinal:
         """
         Valida se os padrões regex estão funcionando corretamente.
         Útil para testes e debugging.
-
-        Returns:
-            Dict com resultado dos testes para cada padrão
         """
         testes = {
             'pattern_apos_pag_v2': False,
             'pattern_saldo_com_total_v2': False,
+            'pattern_saldo_final_em': False,
+            'pattern_valores_para_pagamento': False,
             'pattern_generico': False,
-            'conversao_valor': False
+            'conversao_valor': False,
+            'conversao_data_2dig': False,
         }
 
-        # Testar Pattern 1 V2.0.0 (com quebra de linha)
-        texto_teste_v2 = "SALDO FINAL APÓS O PAGAMENTO\nVALOR PRINCIPAL em 23/05/2025  R$ 51.435,50"
-        if self.pattern_saldo_apos_pag.search(texto_teste_v2):
+        texto_v2 = "SALDO FINAL APÓS O PAGAMENTO\nVALOR PRINCIPAL em 23/05/2025  R$ 51.435,50"
+        if self.pattern_saldo_apos_pag.search(texto_v2):
             testes['pattern_apos_pag_v2'] = True
 
-        # Testar Pattern 2 V2.0.0 (SALDO FINAL + TOTAL)
-        texto_teste_total = "SALDO FINAL APÓS O PAGAMENTO\nVALOR PRINCIPAL  R$ 168.217,53\nTOTAL  R$ 243.228,11"
-        if self.pattern_saldo_com_total.search(texto_teste_total):
+        texto_total = "SALDO FINAL APÓS O PAGAMENTO\nVALOR PRINCIPAL  R$ 168.217,53\nTOTAL  R$ 243.228,11"
+        if self.pattern_saldo_com_total.search(texto_total):
             testes['pattern_saldo_com_total_v2'] = True
 
-        # Testar Pattern 3 (genérico - fallback)
-        texto_teste = "Saldo Final: R$ 1.234,56"
-        if self.pattern_saldo_generico.search(texto_teste):
+        texto_sfe = "Saldo Final em 29/03/19\nVALOR PRINCIPAL em 29/03/2019\n         34.169,63\nR$\nSUB-TOTAL\n         34.169,63\nR$\nJUROS MORATÓRIOS\n         14.613,93\nR$\nTOTAL\n         48.783,56\nR$"
+        if self.pattern_saldo_final_em.search(texto_sfe):
+            testes['pattern_saldo_final_em'] = True
+
+        texto_vpp = "Valores para Pagamento em 29/03/2019\nVALOR PRINCIPAL\n         34.169,63\nR$\nTOTAL\n         48.783,56\nR$"
+        if self.pattern_valores_para_pagamento.search(texto_vpp):
+            testes['pattern_valores_para_pagamento'] = True
+
+        if self.pattern_saldo_generico.search("Saldo Final: R$ 1.234,56"):
             testes['pattern_generico'] = True
 
-        # Testar conversão
         valor = self._converter_valor_br("62.606,38")
         if valor and valor == Decimal('62606.38'):
             testes['conversao_valor'] = True
 
-        logger.info(f"Validação de padrões: {testes}")
+        d = self._converter_data_br_2dig("29/03/19")
+        if d and d == date(2019, 3, 29):
+            testes['conversao_data_2dig'] = True
+
+        logger.info(f"Validação de padrões V3.0.0: {testes}")
         return testes

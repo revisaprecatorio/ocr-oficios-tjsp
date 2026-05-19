@@ -136,6 +136,17 @@ class OficioRequisitorio(BaseModel):
         description="Data base da seção SALDO FINAL APÓS O PAGAMENTO (ex: 28/12/2023). Extraída da linha 'VALOR PRINCIPAL em DD/MM/YYYY'."
     )
 
+    # V3.0: Rastreabilidade da origem dos campos de saldo
+    origem_saldo_final: Optional[str] = Field(
+        None,
+        description="Origem do valor saldo_final. Ex: 'saldo_apos_pagamento', 'saldo_final_em', 'valores_para_pagamento', 'fallback_valor_total_requisitado', 'llm_extraction'."
+    )
+
+    origem_data_saldo_final: Optional[str] = Field(
+        None,
+        description="Origem do valor data_saldo_final. Ex: 'titulo_saldo_final_em', 'fallback_data_base_atualizacao', 'fallback_data_sentinela_1900_01_01'."
+    )
+
     # V3.0: REMOVED contrib_previdenciaria_iprem, contrib_previdenciaria_hspm, valor_compensado, custas (0% filled)
     
     # ===== CAMPOS OPCIONAIS - PREFERÊNCIAS =====

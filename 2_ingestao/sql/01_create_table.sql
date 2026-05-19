@@ -73,6 +73,8 @@ CREATE TABLE IF NOT EXISTS esaj_detalhe_processos (
     valor_total_requisitado NUMERIC(15,2),
     saldo_final NUMERIC(15,2),
     data_saldo_final DATE,              -- V2.5.2+: Data base da seção SALDO FINAL APÓS O PAGAMENTO
+    origem_saldo_final TEXT,            -- V3.0: Origem do valor saldo_final (rastreabilidade)
+    origem_data_saldo_final TEXT,       -- V3.0: Origem do valor data_saldo_final (rastreabilidade)
     -- V3.0: REMOVED contrib_previdenciaria_iprem, contrib_previdenciaria_hspm, valor_compensado,
     --       contribuicao_social, salario_pericial, assist_tecnico, custas, despesas, multas (0% filled)
     
@@ -138,6 +140,8 @@ COMMENT ON COLUMN esaj_detalhe_processos.habilitacao_herdeiros IS 'Indica se há
 -- V2.7.1: REMOVED cessao_credito
 COMMENT ON COLUMN esaj_detalhe_processos.saldo_final IS 'Saldo final após pagamento parcial. Se não houver, igual a valor_total_requisitado (V2.5.2)';
 COMMENT ON COLUMN esaj_detalhe_processos.data_saldo_final IS 'Data base da seção SALDO FINAL APÓS O PAGAMENTO - extraída de "VALOR PRINCIPAL em DD/MM/YYYY" (V2.5.2+)';
+COMMENT ON COLUMN esaj_detalhe_processos.origem_saldo_final IS 'V3.0: Origem do valor saldo_final. Ex: saldo_apos_pagamento, saldo_final_em, valores_para_pagamento, fallback_valor_total_requisitado, llm_extraction';
+COMMENT ON COLUMN esaj_detalhe_processos.origem_data_saldo_final IS 'V3.0: Origem do valor data_saldo_final. Ex: titulo_saldo_final_em, fallback_data_base_atualizacao, fallback_data_sentinela_1900_01_01';
 COMMENT ON COLUMN esaj_detalhe_processos.obito IS 'Indica se o requerente faleceu (V2.5.3: detectado via Detector de Habilitação de Herdeiros)';
 COMMENT ON COLUMN esaj_detalhe_processos.data_obito IS 'Data do óbito do requerente (V2.5.3)';
 COMMENT ON COLUMN esaj_detalhe_processos.cpf_sucessor IS 'CPF do herdeiro/sucessor habilitado (V2.5.3: formato XXX.XXX.XXX-XX)';

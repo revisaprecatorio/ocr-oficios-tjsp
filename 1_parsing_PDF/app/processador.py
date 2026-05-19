@@ -958,32 +958,10 @@ class ProcessadorOficio:
                 tracker.adicionar_detalhes("Data Óbito", oficio_validado.data_obito or "N/A", nivel=1)
                 tracker.adicionar_detalhes("CPF Sucessor", oficio_validado.cpf_sucessor or "N/A", nivel=1)
 
-            # 8.2.1. V2.5.2: Detectar saldo final com fallback
-            if not oficio_validado.saldo_final:
-                # Tentar detectar saldo final E data via regex no texto completo
-                saldo_detectado, data_saldo_detectada = self.detector_saldo.extrair_saldo_e_data(texto_completo_pdf)
-                if saldo_detectado:
-                    oficio_validado.saldo_final = saldo_detectado
-                    oficio_validado.data_saldo_final = data_saldo_detectada
-                    logger.info(f"💰 Saldo Final detectado via regex: R$ {saldo_detectado:,.2f}")
-                    if data_saldo_detectada:
-                        logger.info(f"📅 Data Saldo Final: {data_saldo_detectada}")
-                    if tracker:
-                        tracker.adicionar_detalhes("Saldo Final", saldo_detectado, nivel=0)
-                        tracker.adicionar_item("(detectado via regex)", nivel=1)
-                        if data_saldo_detectada:
-                            tracker.adicionar_detalhes("Data Saldo Final", data_saldo_detectada, nivel=1)
-                elif oficio_validado.valor_total_requisitado:
-                    # Fallback: usar valor_total_requisitado (sem data)
-                    oficio_validado.saldo_final = oficio_validado.valor_total_requisitado
-                    logger.info(f"📊 Saldo Final (fallback): R$ {oficio_validado.saldo_final:,.2f} (= valor_total_requisitado)")
-                    if tracker:
-                        tracker.adicionar_detalhes("Saldo Final (fallback)", oficio_validado.saldo_final, nivel=0)
-                        tracker.adicionar_item("(= valor_total_requisitado)", nivel=1)
-                else:
-                    logger.warning("⚠️ Saldo Final não detectado e valor_total_requisitado ausente")
-                    if tracker:
-                        tracker.adicionar_item("Saldo Final não detectado", nivel=0, emoji="⚠️")
+            # 8.2.1. V3.0: Garantir saldo_final e data_saldo_final (nunca None)
+            self._garantir_saldo_final_e_data(
+                oficio_validado, texto_completo_pdf, cpf_numerico, tracker
+            )
             
             # 8.3. V2.5.1: Preencher observações e campos vazios com "ERRO"
             observacoes_lista = []
@@ -2097,6 +2075,114 @@ Retorne APENAS JSON FLAT válido:"""
             )
 
         return alertas
+
+    def _garantir_saldo_final_e_data(
+        self,
+        oficio_validado,
+        texto_completo_pdf: str,
+        cpf_numerico: str,
+        tracker=None
+    ) -> None:
+        """
+        V3.0: Garante que saldo_final e data_saldo_final nunca saiam None.
+        Preenche origem_saldo_final e origem_data_saldo_final para rastreabilidade.
+
+        Hierarquia saldo_final:
+          1. LLM (se já preenchido)
+          2. Detector regex com contexto isolado por CPF
+          3. Fallback: valor_total_requisitado
+          4. Fallback: principal_bruto + juros
+          5. Fallback: principal_liquido + juros
+          6. Fallback extremo: 0.00 + anomalia
+
+        Hierarquia data_saldo_final:
+          1. Data do bloco detectado pelo regex
+          2. Fallback: data_base_atualizacao
+          3. Fallback: busca genérica de data no texto
+          4. Fallback extremo: 1900-01-01 + anomalia
+        """
+        saldo_ja_extraido = bool(oficio_validado.saldo_final)
+
+        resultado = self.detector_saldo.extrair_saldo_e_data_com_origem(
+            texto_completo_pdf, cpf_numerico
+        )
+
+        # ---- SALDO FINAL ----
+        if saldo_ja_extraido:
+            oficio_validado.origem_saldo_final = "llm_extraction"
+            logger.info(f"💰 Saldo Final (LLM): R$ {oficio_validado.saldo_final:,.2f}")
+        elif resultado.saldo_final:
+            oficio_validado.saldo_final = resultado.saldo_final
+            oficio_validado.origem_saldo_final = resultado.origem_saldo_final
+            logger.info(f"💰 Saldo Final [{resultado.origem_saldo_final}]: R$ {resultado.saldo_final:,.2f}")
+        elif oficio_validado.valor_total_requisitado:
+            oficio_validado.saldo_final = oficio_validado.valor_total_requisitado
+            oficio_validado.origem_saldo_final = "fallback_valor_total_requisitado"
+            logger.info(f"📊 Saldo Final [fallback_valor_total_requisitado]: R$ {oficio_validado.saldo_final:,.2f}")
+        elif oficio_validado.valor_principal_bruto and oficio_validado.juros_moratorios:
+            oficio_validado.saldo_final = oficio_validado.valor_principal_bruto + oficio_validado.juros_moratorios
+            oficio_validado.origem_saldo_final = "fallback_principal_bruto_mais_juros"
+            logger.info(f"📊 Saldo Final [fallback_principal_bruto_mais_juros]: R$ {oficio_validado.saldo_final:,.2f}")
+        elif oficio_validado.valor_principal_liquido and oficio_validado.juros_moratorios:
+            oficio_validado.saldo_final = oficio_validado.valor_principal_liquido + oficio_validado.juros_moratorios
+            oficio_validado.origem_saldo_final = "fallback_principal_liquido_mais_juros"
+            logger.info(f"📊 Saldo Final [fallback_principal_liquido_mais_juros]: R$ {oficio_validado.saldo_final:,.2f}")
+        else:
+            oficio_validado.saldo_final = Decimal("0.00")
+            oficio_validado.origem_saldo_final = "fallback_zero_erro"
+            oficio_validado.anomalia = True
+            logger.warning("⚠️ Saldo Final = 0.00 (fallback extremo) — anomalia registrada")
+
+        # ---- DATA SALDO FINAL ----
+        if resultado.data_saldo_final:
+            oficio_validado.data_saldo_final = resultado.data_saldo_final
+            oficio_validado.origem_data_saldo_final = resultado.origem_data_saldo_final
+            logger.info(f"📅 Data Saldo [{resultado.origem_data_saldo_final}]: {resultado.data_saldo_final}")
+        elif oficio_validado.data_base_atualizacao:
+            oficio_validado.data_saldo_final = oficio_validado.data_base_atualizacao
+            oficio_validado.origem_data_saldo_final = "fallback_data_base_atualizacao"
+            logger.info(f"📅 Data Saldo [fallback_data_base_atualizacao]: {oficio_validado.data_saldo_final}")
+        else:
+            data_generica = self._extrair_data_atualizacao_generica(texto_completo_pdf)
+            if data_generica:
+                oficio_validado.data_saldo_final = data_generica
+                oficio_validado.origem_data_saldo_final = "fallback_data_atualizacao_documento"
+                logger.info(f"📅 Data Saldo [fallback_data_atualizacao_documento]: {data_generica}")
+            else:
+                from datetime import date as _date
+                oficio_validado.data_saldo_final = _date(1900, 1, 1)
+                oficio_validado.origem_data_saldo_final = "fallback_data_sentinela_1900_01_01"
+                oficio_validado.anomalia = True
+                logger.warning("⚠️ Data Saldo = 1900-01-01 (sentinela) — anomalia registrada")
+
+        if tracker:
+            tracker.adicionar_detalhes("Saldo Final", oficio_validado.saldo_final, nivel=0)
+            tracker.adicionar_item(f"(origem: {oficio_validado.origem_saldo_final})", nivel=1)
+            tracker.adicionar_detalhes("Data Saldo Final", oficio_validado.data_saldo_final, nivel=0)
+            tracker.adicionar_item(f"(origem: {oficio_validado.origem_data_saldo_final})", nivel=1)
+
+    def _extrair_data_atualizacao_generica(self, texto: str):
+        """
+        Busca padrões genéricos de data de atualização no texto do PDF.
+        Usado como fallback de terceiro nível para data_saldo_final.
+        """
+        from datetime import datetime
+        padroes = [
+            r'atualizado\s+at[eé]\s+(\d{2}/\d{2}/\d{4})',
+            r'atualiza[çc][aã]o\s+at[eé]\s+(\d{2}/\d{2}/\d{4})',
+            r'Valor\s+em\s+(\d{2}/\.?\d{2}/\d{4})',
+            r'Liquida[çc][aã]o\s+.*?Valor\s+em\s+(\d{2}/\d{2}/\d{4})',
+            r'Data\s+[Bb]ase\s+para\s+atualiza[çc][aã]o[:\s]+(\d{2}/\d{2}/\d{4})',
+            r'Data\s+[Bb]ase:[\r\n\s]*(\d{2}/\d{2}/\d{4})',
+        ]
+        for p in padroes:
+            m = re.search(p, texto, re.IGNORECASE | re.DOTALL)
+            if m:
+                try:
+                    return datetime.strptime(m.group(1), '%d/%m/%Y').date()
+                except Exception:
+                    continue
+        return None
 
     def salvar_postgres(self, resultado: Dict[str, Any]) -> bool:
         """
