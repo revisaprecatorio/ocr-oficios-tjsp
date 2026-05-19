@@ -722,7 +722,8 @@ class ProcessadorOficio:
                 numero_ordem_titulo=numero_ordem_titulo,
                 numero_ordem_global=numero_ordem_global,  # V2.7.3
                 oficio_rejeitado=oficio_rejeitado,
-                motivo_rejeicao=motivo_rejeicao
+                motivo_rejeicao=motivo_rejeicao,
+                cpf_esperado=cpf_formatado,  # V3.1: Fix multi-credor
             )
             tempo_llm = time.time() - tempo_llm_inicio
 
@@ -1192,7 +1193,8 @@ class ProcessadorOficio:
         numero_ordem_titulo: Optional[str] = None,
         numero_ordem_global: Optional[str] = None,  # V2.7.3
         oficio_rejeitado: bool = False,
-        motivo_rejeicao: Optional[str] = None
+        motivo_rejeicao: Optional[str] = None,
+        cpf_esperado: Optional[str] = None,  # V3.1: Fix multi-credor
     ) -> Optional[Dict[str, Any]]:
         """
         Extração híbrida: Gemini 2.5 Flash (primeiro) com fallback para GPT-4o-mini.
@@ -1237,13 +1239,15 @@ class ProcessadorOficio:
         if not self.llm_adapter:
             return self._extrair_dados_llm(
                 texto_oficio, tem_anexo_ii, tem_processamento,
-                numero_ordem_titulo, numero_ordem_global, oficio_rejeitado, motivo_rejeicao
+                numero_ordem_titulo, numero_ordem_global, oficio_rejeitado, motivo_rejeicao,
+                cpf_esperado=cpf_esperado,
             )
 
         # Construir prompt (mesmo prompt para ambos LLMs)
         prompt = self._construir_prompt_llm(
             texto_oficio, tem_anexo_ii, tem_processamento,
-            numero_ordem_titulo, numero_ordem_global, oficio_rejeitado, motivo_rejeicao
+            numero_ordem_titulo, numero_ordem_global, oficio_rejeitado, motivo_rejeicao,
+            cpf_esperado=cpf_esperado,
         )
         
         # TENTATIVA 1: Gemini 2.5 Flash (mais completo, grátis)
@@ -1300,12 +1304,14 @@ class ProcessadorOficio:
         numero_ordem_titulo: Optional[str] = None,
         numero_ordem_global: Optional[str] = None,  # V2.7.3
         oficio_rejeitado: bool = False,
-        motivo_rejeicao: Optional[str] = None
+        motivo_rejeicao: Optional[str] = None,
+        cpf_esperado: Optional[str] = None,  # V3.1: Fix multi-credor
     ) -> str:
         """
         Constrói prompt para extração LLM (usado por ambos OpenAI e Gemini).
 
         V2.7.3: Adiciona numero_ordem_global como hint quando busca global encontra
+        V3.1: Adiciona cpf_esperado para isolamento de credor em PDFs multi-credor
 
         Returns:
             String com prompt completo
@@ -1345,12 +1351,25 @@ class ProcessadorOficio:
 - Foi encontrado em CERTIDÃO DE PUBLICAÇÃO ou outra seção do PDF
 """
 
+        # V3.1: Bloco de identificação do credor pelo CPF (fix multi-credor)
+        nota_cpf_credor = ""
+        if cpf_esperado:
+            nota_cpf_credor = f"""
+🎯 CPF DO CREDOR A SER EXTRAÍDO: {cpf_esperado}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+REGRA ABSOLUTA: Este PDF pode conter múltiplos credores.
+- Localize o credor cujo CPF/CNPJ seja EXATAMENTE {cpf_esperado}
+- Extraia APENAS os dados (nome, valores, datas) desse credor
+- Todos os demais credores devem ser COMPLETAMENTE IGNORADOS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+"""
+
         # Prompt completo
         return f"""Você é um assistente especializado em extrair dados de Ofícios Requisitórios do TJSP.
 
 IMPORTANTE: Retorne JSON com estrutura FLAT (campos no nível raiz), NÃO use objetos aninhados!
 
-{nota_rejeicao}{nota_anomalia}{nota_numero_ordem}
+{nota_cpf_credor}{nota_rejeicao}{nota_anomalia}{nota_numero_ordem}
 
 DOCUMENTO: Ofício Requisitório do Tribunal de Justiça de São Paulo
 
@@ -1560,7 +1579,8 @@ Retorne APENAS JSON FLAT válido:"""
         numero_ordem_titulo: Optional[str] = None,
         numero_ordem_global: Optional[str] = None,  # V2.7.3
         oficio_rejeitado: bool = False,
-        motivo_rejeicao: Optional[str] = None
+        motivo_rejeicao: Optional[str] = None,
+        cpf_esperado: Optional[str] = None,  # V3.1: Fix multi-credor
     ) -> Optional[Dict[str, Any]]:
         """
         Extrai dados estruturados usando GPT-4o-mini APENAS (método legado).
@@ -1620,12 +1640,25 @@ Retorne APENAS JSON FLAT válido:"""
 - Foi encontrado em CERTIDÃO DE PUBLICAÇÃO ou outra seção do PDF
 """
 
+            # V3.1: Bloco de identificação do credor pelo CPF (fix multi-credor)
+            nota_cpf_credor = ""
+            if cpf_esperado:
+                nota_cpf_credor = f"""
+🎯 CPF DO CREDOR A SER EXTRAÍDO: {cpf_esperado}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+REGRA ABSOLUTA: Este PDF pode conter múltiplos credores.
+- Localize o credor cujo CPF/CNPJ seja EXATAMENTE {cpf_esperado}
+- Extraia APENAS os dados (nome, valores, datas) desse credor
+- Todos os demais credores devem ser COMPLETAMENTE IGNORADOS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+"""
+
             # Prompt V2 otimizado
             prompt = f"""Você é um assistente especializado em extrair dados de Ofícios Requisitórios do TJSP.
 
 IMPORTANTE: Retorne JSON com estrutura FLAT (campos no nível raiz), NÃO use objetos aninhados!
 
-{nota_rejeicao}{nota_anomalia}{nota_numero_ordem}
+{nota_cpf_credor}{nota_rejeicao}{nota_anomalia}{nota_numero_ordem}
 
 DOCUMENTO: Ofício Requisitório do Tribunal de Justiça de São Paulo
 
