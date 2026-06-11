@@ -44,7 +44,7 @@ DB_PASS="BetaAgent2024SecureDB"
 CALC_PROJECT="C:/Users/Administrator/Documents/revisa/calc-precatorio-tjsp"
 CALC_SCRIPT="${CALC_PROJECT}/main.py"
 
-N8N_WEBHOOK_BASE="http://72.60.62.124:5678"
+N8N_WEBHOOK_BASE="https://n8n.srv987902.hstgr.cloud"
 
 # ----------------------------------------------------------------------------
 # CORES
@@ -293,7 +293,8 @@ except Exception as e:
 END
 )
     if [ -n "${EMAIL}" ]; then
-        curl -s -X POST "${N8N_WEBHOOK_BASE}/webhook/reporte-email-cpf" \
+        curl -s --connect-timeout 10 --max-time 30 \
+          -X POST "${N8N_WEBHOOK_BASE}/webhook/reporte-email-cpf" \
           -H "Content-Type: application/json" \
           -d "{\"cpf\": \"${CPF}\", \"email\": \"${EMAIL}\"}" || true
         log_db "Etapa 9b: laudo acionado para processo rejeitado (email: ${EMAIL})"
