@@ -195,14 +195,22 @@ flowchart TD
     E6 --> E7[Etapa 7\nBackup JSONs\nhistorico_processado/]
     E7 --> E8[Etapa 8\nArquivar PDFs\nRevisaDownloads_Processados/]
     E8 --> E9[Etapa 9\ncalc-precatorio-tjsp\nmain.py --cpf]
-    E9 --> OK([exit 0\nPIPELINE OK])
+    E9 --> CALC_CHK{Registros criados em\nesaj_calc_precatorio_resumo?}
+    CALC_CHK -->|Sim| WEBHOOK[POST /reporte-email-cpf\ncalc/main.py chama webhook]
+    CALC_CHK -->|Não\n'Nenhum processo pendente'| FALSO_RS[⚠️ CENÁRIO F\nlaudo NÃO enviado\northestrator seta REPORT_SENT]
+    WEBHOOK --> OK([exit 0\nPIPELINE OK])
+    FALSO_RS --> OK
 
     style ERR1 fill:#F44336,color:#fff
     style ERR2 fill:#F44336,color:#fff
     style ERR3 fill:#F44336,color:#fff
     style OK fill:#4CAF50,color:#fff
     style OCR_ERR fill:#FF9800,color:#fff
+    style FALSO_RS fill:#FF5722,color:#fff
+    style CALC_CHK fill:#FF9800,color:#fff
 ```
+
+> ⚠️ **Cenário F:** O branch `"Não"` ocorre quando todos os processos do CPF têm `rejeitado=true`. O `main.py` não cria registros em `esaj_calc_precatorio_resumo` e não chama o webhook. O orchestrator seta `REPORT_SENT` mas o laudo nunca é enviado. Ver `03_CENARIOS_E_TABELAS.md` e query Q19 em `04_QUERIES_MONITORAMENTO.md`.
 
 ---
 

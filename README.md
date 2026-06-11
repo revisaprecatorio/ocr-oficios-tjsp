@@ -1,10 +1,59 @@
-# 🏛️ Sistema OCR - Ofícios Requisitórios TJSP
+# 🏛️ ocr-oficios-tjsp — Componente OCR do Pipeline Revisa Precatório
 
-Sistema automatizado de extração de dados de Ofícios Requisitórios do TJSP a partir de PDFs nativos, com suporte a **ANEXO II** (dados bancários), **detecção de termos jurídicos**, pipeline modular em 3 etapas, interface web Streamlit, e compatibilidade total com **Windows Server 2022**.
+Este repositório contém o **componente de OCR e ingestão** do pipeline da Revisa Precatório. Ele não opera de forma independente em produção: é acionado pelo orchestrator do Windows Server após o download dos PDFs pelo crawler, e entrega os dados ao script de cálculo que, por sua vez, dispara o envio do laudo via n8n.
+
+> 📖 **Para entender o sistema completo**, leia primeiro `assessment_pipeline/01_ARQUITETURA_GERAL.md`.
 
 ---
 
-## 📌 Controle de Versões
+## �️ Contexto no Produto
+
+O pipeline completo da Revisa transforma uma mensagem de WhatsApp em um laudo de análise de precatório:
+
+```
+[Cliente WhatsApp]
+       │
+       ▼
+[n8n: Chatbot Revisa]          → consultas_esaj (AWAITING_PAYMENT)
+       │ (pagamento aprovado)
+       ▼
+[Windows Server: orchestrator_subprocess.py]
+       ├── crawler_full.py     → download PDFs do e-SAJ
+       ├── pipeline_completo.sh  ← ESTE REPOSITÓRIO
+       │     ├── processar_pipeline.py  (OCR → JSON)
+       │     ├── ingest_all_jsons.py    (JSON → PostgreSQL)
+       │     └── calc-precatorio-tjsp/main.py (cálculo)
+       └── Webhook n8n         → envio do laudo ao cliente
+```
+
+| Repositório | Função |
+|---|---|
+| `ocr-oficios-tjsp` ← **este repo** | OCR dos PDFs + ingestão no PostgreSQL |
+| `crawler_tjsp` | Download de PDFs do e-SAJ via Selenium |
+| `calc-precatorio-tjsp` | Cálculo dos valores do precatório |
+| n8n (workflows) | Chatbot, pagamento, envio do laudo |
+
+---
+
+## 📁 Estrutura de Pastas
+
+| Pasta | Uso em produção | Descrição |
+|---|---|---|
+| `1_parsing_PDF/` | ✅ Pipeline | Core OCR: detectores + LLM + schemas |
+| `2_ingestao/` | ✅ Pipeline | Scripts de ingestão PostgreSQL |
+| `pipeline_completo.sh` | ✅ Pipeline | Script bash que orquestra as 9 etapas |
+| `run_sh_wrapper.bat` | ✅ Pipeline | Wrapper Windows que chama o .sh |
+| `3_streamlit/` | ✅ Backoffice | Interface interna da equipe Revisa (não faz parte do fluxo do cliente) |
+| `scripts_vps/` | ✅ Operacional | `start_all_services.sh` / `stop_all_services.sh` |
+| `assessment_pipeline/` | 📚 Documentação | Documentação técnica end-to-end do sistema completo |
+| `4_UAT_refinamento/` | 🧪 QA | Script para organizar PDFs por categoria para validação manual |
+| `historico_arquivado/` | 📦 Arquivo | Scripts e migrações obsoletas (V2.x) |
+| `workflows_n8n/` | ⚠️ Vazio | Destinado a exportações JSON dos workflows n8n |
+| `validacao_junho_08/` | 📋 Referência | CSVs e diagnósticos de validação junho/2026 |
+
+---
+
+## � Controle de Versões
 
 ### **Versão Atual: V3.0.2** (14/12/2025)
 
@@ -341,40 +390,43 @@ ETAPA 3: Interface Web (3_streamlit/)
 
 ---
 
-## 📚 Documentação V3.0.2
+## 📚 Documentação
 
-### **Documentos Essenciais**
-- **[CHANGELOG.md](CHANGELOG.md)** - Histórico completo de versões (V1.0.0 → V3.0.2)
-- **[SCHEMA_TABELA.md](SCHEMA_TABELA.md)** - Schema PostgreSQL (35 colunas) + Queries
-- **[AGENTS.md](AGENTS.md)** - Especificações do sistema
-- **[GERENCIAMENTO_SERVICOS_VPS.md](GERENCIAMENTO_SERVICOS_VPS.md)** - Gestão VPS
+### **Sistema Completo (ponto de entrada recomendado)**
+- **[assessment_pipeline/](assessment_pipeline/)** — Arquitetura end-to-end, fluxo completo, cenários, queries e diagramas
+  - `01_ARQUITETURA_GERAL.md` — Componentes, repositórios, schemas das tabelas
+  - `02_FLUXO_COMPLETO.md` — Passo a passo de cada fase
+  - `03_CENARIOS_E_TABELAS.md` — Cenários A–F com timelines e estados finais
+  - `04_QUERIES_MONITORAMENTO.md` — 19 queries SQL prontas para monitoramento
+  - `05_DIAGRAMAS_MERMAID.md` — 7 diagramas do pipeline e workflows
 
-### **Documentação Histórica**
-- `historico_arquivado/5_revisao_termos_v2.5.2_LEGACY/` - Documentação V2.5.2
-- `2_ingestao/historico_evolucao_anteriores/4_UAT_refinamento_v2.5.1_LEGACY/` - UAT v2.5.1
-- `docs/exemplos_visuais/` - Exemplos visuais de padrões nos PDFs
+### **Este Componente (OCR)**
+- **[CHANGELOG.md](CHANGELOG.md)** — Histórico de versões V1.0.0 → V3.0.2
+- **[SCHEMA_TABELA.md](SCHEMA_TABELA.md)** — Schema PostgreSQL `esaj_detalhe_processos` (35 colunas)
+- **[AGENTS.md](AGENTS.md)** — Especificações técnicas dos detectores e stack
+- **[GERENCIAMENTO_SERVICOS_VPS.md](GERENCIAMENTO_SERVICOS_VPS.md)** — Gestão de serviços no VPS
+
+### **Histórico**
+- `historico_arquivado/` — Scripts e migrações obsoletas (V2.x)
 
 ---
 
-## 🎯 Próximos Passos (Roadmap)
+## 🔧 Pendências Conhecidas
 
-### **V3.1.0 - Melhorias de Performance** (PRÓXIMO)
-- [ ] Aumentar cobertura de testes (88% → 95%+)
-- [ ] Implementar métodos faltantes (validar_padroes, contexto_doenca_grave)
-- [ ] Otimizar detecção de CPF em casos edge
-- [ ] Adicionar validação de CPF duplicado
+### **Cenário F — CPF 100% rejeitado não recebe laudo** (pendente de deploy)
+Quando todos os processos de um CPF estão rejeitados pelo DEPRE, o `calc-precatorio-tjsp/main.py` não chama o webhook e o cliente não recebe o laudo, embora o sistema marque `REPORT_SENT`.
+- **Correção proposta:** Etapa 9b no `pipeline_completo.sh` — detectar `COUNT = 0` em `esaj_calc_precatorio_resumo` e chamar webhook diretamente
+- **Diagnóstico completo:** `validacao_junho_08/diagnostico_cpf_16914336830.md`
+- **Query de monitoramento:** Q19 em `assessment_pipeline/04_QUERIES_MONITORAMENTO.md`
 
-### **V3.2.0 - Expansão e Integração**
-- [ ] Interface web para upload de PDFs
-- [ ] API REST para integração externa
-- [ ] Sistema de notificações
-- [ ] Dashboard de analytics avançado
+### **DetectorSaldoFinal V3.0.0** (commitado, aguardando push/deploy VPS)
+- Novos padrões de regex com suporte a quebras de linha
+- Campos adicionais: `origem_saldo_final`, `origem_data_saldo_final`
+- Ver `DETECTOR_SALDO_FINAL_V2_CHANGELOG.md`
 
-### **V4.0.0 - Processamento em Larga Escala**
-- [ ] Processamento paralelo (múltiplos workers)
-- [ ] Suporte a batches de 1000+ PDFs
-- [ ] Otimização de custos com cache inteligente
-- [ ] Monitoramento e alertas automáticos
+### **Testes unitários**
+- Cobertura atual: 88% (30/34 testes passando)
+- Métodos faltantes: `validar_padroes`, `contexto_doenca_grave`
 
 ---
 
@@ -398,8 +450,8 @@ ETAPA 3: Interface Web (3_streamlit/)
 
 ---
 
-**✅ Sistema em produção V3.0.2 - Fix Crítico + UAT Modernizado!**
+**Componente OCR V3.0.2 | Schema 35 Colunas | Gemini 2.0 Flash + GPT-4o-mini fallback | Windows Server 2022**
 
-**Pipeline Completo | REGEX-first Rejeições | Schema 35 Colunas | UAT V3.0 (8 categorias) | Documentação Atualizada**
+**Backoffice Streamlit:** http://72.60.62.124:8501 | **Banco:** 72.60.62.124:5432/n8n
 
-**Windows Server 2022 + Linux + macOS | Cross-platform | Production Ready | http://72.60.62.124:8501**
+> Para dúvidas sobre o pipeline completo, consulte `assessment_pipeline/` — a documentação mais confiável e atualizada do sistema.

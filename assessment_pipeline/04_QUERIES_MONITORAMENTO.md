@@ -386,6 +386,55 @@ ORDER BY timestamp_ingestao DESC;
 
 ---
 
+## BLOCO 7 — Cenário F: Falso REPORT_SENT (100% Rejeitados)
+
+### Q19 — CPFs travados em REPORT_SENT sem laudo enviado (Cenário F)
+
+**Monitora:** Clientes cujo precatório foi 100% rejeitado pelo DEPRE. O pipeline concluiu com sucesso, `current_state` ficou em `REPORT_SENT`, mas nenhum laudo foi enviado e nenhum cálculo foi gerado. Esses clientes pagaram e não receberam nada. Exigem ação manual de envio (ver Cenário F em `03_CENARIOS_E_TABELAS.md`).
+
+```sql
+-- CPFs com REPORT_SENT há mais de 15 minutos + sem registro de calc + todos rejeitados
+SELECT
+    ce.id AS consulta_id,
+    ce.cpf,
+    ce.email,
+    ce.whatsapp_phone_number,
+    ce.state_updated_at,
+    NOW() - ce.state_updated_at AS ha_quanto_tempo,
+    COUNT(edp.numero_processo_cnj)  AS processos_extraidos,
+    COUNT(CASE WHEN edp.rejeitado = true THEN 1 END) AS processos_rejeitados,
+    COUNT(ecr.numero_processo_cnj)  AS registros_calc,
+    COUNT(pt.id)                    AS eventos_laudo_enviado
+FROM consultas_esaj ce
+-- registros OCR
+LEFT JOIN esaj_detalhe_processos edp ON edp.cpf = ce.cpf
+-- registros de cálculo
+LEFT JOIN esaj_calc_precatorio_resumo ecr ON ecr.cpf = ce.cpf
+-- eventos de laudo enviado
+LEFT JOIN process_tracking pt
+    ON pt.consulta_id = ce.id
+   AND pt.etapa = 'ENVIO_LAUDO'
+   AND pt.evento = 'LAUDO_ENVIADO'
+WHERE ce.current_state = 'REPORT_SENT'
+  AND ce.state_updated_at < NOW() - INTERVAL '15 minutes'
+GROUP BY ce.id, ce.cpf, ce.email, ce.whatsapp_phone_number, ce.state_updated_at
+HAVING
+    -- nenhum cálculo foi gerado
+    COUNT(ecr.numero_processo_cnj) = 0
+    -- nenhum laudo foi enviado
+    AND COUNT(pt.id) = 0
+    -- todos os processos extraídos são rejeitados
+    AND COUNT(edp.numero_processo_cnj) > 0
+    AND COUNT(edp.numero_processo_cnj) = COUNT(CASE WHEN edp.rejeitado = true THEN 1 END)
+ORDER BY ce.state_updated_at;
+```
+
+**Resultado esperado:** Cada linha é um cliente que pagou e não recebeu o laudo. Para cada um:
+1. Resetar `current_state` para `'OCR_COMPLETE'`
+2. Chamar `POST /reporte-email-cpf` com `{cpf, email}`
+
+---
+
 ## Tabela Resumo — Qual Query usar para cada problema
 
 | Sintoma | Query a usar |
@@ -402,6 +451,7 @@ ORDER BY timestamp_ingestao DESC;
 | "O sistema está rodando? Worker ativo?" | Q10 + Q14 |
 | "Qualidade dos dados extraídos está boa?" | Q11 |
 | "Clientes com processos rejeitados?" | Q12 |
+| "CPF pagou e não recebeu laudo por rejeição DEPRE? (Cenário F)" | Q19 |
 | "Há anomalias nos dados?" | Q13 |
 | "Worker caiu? Jobs pagos sem processar?" | Q15 |
 | "Lista de trabalho: quem precisa de ação manual?" | Q16 |

@@ -146,6 +146,81 @@ CPF esperado: 287.217.055-34. CPF(s) encontrado(s): 473.290.198-01"
 
 ---
 
+## Cenário F — Todos os Processos Rejeitados pelo DEPRE (Falso REPORT_SENT)
+
+**Definição:** Cliente tem precatórios e o OCR funciona corretamente, porém **todos** os processos foram detectados como `rejeitado = true` (ofício rejeitado pelo DEPRE). Nesse caso, o `calc-precatorio-tjsp/main.py` retorna `"Nenhum processo pendente."` e **não chama** o webhook `/reporte-email-cpf`. O laudo nunca é enviado, mas o sistema registra `REPORT_SENT` como se tivesse sido.
+
+**Exemplo real:** CPF `16914336830` (Geovane dos Santos Bazilio — 08/06/2026)
+
+Motivo de rejeição extraído do PDF:
+> *"O ofício requisitório encaminhado eletronicamente apresenta irregularidade(s) passível(eis) de REJEIÇÃO sem processamento no DEPRE, tendo em vista que, nos termos da Portaria nº 9.816/2019 e do Comunicado Conjunto nº 1.212/2018, o Instituto de Previdência e/ou Assistência Médica indicado no Anexo II não corresponde ao Devedor(a) constante do presente precatório."*
+
+### Timeline de eventos
+
+| Ordem | Tabela | Coluna/Evento | Valor |
+|---|---|---|---|
+| 1–6 | (igual ao cenário A) | — | — |
+| 7 | `consultas_esaj` | `current_state` | `PROCESSING` |
+| 8 | `logs` | `descricao` | `"⚠️ V3.0.2: OFÍCIO REJEITADO detectado na página N"` \| OCR |
+| 9 | `esaj_detalhe_processos` | `rejeitado` | `true` + `motivo_rejeicao` populado |
+| 10 | `logs` | `descricao` | `"Etapa 9: iniciando cálculo final"` \| PIPELINE |
+| 11 | `logs` | `descricao` | **`"Nenhum processo pendente."`** \| calculo ← ponto de falha |
+| 12 | `logs` | `descricao` | `"Etapa 9: cálculo final executado"` / `"Pipeline finalizado com sucesso"` \| PIPELINE |
+| 13 | `consultas_esaj` | `current_state` | `REPORT_SENT` ← **FALSO POSITIVO** (orchestrator) |
+| ~~14~~ | ~~`process_tracking`~~ | ~~`ENVIO_LAUDO / LAUDO_ENVIADO`~~ | **❌ NUNCA OCORRE** |
+| ~~15~~ | ~~`consultas_esaj`~~ | ~~`current_state = FINAL_REPORT_SENT`~~ | **❌ NUNCA OCORRE** |
+
+**Estado final das tabelas:**
+- `consultas_esaj.current_state = 'REPORT_SENT'` ← travado neste estado transitório para sempre
+- `esaj_detalhe_processos`: 1 registro com `rejeitado = true` e `motivo_rejeicao` populado
+- `esaj_calc_precatorio_resumo`: **nenhum registro para o CPF** ← raiz do problema
+- `process_tracking`: sem `ENVIO_LAUDO` — nenhum laudo foi enviado
+- `logs`: nenhuma entrada de erro; pipeline aparece como "sucesso"
+
+### Por que o laudo não é enviado
+
+```
+1. OCR detecta rejeitado=true → grava em esaj_detalhe_processos
+2. calc/main.py: filtra processos com rejeitado=true → nada a calcular
+3. calc/main.py: retorna sem chamar o webhook /reporte-email-cpf
+4. Workflow "Laudo envio email+cpf": NUNCA É ACIONADO
+5. orchestrator: seta REPORT_SENT ao detectar pipeline_exit=0
+6. Cliente: não recebe NADA
+```
+
+> ⚠️ **Importante:** O workflow `"Laudo envio email+cpf"` JÁ trata processos rejeitados corretamente — o SQL `Check Processamento Completo` considera `rejeitado=true` como `'Processado'` e o HTML exibe o bloco ❌ com o motivo. O problema é apenas que o webhook nunca é chamado.
+
+### Como identificar este cenário
+
+1. `consultas_esaj.current_state = 'REPORT_SENT'` há mais de 10 minutos (nunca evoluiu para `FINAL_REPORT_SENT` ou `PARTIAL_REPORT_SENT`)
+2. `esaj_detalhe_processos`: todos os registros do CPF têm `rejeitado = true`
+3. `esaj_calc_precatorio_resumo`: **zero registros** para o CPF
+4. `process_tracking`: **zero eventos** `ENVIO_LAUDO / LAUDO_ENVIADO`
+5. `logs`: presença de `"Nenhum processo pendente."` com `processo='calculo'`
+
+### Ação corretiva imediata (manual)
+
+```sql
+-- Passo 1: resetar o estado para que o workflow consiga encontrar a consulta
+UPDATE consultas_esaj
+SET current_state = 'OCR_COMPLETE', state_updated_at = NOW()
+WHERE cpf = '16914336830'  -- substituir pelo CPF
+  AND current_state = 'REPORT_SENT';
+```
+
+```bash
+# Passo 2: chamar o webhook manualmente (VPS)
+curl -X POST http://localhost:5678/webhook/reporte-email-cpf \
+  -H "Content-Type: application/json" \
+  -d '{"cpf":"16914336830","email":"email-do-cliente@dominio.com"}'
+```
+
+### Correção permanente (pendente de deploy)
+
+Adicionar **Etapa 9b** no `pipeline_completo.sh`: após o cálculo, verificar se `esaj_calc_precatorio_resumo` gerou registros para o CPF. Se `COUNT = 0`, buscar o email em `consultas_esaj` e chamar o webhook diretamente. Ver detalhes em `validacao_junho_08/diagnostico_cpf_16914336830.md`.
+
+---
+
 ## Cenário E — Cliente Sem Processos (NO_VALID_PROCESS)
 
 **Causa:** A consulta ao e-SAJ retornou processos, mas nenhum deles é da classe "Precatório".
@@ -159,15 +234,18 @@ CPF esperado: 287.217.055-34. CPF(s) encontrado(s): 473.290.198-01"
 
 ## Resumo Comparativo — Estado Final por Cenário
 
-| Cenário | `current_state` final | `OCR_ERRO` em pt | `LAUDO_*` em pt | Registros em `esaj_detalhe` |
-|---|---|---|---|---|
-| **A — Sucesso** | `FINAL_REPORT_SENT` | ❌ | `LAUDO_ENVIADO` | Todos os processos |
-| **B — PDF antigo (parcial)** | `PARTIAL_REPORT_SENT` | ✅ (por PDF antigo) | `LAUDO_PARCIAL` + `PARCIAL_INFORMADO` | Só processos modernos |
-| **C1 — CPF não encontrado** | `ALERTA_MANUAL_SENT` ou `PARTIAL_REPORT_SENT` | ✅ | Depende | Processos onde CPF foi achado |
-| **C2 — ANEXO II de outro CPF** | `ALERTA_MANUAL_SENT` ou `PARTIAL_REPORT_SENT` | ✅ | `LAUDO_PARCIAL` | Processos onde CPF foi achado |
-| **C3 — Falha total OCR** | `PIPELINE_ERROR` | ✅ (múltiplos) | ❌ | Nenhum |
-| **D1 — Auth error** | `AUTH_ERROR` | ❌ | ❌ | Nenhum |
-| **D2 — Download falhou** | `DOWNLOAD_FAILED` | ❌ | ❌ | Nenhum |
-| **E — Sem precatórios** | `NO_VALID_PROCESS` | ❌ | ❌ | Nenhum |
+| Cenário | `current_state` final | `OCR_ERRO` em pt | `LAUDO_*` em pt | Registros em `esaj_detalhe` | Registros em `esaj_calc` |
+|---|---|---|---|---|---|
+| **A — Sucesso** | `FINAL_REPORT_SENT` | ❌ | `LAUDO_ENVIADO` | Todos os processos | ✅ 1+ registros |
+| **B — PDF antigo (parcial)** | `PARTIAL_REPORT_SENT` | ✅ (por PDF antigo) | `LAUDO_PARCIAL` + `PARCIAL_INFORMADO` | Só processos modernos | ✅ processos modernos |
+| **C1 — CPF não encontrado** | `ALERTA_MANUAL_SENT` ou `PARTIAL_REPORT_SENT` | ✅ | Depende | Processos onde CPF foi achado | Depende |
+| **C2 — ANEXO II de outro CPF** | `ALERTA_MANUAL_SENT` ou `PARTIAL_REPORT_SENT` | ✅ | `LAUDO_PARCIAL` | Processos onde CPF foi achado | Depende |
+| **C3 — Falha total OCR** | `PIPELINE_ERROR` | ✅ (múltiplos) | ❌ | Nenhum | ❌ nenhum |
+| **D1 — Auth error** | `AUTH_ERROR` | ❌ | ❌ | Nenhum | ❌ nenhum |
+| **D2 — Download falhou** | `DOWNLOAD_FAILED` | ❌ | ❌ | Nenhum | ❌ nenhum |
+| **E — Sem precatórios** | `NO_VALID_PROCESS` | ❌ | ❌ | Nenhum | ❌ nenhum |
+| **F — 100% rejeitados** | `REPORT_SENT` ⚠️ **TRAVADO** | ❌ | ❌ **LAUDO NÃO ENVIADO** | ✅ com `rejeitado=true` | ❌ nenhum ← raiz |
 
 > `MANUAL_PROCESS` é transitório: após o `Alerta_Reporte_Manual` disparar (a cada 10 min), transiciona para `ALERTA_MANUAL_SENT`. Para casos mistos (parcial), o Laudo workflow seta `PARTIAL_REPORT_SENT`.
+
+> `REPORT_SENT` normalmente é transitório (orchestrator → substituído pelo Laudo workflow). No **Cenário F**, o Laudo workflow nunca é chamado, então o estado fica travado em `REPORT_SENT` indefinidamente. Use Q19 para detectar esses casos.

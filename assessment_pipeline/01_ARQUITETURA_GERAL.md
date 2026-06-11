@@ -125,7 +125,43 @@ Registro de eventos estruturados por consulta/cliente, com metadados em JSON.
 
 ### `esaj_detalhe_processos` — Dados Extraídos dos PDFs
 
-35 colunas com os dados estruturados de cada processo após OCR + ingestão. Alimentada pela Etapa 4 da pipeline.
+35 colunas com os dados estruturados de cada processo após OCR + ingestão. Alimentada pela Etapa 4 da pipeline. Ver `SCHEMA_TABELA.md` para o schema completo.
+
+**Campos-chave para monitoramento:**
+- `rejeitado` (BOOLEAN) — ofício rejeitado pelo DEPRE
+- `motivo_rejeicao` (TEXT) — motivo completo extraído do PDF
+- `anomalia` (BOOLEAN) — inconsistência detectada no OCR
+- `numero_ordem` (VARCHAR) — número de ordem do ofício (vazio = sem aceite DEPRE)
+
+### `esaj_calc_precatorio_resumo` — Resultado do Cálculo
+
+Alimentada pelo script `calc-precatorio-tjsp/main.py` após OCR. **A existência de um registro nesta tabela para um dado CPF é o que dispara o envio do laudo.** Se esta tabela não tiver registros para um CPF, o laudo nunca será enviado.
+
+| Coluna | Tipo | Descrição |
+|---|---|---|
+| `cpf` | VARCHAR | CPF do credor |
+| `numero_processo_cnj` | VARCHAR | Número do processo CNJ |
+| `total_corrigido` | NUMERIC | Valor total atualizado com correção monetária |
+| *(demais colunas)* | *—* | *Schema completo no repositório `calc-precatorio-tjsp`* |
+
+> ⚠️ **Atenção — Cenário F:** Quando todos os processos de um CPF estão `rejeitado = true`, o `main.py` retorna `"Nenhum processo pendente."` e **não insere registros** nesta tabela. Consequentemente, o webhook `/reporte-email-cpf` nunca é chamado e o cliente não recebe o laudo. Ver detalhes em `03_CENARIOS_E_TABELAS.md` — Cenário F.
+
+### `vw_precatorios_full` — View de Consolidação
+
+View do PostgreSQL que faz `LEFT JOIN` entre `esaj_detalhe_processos` (dados OCR) e `esaj_calc_precatorio_resumo` (dados de cálculo). É consultada pelo workflow `"Laudo envio email+cpf"` para construir o HTML do laudo.
+
+```
+Colunas relevantes retornadas pela view:
+  (de esaj_detalhe_processos)
+  cpf, numero_processo_cnj, credor_nome, vara, banco, agencia, conta,
+  valor_total_requisitado, saldo_final, rejeitado, motivo_rejeicao,
+  idoso, doenca_grave, pcd, preferencial, habilitacao_herdeiros,
+  obito, data_obito, cpf_sucessor, numero_ordem, data_nascimento
+  (de esaj_calc_precatorio_resumo)
+  total_corrigido
+
+Usa LEFT JOIN: retorna processos mesmo sem cálculo (total_corrigido = NULL).
+```
 
 ---
 

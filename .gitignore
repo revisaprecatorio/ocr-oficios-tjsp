@@ -33,6 +33,7 @@ env/
 !.env.example
 !**/.env.example
 config_db.env
+github_credentials.env
 
 # API Keys (sensitive)
 gemini_api_key.txt
@@ -105,12 +106,17 @@ output_*
 .qoder/rules/byterover-rules.md
 .augment/rules/byterover-rules.mddata_consultas.tar.gz
 *.tar.gz
-1_parsing_PDF/outputs/lote_*.csv
+1_parsing_PDF/outputs/
+1_parsing_PDF/test_*.py
 deploy/
 
 # Exclude large PDF test files
+PDFs/
 4_UAT_refinamento/**/*.pdf
 5_revisao_termos/04_amostras_pdf/**/*.pdf
+
+# Dados de validação com PII (nunca commitar CSVs com dados de clientes)
+validacao_junho_08/csv/
 
 # Test outputs and process logs
 1_parsing_PDF/processo_log*.txt
