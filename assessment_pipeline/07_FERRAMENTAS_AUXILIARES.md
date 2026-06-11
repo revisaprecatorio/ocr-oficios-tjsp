@@ -15,122 +15,57 @@ Estas ferramentas **não fazem parte do pipeline principal** de processamento de
 
 ## 1. Streamlit Backoffice
 
-**Pasta:** `3_streamlit/`  
-**Versão atual:** 3.0  
-**Status:** Produção (uso local / acesso interno)
+**Repositório:** [`revisaprecatorio/6.UI_backoffice`](https://github.com/revisaprecatorio/6.UI_backoffice)  
+**Versão atual:** V3.0.0 (Dez/2025)  
+**Produção:** `http://srv987902.hstgr.cloud:8502` | `https://revisaprecatorio.com.br/backoffice`
 
 ### O que é
 
-Interface web em Python/Streamlit para consulta, filtragem e análise dos dados extraídos pelo pipeline OCR. Conecta diretamente ao PostgreSQL (`esaj_detalhe_processos`) e exibe os registros em tabela interativa com filtros avançados, estatísticas e gráficos.
+Interface web de backoffice para monitoramento e gestão dos processos de precatórios. Exibe dados consolidados da view `vw_backoffice_processos` (join de 3 tabelas: `consultas_esaj`, `esaj_detalhe_processos`, `esaj_calc_precatorio_resumo`).
 
-**Não faz parte do pipeline de produção** — é uma ferramenta de backoffice para que a equipe possa inspecionar os dados sem necessidade de queries SQL.
+**Não faz parte do pipeline de produção** — é uma ferramenta interna para que a equipe possa monitorar o status de cada CPF, verificar cálculos e identificar casos que requerem atenção, sem necessidade de queries SQL.
 
-### Estrutura da pasta
-
-```
-3_streamlit/
-├── app/
-│   └── streamlit_app.py        # Aplicação principal (~500 linhas)
-├── Dockerfile                  # Build da imagem Docker
-├── docker-compose.yml          # Orquestração (porta 8501)
-├── requirements.txt            # streamlit, pandas, psycopg2-binary, python-dotenv
-├── .env.example                # Template de variáveis de ambiente
-├── run.sh                      # Script de execução local
-├── run_local.sh                # Execução sem Docker
-├── deploy.sh                   # Deploy em servidor
-├── deploy_update.sh            # Atualização sem downtime
-├── PROCEDIMENTO_REDEPLOY.md    # Guia passo a passo de redeploy
-└── test_connection.py          # Teste de conexão com o banco
-```
-
-### Como executar localmente
-
-```bash
-# 1. Ativar venv (raiz do projeto)
-source .venv/bin/activate
-
-# 2. Instalar dependências (se necessário)
-pip install streamlit pandas psycopg2-binary python-dotenv
-
-# 3. Configurar banco (já deve estar no .env da raiz)
-# DB_HOST=72.60.62.124 | DB_PORT=5432 | DB_NAME=n8n | DB_USER=admin
-
-# 4. Executar
-cd 3_streamlit
-streamlit run app/streamlit_app.py --server.port=8501
-
-# 5. Acessar
-# http://localhost:8501
-```
-
-### Como executar via Docker
-
-```bash
-cd 3_streamlit
-docker compose up -d
-# Acesse: http://localhost:8501
-
-# Atualizar após mudanças no código
-./deploy_update.sh
-```
+> **Nota histórica:** Uma versão anterior mais simples (`3_streamlit/`) existia neste repositório, lendo apenas `esaj_detalhe_processos`. Foi removida em Jun/2026 após o `6.UI_backoffice` tornar-se a versão canônica com funcionalidades superiores.
 
 ### Funcionalidades
 
-**Sidebar (filtros):**
-- CPF (apenas números)
-- Número do processo CNJ
-- Vara (selectbox com todas as varas)
-- Status: Todos / Apenas Rejeitados / Apenas Aprovados
-- Preferências: Idoso / Doença Grave / PCD (selectbox)
-- Valores (min/max)
-- Datas (início/fim)
+**Tabs disponíveis:**
 
-**Área principal:**
-
-| Seção | Conteúdo |
+| Tab | Conteúdo |
 |---|---|
-| **Cards de estatísticas** | Total de processos, rejeitados, valor total, idosos |
-| **Gráficos** | Distribuição por status (pizza), Top 5 Varas (barras) |
-| **Tabela interativa** | Todos os 35 campos, ordenável, exportável |
-| **Visualização de PDF** | Abre PDF inline (se `caminho_pdf` configurado) |
-| **Export CSV** | Download dos dados filtrados |
+| **📋 Pipeline** | Visão geral por estado do processo (`current_state`) |
+| **💰 Cálculos** | Valores atualizados: `total_corrigido`, `valorizacao_percentual` |
+| **⚠️ Atenção** | Processos rejeitados, anomalias, óbito sem herdeiros |
+| **👴 Preferenciais** | Idosos, doença grave, PCD |
+| **📄 Detalhes** | Visualização completa + download PDF |
 
-### Arquitetura de dados
+**Filtros sidebar:** Estado do pipeline, Status (rejeitado/anomalia/óbito), Preferências, Busca por CPF/Nome/Processo
 
-```python
-@st.cache_data(ttl=300)  # Cache de 5 minutos
-def carregar_todos_dados():
-    # Carrega TODOS os dados de esaj_detalhe_processos de uma vez
-    # Todos os filtros são aplicados em memória (DataFrame pandas)
-    # Sem queries adicionais ao banco
+### View consumida
+
+```sql
+-- vw_backoffice_processos consolida:
+SELECT
+    ce.current_state, ce.whatsapp_from, ce.email,
+    edp.*,              -- todos os 35 campos OCR
+    ecr.principal_final, ecr.juros_mora_final_corrigido,
+    ecr.total_corrigido, ecr.valorizacao_percentual
+FROM consultas_esaj ce
+JOIN esaj_detalhe_processos edp ON edp.cpf = ce.cpf
+LEFT JOIN esaj_calc_precatorio_resumo ecr ON ecr.cpf = edp.cpf
+    AND ecr.numero_processo_cnj = edp.numero_processo_cnj;
 ```
 
-**Performance:**
-- Carregamento inicial: ~2-3 s
-- Filtros: <100 ms (memória)
-- Cache expira: a cada 5 min
-
-### Tabela consultada
-
-`esaj_detalhe_processos` — 35 colunas, conexão direta ao PostgreSQL externo.
-
-Para o schema completo, ver `SCHEMA_TABELA.md` na raiz do projeto.
-
-### Deploy em servidor
-
-O `PROCEDIMENTO_REDEPLOY.md` contém o passo a passo completo. Resumo:
+### Deploy (na VPS)
 
 ```bash
-# Na máquina servidora
-git pull origin main
-cd 3_streamlit
-docker compose down
-docker compose build --no-cache
-docker compose up -d
-docker compose logs -f  # verificar se subiu
+cd ~/6.UI_backoffice
+./deploy.sh
 ```
 
-### Variáveis de ambiente necessárias
+O script faz automaticamente: `git pull` → `docker stop` → `docker build --no-cache` → `docker up -d` → health check.
+
+### Variáveis de ambiente
 
 ```bash
 DB_HOST=72.60.62.124
@@ -138,9 +73,11 @@ DB_PORT=5432
 DB_NAME=n8n
 DB_USER=admin
 DB_PASSWORD=<senha>
+PDF_DIR=/data/consultas
+STREAMLIT_PORT=8502
 ```
 
-> Usar `.env.example` como template. O arquivo `.env` não é commitado (`.gitignore`).
+Para documentação completa, deploy manual e troubleshooting, ver o README do repositório [`6.UI_backoffice`](https://github.com/revisaprecatorio/6.UI_backoffice).
 
 ---
 
