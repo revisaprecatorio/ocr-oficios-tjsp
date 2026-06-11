@@ -44,6 +44,8 @@ DB_PASS="BetaAgent2024SecureDB"
 CALC_PROJECT="C:/Users/Administrator/Documents/revisa/calc-precatorio-tjsp"
 CALC_SCRIPT="${CALC_PROJECT}/main.py"
 
+N8N_WEBHOOK_BASE="http://72.60.62.124:5678"
+
 # ----------------------------------------------------------------------------
 # CORES
 # ----------------------------------------------------------------------------
@@ -245,6 +247,60 @@ fi
 "${VENV_PYTHON}" -X utf8 "$CALC_SCRIPT" --cpf "${CPF}"
 
 log_db "Etapa 9: cálculo final executado"
+
+# ============================================================================
+# ETAPA 9b — LAUDO DIRETO para processos 100% rejeitados (sem cálculo)
+# Se o calc não gerou nenhum registro (todos rejeitados), aciona o
+# webhook de laudo diretamente para que o cliente receba o email.
+# ============================================================================
+CALC_COUNT=$("${VENV_PYTHON}" -X utf8 - <<END
+import psycopg2, sys
+try:
+    conn = psycopg2.connect(
+        host='${DB_HOST}', port='${DB_PORT}',
+        dbname='${DB_NAME}', user='${DB_USER}', password='${DB_PASS}'
+    )
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(*) FROM esaj_calc_precatorio_resumo WHERE cpf = %s", ('${CPF}',))
+    print(cur.fetchone()[0])
+    conn.close()
+except Exception as e:
+    print(0, file=sys.stderr)
+    print(0)
+END
+)
+
+if [ "${CALC_COUNT}" -eq 0 ]; then
+    log_db "Etapa 9b: nenhum cálculo gerado (processos rejeitados) — buscando email para laudo direto"
+    EMAIL=$("${VENV_PYTHON}" -X utf8 - <<END
+import psycopg2, sys
+try:
+    conn = psycopg2.connect(
+        host='${DB_HOST}', port='${DB_PORT}',
+        dbname='${DB_NAME}', user='${DB_USER}', password='${DB_PASS}'
+    )
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT email FROM consultas_esaj
+        WHERE cpf = %s AND email IS NOT NULL AND email != ''
+        ORDER BY created_at DESC LIMIT 1
+    """, ('${CPF}',))
+    row = cur.fetchone()
+    print(row[0] if row else '')
+    conn.close()
+except Exception as e:
+    print('')
+END
+)
+    if [ -n "${EMAIL}" ]; then
+        curl -s -X POST "${N8N_WEBHOOK_BASE}/webhook/reporte-email-cpf" \
+          -H "Content-Type: application/json" \
+          -d "{\"cpf\": \"${CPF}\", \"email\": \"${EMAIL}\"}" || true
+        log_db "Etapa 9b: laudo acionado para processo rejeitado (email: ${EMAIL})"
+    else
+        log_db "Etapa 9b: nenhum email encontrado para CPF ${CPF} — laudo não acionado"
+    fi
+fi
 
 # ============================================================================
 # FIM
