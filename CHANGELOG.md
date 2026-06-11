@@ -4,6 +4,31 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 
 ---
 
+## [3.0.3] - 2026-06-11
+
+### 🐛 FIX CRÍTICO: Laudo não enviado para processos 100% rejeitados
+
+**Problema (detectado em 08/06/2026 — CPF 16914336830):**
+- Clientes cujo único processo estava marcado como `rejeitado = true` não recebiam laudo nem mensagem
+- `calc-precatorio-tjsp/main.py` filtrava processos pendentes e retornava "Nenhum processo pendente" para rejeitados
+- Sem registro em `esaj_calc_precatorio_resumo`, o trigger do workflow "Laudo envio email+cpf" nunca disparava
+- O crawler setava `REPORT_SENT` mesmo sem laudo enviado (falso positivo)
+
+**Solução — `pipeline_completo.sh` Etapa 9b:**
+- Após Etapa 9 (cálculo), verifica se `COUNT(*) = 0` em `esaj_calc_precatorio_resumo` para o CPF
+- Se zero: busca email em `consultas_esaj` e aciona `POST /webhook/reporte-email-cpf` diretamente
+- O workflow n8n já tratava rejeitados corretamente (bloco HTML ❌ + `COALESCE(rejeitado)=true → Processado`)
+- Nenhuma alteração necessária no n8n, calc ou OCR
+
+**Arquivos modificados:**
+- `pipeline_completo.sh` — +`N8N_WEBHOOK_BASE`, +Etapa 9b (~56 linhas)
+
+**Limpeza de banco:**
+- Removidas tabelas órfãs: `relatorios_enviados`, `vw_relatorios_resumo`, `lista_processos` (já inexistente)
+- 6 CPFs com erro reprocessados com sucesso após limpeza e correção
+
+---
+
 ## [3.0.2] - 2025-12-14
 
 ### 🧹 MODERNIZAÇÃO: UAT V3.0 (User Acceptance Testing)
