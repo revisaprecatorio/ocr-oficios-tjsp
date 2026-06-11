@@ -1,192 +1,111 @@
-# 📥 Fase 2: Ingestão PostgreSQL
+# Fase 2: Ingestão PostgreSQL
 
-Pipeline de ingestão dos JSONs processados para PostgreSQL.
+**Versão:** V3.0 | **Atualizado:** 13/12/2025  
+**Etapa:** 2 de 2 do pipeline OCR (JSONs → PostgreSQL)
 
----
+Recebe os JSONs gerados pela Etapa 1 (`1_parsing_PDF/outputs/json/`) e insere/atualiza os registros na tabela `esaj_detalhe_processos` via upsert.
 
-## 🎯 Objetivo
-
-Ingerir todos os dados extraídos dos PDFs (JSONs) no PostgreSQL com validação e controle de qualidade.
-
-**Nota:** A interface Streamlit foi movida para o módulo `3_streamlit/`
+Chamado automaticamente pelo `pipeline_completo.sh` — pode também ser executado manualmente.
 
 ---
 
-## 📊 Estrutura da Tabela
-
-**Tabela:** `esaj_detalhe_processos`
-
-**Chave Primária:** `(cpf, numero_processo_cnj)` - UNIQUE constraint
-
-**Total de Campos:** 48 (47 do schema + 1 novo)
-
-### **Novo Campo Adicionado**
-- `process_diagnostico` (BOOLEAN DEFAULT FALSE) - Flag para controle de processamento/diagnóstico
-
----
-
-## 📦 Estrutura de Arquivos
+## Estrutura de Arquivos
 
 ```
 2_ingestao/
-├── README.md                          # Este arquivo
-├── requirements.txt                   # Dependências Python
-├── .env                              # Credenciais PostgreSQL
-├── sql/
-│   ├── 01_create_table.sql           # DDL da tabela
-│   ├── 02_create_indexes.sql         # Índices
-│   └── 03_test_queries.sql           # Queries de validação
 ├── scripts/
-│   ├── create_table.py               # Criação de tabela (alternativa ao psql)
-│   ├── ingest_all_jsons.py           # Script otimizado de ingestão
-│   ├── check_missing.py              # Verificar registros faltantes
-│   ├── validate_data.py              # Validação e estatísticas
-│   └── test_connection.py            # Teste de conexão
-└── logs/
-    └── ingestao.log                  # Logs de processamento
+│   ├── ingest_all_jsons.py           # Script principal de ingestão (V7 — produção)
+│   ├── ingest_v3_0.py                # Versão V3.0 alternativa
+│   ├── ingest_all_jsons_1301_550.py  # Variante de lote parcial (uso pontual)
+│   ├── recalcular_idoso.py           # Recalcula tag idoso pós-ingestão
+│   ├── recriar_tabela_v3.py          # Recria tabela via Python (alternativa ao psql)
+│   └── test_connection.py            # Teste de conexão com o banco
+├── sql/
+│   ├── 01_create_table.sql           # DDL — esaj_detalhe_processos V3.0 (35 colunas)
+│   ├── 02_create_indexes.sql         # Índices de performance
+│   ├── 03_test_queries.sql           # Queries de validação pós-ingestão
+│   ├── 04_view_precatorios_full.sql  # View vw_precatorios_full (OCR + calc)
+│   └── 05_migrate_to_v3_0.sql        # Migration V2.7.6 → V3.0
+├── historico_evolucao_anteriores/    # Scripts V2.x arquivados
+├── requirements.txt                  # psycopg2-binary, tqdm, python-dotenv
+└── .env.example                      # Template de variáveis de ambiente
 ```
-
-**Interface Streamlit:** Veja o módulo `3_streamlit/`
 
 ---
 
-## 🚀 Como Usar
+## Tabela `esaj_detalhe_processos`
 
-### **1. Configurar Ambiente**
+**Schema:** V3.0 (35 colunas) | **Chave única:** `(cpf, numero_processo_cnj)`
+
+Ver DDL completo em `sql/01_create_table.sql`. Schema documentado em `assessment_pipeline/01_ARQUITETURA_GERAL.md`.
+
+---
+
+## Como usar
+
+### 1. Configurar `.env`
 
 ```bash
-cd 2_ingestao
-pip install -r requirements.txt
+cp .env.example .env
+# Preencher DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD
 ```
 
-### **2. Configurar .env**
-
-```bash
-DB_HOST=72.60.62.124
-DB_PORT=5432
-DB_NAME=n8n
-DB_USER=admin
-DB_PASSWORD=BetaAgent2024SecureDB
-```
-
-### **3. Criar Tabela**
+### 2. Criar tabela (primeira vez)
 
 ```bash
 python scripts/test_connection.py
-psql -h 72.60.62.124 -p 5432 -U admin -d n8n -f sql/01_create_table.sql
-psql -h 72.60.62.124 -p 5432 -U admin -d n8n -f sql/02_create_indexes.sql
+psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME -f sql/01_create_table.sql
+psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME -f sql/02_create_indexes.sql
 ```
 
-### **4. Ingerir Dados**
+### 3. Ingerir JSONs
 
 ```bash
-# Ingerir todos os JSONs da pasta json/
-python scripts/ingest_all_jsons.py
+# Via pipeline completo (recomendado)
+cd ..
+./pipeline_completo.sh
+
+# Ou manualmente
+python scripts/ingest_all_jsons.py --input ../1_parsing_PDF/outputs/json
 ```
 
-### **5. Validar**
+### 4. Recalcular tag idoso (pós-ingestão)
 
 ```bash
-# Opção 1: Script Python (recomendado)
-python scripts/validate_data.py
-
-# Opção 2: psql
-psql -h 72.60.62.124 -p 5432 -U admin -d n8n -f sql/03_test_queries.sql
+python scripts/recalcular_idoso.py
 ```
 
-### **6. Verificar Registros Faltantes**
-
-```bash
-python scripts/check_missing.py
-```
-
-### **7. Interface Streamlit**
-
-```bash
-# Ver módulo 3_streamlit/
-cd ../3_streamlit
-./run.sh
-```
-
----
-
-## 📋 Funcionalidades
-
-### **Script de Ingestão (`ingest_all_jsons.py`)**
-- ✅ Leitura de todos os JSONs da pasta `json/`
-- ✅ Validação de dados
-- ✅ Upsert (ON CONFLICT DO UPDATE)
-- ✅ Barra de progresso (tqdm)
-- ✅ Estatísticas de processamento
-- ✅ 100% de taxa de sucesso
-
-### **Script de Validação (`validate_data.py`)**
-- ✅ Estatísticas gerais
-- ✅ Distribuição por status
-- ✅ Top CPFs com mais processos
-- ✅ Valores financeiros
-- ✅ Preferências (idoso, doença grave, PCD)
-- ✅ Processos pendentes de diagnóstico
-
-### **Script de Verificação (`check_missing.py`)**
-- ✅ Compara JSONs vs registros no banco
-- ✅ Identifica registros faltantes
-- ✅ Detecta inconsistências
-
----
-
-## 📊 Índices Criados
-
-- `idx_cpf` - Busca por CPF
-- `idx_rejeitado` - Filtro por status
-- `idx_cpf_rejeitado` - Filtro combinado
-- `idx_vara` - Busca por vara
-- `idx_idoso`, `idx_doenca_grave`, `idx_pcd` - Preferências
-- `idx_data_ajuizamento` - Ordenação por data
-
----
-
-## 🔍 Queries Úteis
+### 5. Validar
 
 ```sql
--- Total de processos
-SELECT COUNT(*) FROM esaj_detalhe_processos;
+-- Via psql
+\i sql/03_test_queries.sql
 
--- Processos por CPF
-SELECT cpf, COUNT(*) FROM esaj_detalhe_processos GROUP BY cpf;
-
--- Ofícios rejeitados
-SELECT COUNT(*) FROM esaj_detalhe_processos WHERE rejeitado = true;
-
--- Valor total requisitado
-SELECT SUM(valor_total_requisitado) FROM esaj_detalhe_processos;
-
--- Processos com diagnóstico pendente
-SELECT COUNT(*) FROM esaj_detalhe_processos WHERE process_diagnostico = false;
+-- Verificação rápida
+SELECT COUNT(*), SUM(CASE WHEN rejeitado THEN 1 ELSE 0 END) AS rejeitados
+FROM esaj_detalhe_processos;
 ```
 
 ---
 
-## 📈 Estatísticas Esperadas
+## Scripts
 
-- **Total de JSONs:** ~50
-- **Tempo de ingestão:** ~1-2min
-- **Taxa de sucesso esperada:** 100%
-
----
-
-## 🛠️ Tecnologias
-
-- **PostgreSQL 14+**
-- **Python 3.11+**
-- **Pydantic 2.5+**
-- **Streamlit 1.28+**
-- **psycopg2-binary**
-- **pandas, plotly**
+| Script | Função |
+|---|---|
+| `ingest_all_jsons.py` | Produção: lê JSONs, normaliza, upsert com COALESCE (protege dados existentes) |
+| `ingest_v3_0.py` | Versão V3.0 com campos `origem_saldo_final` / `origem_data_saldo_final` |
+| `recalcular_idoso.py` | Recalcula `idoso = TRUE` para credores com `data_nascimento` indicando idade ≥ 60 |
+| `recriar_tabela_v3.py` | DROP + CREATE da tabela via Python (use só em ambiente de dev/reset) |
+| `test_connection.py` | Testa conectividade com o banco e exibe versão do PostgreSQL |
 
 ---
 
-**Status:** ✅ Produção  
-**Versão:** 2.0.0  
-**Data:** 14/10/2025  
-**Interface:** Veja `../3_streamlit/`
+## SQL
+
+| Arquivo | Conteúdo |
+|---|---|
+| `01_create_table.sql` | DDL V3.0 — 35 colunas, constraints, comments |
+| `02_create_indexes.sql` | Índices em `cpf`, `rejeitado`, `vara`, `idoso`, `doenca_grave`, `pcd` |
+| `03_test_queries.sql` | Queries de validação pós-ingestão (totais, distribuições, anomalias) |
+| `04_view_precatorios_full.sql` | `vw_precatorios_full`: join OCR + `esaj_calc_precatorio_resumo` |
+| `05_migrate_to_v3_0.sql` | Migration incremental V2.7.6 → V3.0 (DROP colunas obsoletas) |
