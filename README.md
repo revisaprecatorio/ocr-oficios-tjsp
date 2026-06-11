@@ -43,12 +43,10 @@ O pipeline completo da Revisa transforma uma mensagem de WhatsApp em um laudo de
 | `2_ingestao/` | ✅ Pipeline | Scripts de ingestão PostgreSQL |
 | `pipeline_completo.sh` | ✅ Pipeline | Script bash que orquestra as 9 etapas |
 | `run_sh_wrapper.bat` | ✅ Pipeline | Wrapper Windows que chama o .sh |
-| `3_streamlit/` | ✅ Backoffice | Interface interna da equipe Revisa (não faz parte do fluxo do cliente) |
 | `scripts_vps/` | ✅ Operacional | `start_all_services.sh` / `stop_all_services.sh` |
 | `assessment_pipeline/` | 📚 Documentação | Documentação técnica end-to-end do sistema completo |
-| `4_UAT_refinamento/` | 🧪 QA | Script para organizar PDFs por categoria para validação manual |
+| `workflows_n8n/` | 📚 Documentação | 7 workflows n8n exportados em JSON (Chatbot, MP, Laudo, Alertas) |
 | `historico_arquivado/` | 📦 Arquivo | Scripts e migrações obsoletas (V2.x) |
-| `workflows_n8n/` | ⚠️ Vazio | Destinado a exportações JSON dos workflows n8n |
 | `validacao_junho_08/` | 📋 Referência | CSVs e diagnósticos de validação junho/2026 |
 
 ---
