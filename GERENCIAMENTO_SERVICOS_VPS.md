@@ -28,7 +28,7 @@ Este comando sobe **todos** os serviços definidos no `docker-compose.yml`:
 - ✅ n8n (automação)
 
 **Outros serviços independentes:**
-- Streamlit (em `/root/ocr-oficios-tjsp/3_streamlit`)
+- Backoffice Streamlit (em `/root/6.UI_backoffice` — porta 8502)
 - OCR API (em `/root/ocr-oficios-tjsp`)
 - PostgreSQL (em `/root/ocr-oficios-tjsp`)
 
@@ -104,40 +104,38 @@ curl -I http://localhost:5678
 
 ---
 
-### **3. Streamlit (Interface Ofícios)**
+### **3. Backoffice Streamlit (6.UI_backoffice)**
 
-**Função:** Interface web para visualização de ofícios requisitórios
+**Função:** Interface web de backoffice para monitoramento dos processos de precatórios
+
+**Repositório:** `github.com/revisaprecatorio/6.UI_backoffice`
 
 **Comandos:**
 ```bash
-cd /root/ocr-oficios-tjsp/3_streamlit
+cd /root/6.UI_backoffice
 
-# Subir
-docker-compose up -d
+# Deploy completo (recomendado)
+./deploy.sh
 
 # Ver logs
-docker logs -f oficios-streamlit
+docker logs backoffice-streamlit -f
 
 # Parar
-docker-compose stop
+docker-compose down
 
 # Reiniciar
 docker-compose restart
 
 # Status
-docker ps | grep streamlit
+docker ps | grep backoffice
 ```
 
 **Portas:**
-- 8501 (HTTP direto)
+- 8502 (HTTP direto)
 
-**URL:** http://72.60.62.124:8501
-
-**Atualizar:**
-```bash
-cd /root/ocr-oficios-tjsp/3_streamlit
-./deploy_update.sh
-```
+**URLs:**
+- http://srv987902.hstgr.cloud:8502
+- https://revisaprecatorio.com.br/backoffice
 
 ---
 
@@ -209,11 +207,11 @@ docker-compose up -d
 echo "   ✅ OCR API e PostgreSQL iniciados"
 echo ""
 
-# 3. Streamlit
-echo "📦 3. Subindo Streamlit..."
-cd /root/ocr-oficios-tjsp/3_streamlit
+# 3. Backoffice Streamlit
+echo "📦 3. Subindo Backoffice Streamlit..."
+cd /root/6.UI_backoffice
 docker-compose up -d
-echo "   ✅ Streamlit iniciado"
+echo "   ✅ Backoffice Streamlit iniciado"
 echo ""
 
 # 4. Verificar status
@@ -228,8 +226,8 @@ echo "✅ TODOS OS SERVIÇOS INICIADOS!"
 echo "============================================================"
 echo ""
 echo "🌐 URLs Disponíveis:"
-echo "   - n8n:       https://n8n.srv987902.hstgr.cloud"
-echo "   - Streamlit: http://72.60.62.124:8501"
+echo "   - n8n:        https://n8n.srv987902.hstgr.cloud"
+echo "   - Backoffice: http://srv987902.hstgr.cloud:8502"
 echo ""
 EOF
 
@@ -262,8 +260,8 @@ docker-compose stop
 cd /root/ocr-oficios-tjsp
 docker-compose stop
 
-# Streamlit
-cd /root/ocr-oficios-tjsp/3_streamlit
+# Backoffice Streamlit
+cd /root/6.UI_backoffice
 docker-compose stop
 
 echo "✅ Todos os serviços parados!"
@@ -345,7 +343,7 @@ docker-compose up -d traefik
 docker ps | grep traefik
 ```
 
-### **Problema: Streamlit não carrega dados**
+### **Problema: Backoffice não carrega dados**
 
 **Causa:** PostgreSQL não está rodando
 
@@ -366,9 +364,9 @@ cd /root
 docker-compose restart n8n
 ```
 
-### **Reiniciar Streamlit**
+### **Reiniciar Backoffice Streamlit**
 ```bash
-cd /root/ocr-oficios-tjsp/3_streamlit
+cd /root/6.UI_backoffice
 docker-compose restart
 ```
 
@@ -456,8 +454,8 @@ Após reiniciar a VPS, execute:
 - [ ] `docker-compose up -d` (Traefik + n8n)
 - [ ] Verificar: https://n8n.srv987902.hstgr.cloud
 - [ ] `cd /root/ocr-oficios-tjsp && docker-compose up -d` (OCR + PostgreSQL)
-- [ ] `cd /root/ocr-oficios-tjsp/3_streamlit && docker-compose up -d` (Streamlit)
-- [ ] Verificar: http://72.60.62.124:8501
+- [ ] `cd /root/6.UI_backoffice && docker-compose up -d` (Backoffice Streamlit)
+- [ ] Verificar: http://srv987902.hstgr.cloud:8502
 - [ ] `docker ps` (verificar todos rodando)
 
 ---
@@ -467,7 +465,7 @@ Após reiniciar a VPS, execute:
 | Serviço | URL | Porta |
 |---------|-----|-------|
 | **n8n** | https://n8n.srv987902.hstgr.cloud | 5678 (interno) |
-| **Streamlit** | http://72.60.62.124:8501 | 8501 |
+| **Backoffice** | http://srv987902.hstgr.cloud:8502 | 8502 |
 | **Traefik Dashboard** | http://72.60.62.124:8080 | 8080 |
 
 ---
@@ -483,6 +481,6 @@ Em caso de problemas:
 
 ---
 
-**Última atualização:** 14/12/2025
-**Versão:** 1.0
+**Última atualização:** 11/06/2026
+**Versão:** 1.1
 **Responsável:** Persival Balleste

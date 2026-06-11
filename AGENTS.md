@@ -5,32 +5,7 @@
 Sistema de extração automatizada de dados de Ofícios Requisitórios do TJSP a partir de PDFs nativos para banco PostgreSQL.
 
 **Versão Atual:** V3.0 (13/12/2025)
-**Última Atualização:** 07/03/2026
-
----
-
-## 🚀 **PENDENTE: DetectorSaldoFinal V2.0.0 (07/03/2026)**
-
-**Status:** ✅ TESTADO LOCALMENTE - AGUARDANDO DEPLOY VPS
-
-### Resumo
-- **Problema:** V1.0.0 não detectava saldo final com quebras de linha (taxa: 30-40%)
-- **Solução:** Novos padrões regex com suporte a quebras de linha (taxa esperada: 95%+)
-- **Testes:** 2/2 PDFs detectados localmente (100% sucesso)
-- **Arquivo:** `1_parsing_PDF/app/detector_saldo_final.py` (V1.0.0 → V2.0.0)
-
-### Deploy
-```bash
-# Ver documentação completa
-cat DETECTOR_SALDO_FINAL_V2_CHANGELOG.md
-
-# Commit + Push
-git add 1_parsing_PDF/app/detector_saldo_final.py DETECTOR_SALDO_FINAL_V2_CHANGELOG.md
-git commit -m "feat: DetectorSaldoFinal V2.0.0 - suporte a quebras de linha"
-git push origin main
-```
-
-**Documentação:** `DETECTOR_SALDO_FINAL_V2_CHANGELOG.md`
+**Última Atualização:** 11/06/2026
 
 ---
 
@@ -49,20 +24,20 @@ git push origin main
 ## Project structure V3.0
 
 ```
-3_OCR/
+ocr-oficios-tjsp/
 ├── 1_parsing_PDF/           # ETAPA 1: PDFs → JSONs
 │   ├── app/
 │   │   ├── detector.py                  # DetectorOficio - localiza ofício
 │   │   ├── detector_anexo.py            # DetectorAnexoII - dados bancários
 │   │   ├── detector_processamento.py    # DetectorProcessamento - número ordem
-│   │   ├── detector_saldo_final.py      # V2.5.2: Saldo Final
+│   │   ├── detector_saldo_final.py      # V3.0.0: Saldo Final (multipadrão + data)
 │   │   ├── detector_habilitacao_herdeiros.py  # V2.5.3: Código 9270
 │   │   ├── detector_termos_juridicos.py # V2.5.3: Preferencial, doença grave
 │   │   ├── llm_adapter.py               # Modo Híbrido: Gemini + OpenAI
 │   │   ├── processador.py               # ProcessadorOficio V3.0
-│   │   ├── schemas.py                   # Pydantic models (35 campos)
+│   │   ├── schemas.py                   # Pydantic models (35+ campos)
 │   │   └── tracker_execucao.py          # Logs Markdown
-│   ├── tests/                          # 34 testes unitários (88%)
+│   ├── tests/                          # 34+ testes unitários
 │   ├── outputs/
 │   │   ├── consultas/                  # JSONs processados
 │   │   └── json/                       # JSONs centralizados
@@ -70,30 +45,26 @@ git push origin main
 │
 ├── 2_ingestao/              # ETAPA 2: JSONs → PostgreSQL
 │   ├── scripts/
-│   │   ├── ingest_v3_0.py              # Importação V3.0 (35 campos)
+│   │   ├── ingest_all_jsons.py         # Script principal de ingestão (V7)
+│   │   ├── ingest_v3_0.py              # Versão V3.0 alternativa
 │   │   └── recalcular_idoso.py         # Recálculo tag idoso
 │   └── sql/
 │       ├── 01_create_table.sql         # Schema V3.0 (35 colunas)
 │       └── 05_migrate_to_v3_0.sql      # Migration V2.7.6 → V3.0
 │
-├── historico_arquivado/     # Arquivos históricos V2.7.x
-│   ├── scripts/             # 17 scripts obsoletos
-│   ├── outputs/             # 2 outputs antigos
-│   ├── sql/                 # 5 migrations antigas
-│   └── docs/                # 9 documentações antigas
+├── scripts_vps/             # Scripts de gerenciamento da VPS
+│   ├── start_all_services.sh
+│   └── stop_all_services.sh
 │
-├── 3_streamlit/             # ETAPA 3: Interface Web
-│   └── app/streamlit_app.py
+├── assessment_pipeline/     # Documentação técnica completa
 │
-├── data/consultas/          # PDFs originais
-│   ├── 12345678909/         # CPF sem formatação
-│   │   └── 0035938-67.2018.8.26.0053.pdf
-│   └── 98765432100/
-│       └── 7654321-12.2023.8.26.0053.pdf
+├── data/consultas/          # PDFs originais (não versionados)
+│   └── {cpf}/               # CPF sem formatação
+│       └── {processo}.pdf
 │
-├── pipeline_completo.sh     # Pipeline automatizado V2.6.0
-├── .env                     # Variáveis de ambiente
-└── requirements.txt         # Dependências (tqdm, tabulate, etc.)
+├── pipeline_completo.sh     # Pipeline automatizado
+├── .env                     # Variáveis de ambiente (não versionado)
+└── requirements.txt         # Dependências
 ```
 
 ---
@@ -122,10 +93,12 @@ Busca seção "PROCESSAMENTO" após ANEXO II:
 - Define `rejeitado = FALSE` se número de ordem encontrado
 - Define `rejeitado = TRUE` se "SEM INFORMAÇÃO"
 
-### **4. DetectorSaldoFinal** (V2.5.2)
-Extrai saldo final após pagamento:
-- **Regex primário:** `Saldo\s+(?:Líquido\s+)?Final.*?R?\$?\s*([\d.,]+)`
-- **Fallback:** `saldo_final = valor_total_requisitado`
+### **4. DetectorSaldoFinal** (V3.0.0)
+Extrai saldo final e data após pagamento:
+- **Padrões:** `saldo_apos_pagamento`, `saldo_final_em`, `valores_para_pagamento`, genérico
+- **Isolamento por credor:** `_obter_contexto_saldo_credor()` evita capturar saldo de outro credor
+- **Retorna:** `ResultadoSaldoFinal` (valor, data, origem)
+- **Fallback hierárquico:** regex → `valor_total_requisitado` → bruto+juros → 0.00+anomalia
 - **Cobertura:** 100% dos registros
 
 ### **5. DetectorHabilitacaoHerdeiros** (V2.5.3 - Código 9270)
@@ -199,7 +172,7 @@ DB_HOST=72.60.62.124
 DB_PORT=5432
 DB_NAME=n8n
 DB_USER=admin
-DB_PASSWORD=BetaAgent2024SecureDB
+DB_PASSWORD=<senha no .env>
 
 # Base directory (padrão: data/consultas no projeto)
 BASE_DIR=./data/consultas
@@ -240,9 +213,7 @@ python3 processar_pipeline.py --input ../data/consultas --output outputs/consult
 cd ../2_ingestao/scripts
 python3 ingest_all_jsons.py --input ../../1_parsing_PDF/outputs/json
 
-# ETAPA 3: Interface Streamlit
-cd ../../3_streamlit
-streamlit run app/streamlit_app.py
+# Backoffice (repo separado): github.com/revisaprecatorio/6.UI_backoffice
 ```
 
 ---
@@ -521,21 +492,19 @@ FORMATO: JSON válido
 
 CAMPOS OBRIGATÓRIOS:
 - processo_origem: Número CNJ (0000000-00.0000.0.00.0000)
-- requerente_caps: Nome TODO EM MAIÚSCULAS
 
 CAMPOS OPCIONAIS:
-- vara, processo_execucao, processo_conhecimento
-- datas (YYYY-MM-DD): data_ajuizamento, data_transito_julgado, data_base_atualizacao, data_nascimento
-- partes: advogado_nome, advogado_oab (OAB/UF 000.000), credor_nome, credor_cpf_cnpj, devedor_ente
+- vara, numero_ordem
+- datas (YYYY-MM-DD): data_base_atualizacao, data_nascimento
+- partes: credor_nome, credor_cpf_cnpj, devedor_ente
 - financeiro (números puros): valor_principal_liquido, valor_principal_bruto, juros_moratorios,
-  contrib_previdenciaria_iprem, contrib_previdenciaria_hspm, valor_total_requisitado
-- bancário: banco, agencia, conta, variacao
+  valor_total_requisitado
+- bancário: banco, agencia, conta
 - preferências (bool): idoso, doenca_grave, pcd
 
 REGRAS:
 - Campos não encontrados = null
 - Valores numéricos sem R$, sem pontos de milhar
-- Requerente SEMPRE em MAIÚSCULAS
 - Banco/agência/conta sempre como STRING (não número)
 
 DOCUMENTO:
@@ -617,7 +586,7 @@ LIMIT 10;
 - Debug: imprima texto de cada página
 
 ### **Erro: Validação Pydantic falha**
-- Verifique campos obrigatórios: `processo_origem`, `requerente_caps`
+- Verifique campo obrigatório: `processo_origem`
 - Confirme formato de datas: YYYY-MM-DD
 - Valide padrão CNJ com regex
 - Gemini retornando int ao invés de str → Validador automático corrige
@@ -639,22 +608,6 @@ LIMIT 10;
 
 ---
 
-## Integration with MCP tools
-
-### **ByteRover workflow:**
-```bash
-# Retrieve project knowledge
-byterover-retrieve-knowledge(query="detector habilitacao herdeiros v2.5.3")
-
-# Store implementation notes
-byterover-store-knowledge(
-  messages="V2.6.0 pipeline automatizado com TRUNCATE antes de ingestão.
-  Schema 53 colunas. Modo Híbrido: Gemini primary + OpenAI fallback (93% economia)."
-)
-```
-
----
-
 ## References V3.0
 
 - **[README.md](README.md)** - Guia completo V3.0
@@ -667,43 +620,3 @@ byterover-store-knowledge(
 - [PostgreSQL Upsert](https://www.postgresql.org/docs/current/sql-insert.html#SQL-ON-CONFLICT)
 - [CNJ Numeração Única](https://www.cnj.jus.br/programas-e-acoes/numeracao-unica/)
 
----
-
-[byterover-mcp]
-
-You are given two tools from Byterover MCP server, including:
-
-## 1. `byterover-store-knowledge`
-You `MUST` always use this tool when:
-+ Learning new patterns, APIs, or architectural decisions from the codebase
-+ Encountering error solutions or debugging techniques
-+ Finding reusable code patterns or utility functions
-+ Completing any significant task or plan implementation
-
-## 2. `byterover-retrieve-knowledge`
-You `MUST` always use this tool when:
-+ Starting any new task or implementation to gather relevant context
-+ Before making architectural decisions to understand existing patterns
-+ When debugging issues to check for previous solutions
-+ Working with unfamiliar parts of the codebase
-
-[byterover-mcp]
-
-[byterover-mcp]
-
-You are given two tools from Byterover MCP server, including
-## 1. `byterover-store-knowledge`
-You `MUST` always use this tool when:
-
-+ Learning new patterns, APIs, or architectural decisions from the codebase
-+ Encountering error solutions or debugging techniques
-+ Finding reusable code patterns or utility functions
-+ Completing any significant task or plan implementation
-
-## 2. `byterover-retrieve-knowledge`
-You `MUST` always use this tool when:
-
-+ Starting any new task or implementation to gather relevant context
-+ Before making architectural decisions to understand existing patterns
-+ When debugging issues to check for previous solutions
-+ Working with unfamiliar parts of the codebase
