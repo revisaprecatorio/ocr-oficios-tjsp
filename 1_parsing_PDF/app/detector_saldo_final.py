@@ -262,6 +262,17 @@ class DetectorSaldoFinal:
                         break
                 contexto = texto[blocos_inicio[i]:blocos_inicio[fim_idx]]
                 logger.debug(f"Contexto isolado para CPF {cpf_fmt}: {len(contexto)} chars")
+
+                # Fix V3.0.1: se o contexto não inclui SALDO FINAL, procura nos blocos
+                # seguintes que contenham CPF + SALDO FINAL (ex: bloco "Calculo referente a Saldo")
+                if not re.search(r'SALDO\s+FINAL\s+AP', contexto, re.IGNORECASE):
+                    for j in range(fim_idx, len(blocos_inicio) - 1):
+                        bloco = texto[blocos_inicio[j]:blocos_inicio[j + 1]]
+                        if cpf_pattern.search(bloco) and re.search(r'SALDO\s+FINAL\s+AP', bloco, re.IGNORECASE):
+                            logger.debug(f"Expandindo contexto p/ bloco SALDO FINAL em pos {blocos_inicio[j]}")
+                            contexto = contexto + bloco
+                            break
+
                 return contexto
 
         # CPF não encontrado em nenhum bloco — janela ao redor da última ocorrência
@@ -269,7 +280,7 @@ class DetectorSaldoFinal:
         if match_cpf:
             pos = match_cpf[-1].start()
             inicio = max(0, pos - 500)
-            fim = min(len(texto), pos + 10000)
+            fim = min(len(texto), pos + 100000)
             logger.warning(f"CPF {cpf_fmt} fora de bloco 'Calculo referente a' — usando janela")
             return texto[inicio:fim]
 

@@ -1566,6 +1566,14 @@ CONTROLE:
 6. Booleanos: true ou false (minúsculas)
 7. Número de ordem: buscar na seção "PROCESSAMENTO" (formato: XXX/YYYY)
 
+⚠️ ATENÇÃO — SEÇÃO "PAGAMENTO DE PREFERÊNCIA" NO PROCESSAMENTO:
+- Esta seção exibe parcelas JÁ PAGAS ao credor (ex: "5 * R$ 12.805,85 = R$ 64.029,25")
+- O TOTAL desta tabela NÃO é valor_principal_bruto, NÃO é valor_total_requisitado
+- Os valores corretos (valor_principal_bruto, juros_moratorios, valor_total_requisitado)
+  vêm EXCLUSIVAMENTE do OFÍCIO REQUISITÓRIO ou do ANEXO II
+- Ignore "Pagamento de Preferência", "Valores para Pagamento" e "SALDO FINAL APÓS O PAGAMENTO"
+  para extração de valor_principal_bruto e valor_total_requisitado
+
 DOCUMENTO:
 {texto_oficio}
 
@@ -1854,6 +1862,14 @@ CONTROLE:
 5. Requerente: SEMPRE em MAIÚSCULAS
 6. Booleanos: true ou false (minúsculas)
 7. Número de ordem: buscar na seção "PROCESSAMENTO" (formato: XXX/YYYY)
+
+⚠️ ATENÇÃO — SEÇÃO "PAGAMENTO DE PREFERÊNCIA" NO PROCESSAMENTO:
+- Esta seção exibe parcelas JÁ PAGAS ao credor (ex: "5 * R$ 12.805,85 = R$ 64.029,25")
+- O TOTAL desta tabela NÃO é valor_principal_bruto, NÃO é valor_total_requisitado
+- Os valores corretos (valor_principal_bruto, juros_moratorios, valor_total_requisitado)
+  vêm EXCLUSIVAMENTE do OFÍCIO REQUISITÓRIO ou do ANEXO II
+- Ignore "Pagamento de Preferência", "Valores para Pagamento" e "SALDO FINAL APÓS O PAGAMENTO"
+  para extração de valor_principal_bruto e valor_total_requisitado
 
 EXEMPLO DE ESTRUTURA CORRETA:
 {{
