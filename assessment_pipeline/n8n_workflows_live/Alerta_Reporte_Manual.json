@@ -1,0 +1,539 @@
+{
+  "updatedAt": "2026-08-28T08:07:27.000Z",
+  "createdAt": "2026-04-02T21:18:30.425Z",
+  "id": "XIx9gn1ifI7jsyoP",
+  "name": "Alerta_Reporte_Manual",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 10
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Schedule Trigger",
+      "position": [
+        0,
+        0
+      ],
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT cpf, whatsapp_from, nome_requerente, email, processos FROM consultas_esaj WHERE current_state = 'MANUAL_PROCESS'",
+        "options": {}
+      },
+      "alwaysOutputData": true,
+      "id": "query-consultas-esaj",
+      "name": "Query consultas_esaj",
+      "position": [
+        144,
+        0
+      ],
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "credentials": {
+        "postgres": {
+          "id": "b0F0gRzrpEq6BR3M",
+          "name": "Postgres account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const row = $input.item.json;\n\n// Se a query nao retornou dados reais, encerra silenciosamente\nif (!row || !row.nome_requerente) {\n  return null;\n}\n\nconst cpf = row.cpf;\nconst whatsapp_from = row.whatsapp_from;\nconst nome_requerente = row.nome_requerente;\nconst email = row.email || 'não informado';\n\n// Parse do campo processos: pode ser objeto (postgres jsonb) ou string (text)\nlet lista_processos = [];\ntry {\n  let processosObj;\n  if (typeof row.processos === 'string') {\n    processosObj = JSON.parse(row.processos);\n  } else {\n    processosObj = row.processos;\n  }\n  lista_processos = (processosObj.lista || []).map(p => p.numero);\n} catch(e) {\n  lista_processos = ['Não foi possível extrair os números dos processos'];\n}\n\nconst processos_formatados_texto = lista_processos.join('\\n');\nconst processos_formatados_html = lista_processos.map(n => `<li>${n}</li>`).join('');\n\nconst msg_cliente = `Olá, ${nome_requerente}.\n\nIdentificamos que o processamento automático dos documentos do seu precatório não pôde ser concluído integralmente. Nossa equipe fará uma análise complementar e encaminhará o resultado para o e-mail cadastrado em até 7 dias úteis.\n\nVocê não precisa realizar uma nova solicitação ou pagamento.\n\nAgradecemos a compreensão.\n\nRevisa Precatório`;\n\nconst msg_interna_texto = `CPF ${cpf} do cliente ${nome_requerente} não foi processado e requer processamento manual, numero dos processos envolvidos:\\n${processos_formatados_texto}\\n\\ne enviar ao email ${email}`;\n\nconst msg_interna_html = `<p>CPF <strong>${cpf}</strong> do cliente <strong>${nome_requerente}</strong> não foi processado e requer processamento manual.</p><p><strong>Número dos processos envolvidos:</strong></p><ul>${processos_formatados_html}</ul><p>Enviar ao email: <a href=\"mailto:${email}\">${email}</a></p>`;\n\nreturn {\n  json: {\n    cpf,\n    whatsapp_from,\n    nome_requerente,\n    email,\n    msg_cliente,\n    msg_interna_texto,\n    msg_interna_html\n  }\n};"
+      },
+      "id": "code-prepara-mensagens",
+      "name": "Prepara Mensagens",
+      "position": [
+        320,
+        0
+      ],
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "operation": "send",
+        "phoneNumberId": "772929385904854",
+        "recipientPhoneNumber": "={{ $json.whatsapp_from }}",
+        "textBody": "={{ $json.msg_cliente }}",
+        "additionalFields": {}
+      },
+      "id": "whatsapp-cliente",
+      "name": "WhatsApp Cliente",
+      "position": [
+        496,
+        0
+      ],
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 1.1,
+      "webhookId": "f9c0840a-ba0d-4e98-9ae4-fdf34b075d13",
+      "credentials": {
+        "whatsAppApi": {
+          "id": "ejhZtEKHF0Kh9HeQ",
+          "name": "WhatsApp account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "fromEmail": "Revisa Precatório <contato@revisaprecatorio.com.br>",
+        "toEmail": "revisa.manual@gmail.com",
+        "subject": "={{ 'Erro processamento CPF ' + $('Prepara Mensagens').item.json.cpf + ' necessita intervenção manual' }}",
+        "html": "={{ $('Prepara Mensagens').item.json.msg_interna_html }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "email-contato-revisaprecatorio",
+      "name": "Email contato@revisaprecatorio",
+      "position": [
+        672,
+        0
+      ],
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "webhookId": "fe522ad1-9d10-4f67-929f-64ac3010d71d",
+      "credentials": {
+        "smtp": {
+          "id": "QhA560IeJvTVywaS",
+          "name": "SMTP revisa"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE consultas_esaj SET current_state = 'ALERTA_MANUAL_SENT' WHERE current_state = 'MANUAL_PROCESS'",
+        "options": {}
+      },
+      "id": "update-current-state",
+      "name": "Update current_state ALERTA_MANUAL_SENT",
+      "position": [
+        864,
+        0
+      ],
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "credentials": {
+        "postgres": {
+          "id": "b0F0gRzrpEq6BR3M",
+          "name": "Postgres account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO logs (cpf, descricao, processo) VALUES ('BATCH', '🚨 Alerta reporte manual enviado em batch - current_state atualizado para ALERTA_MANUAL_SENT', 'n8n')",
+        "options": {}
+      },
+      "id": "log-alerta-manual",
+      "name": "Log Alerta Manual",
+      "position": [
+        1056,
+        0
+      ],
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "credentials": {
+        "postgres": {
+          "id": "b0F0gRzrpEq6BR3M",
+          "name": "Postgres account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "connections": {
+    "Email contato@revisaprecatorio": {
+      "main": [
+        [
+          {
+            "node": "Update current_state ALERTA_MANUAL_SENT",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepara Mensagens": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "WhatsApp Cliente",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Query consultas_esaj": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Prepara Mensagens",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Query consultas_esaj",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Update current_state ALERTA_MANUAL_SENT": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Log Alerta Manual",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "WhatsApp Cliente": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Email contato@revisaprecatorio",
+            "type": "main"
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "saveManualExecutions": true,
+    "saveExecutionProgress": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "staticData": {
+    "node:Schedule Trigger": {
+      "recurrenceRules": []
+    }
+  },
+  "meta": null,
+  "pinData": {},
+  "versionId": "187a0e5b-638f-41c9-8a78-1dc4588430d6",
+  "activeVersionId": "187a0e5b-638f-41c9-8a78-1dc4588430d6",
+  "versionCounter": 44,
+  "triggerCount": 1,
+  "shared": [
+    {
+      "updatedAt": "2026-04-02T21:18:30.437Z",
+      "createdAt": "2026-04-02T21:18:30.437Z",
+      "role": "workflow:owner",
+      "workflowId": "XIx9gn1ifI7jsyoP",
+      "projectId": "HiqKsr6gcpQsog8I",
+      "project": {
+        "updatedAt": "2026-05-21T23:09:15.180Z",
+        "createdAt": "2025-09-01T21:50:07.258Z",
+        "id": "HiqKsr6gcpQsog8I",
+        "name": "Revisa Precatório <revisa.precatorio@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "projectRelations": [
+          {
+            "updatedAt": "2025-09-01T21:50:07.259Z",
+            "createdAt": "2025-09-01T21:50:07.259Z",
+            "userId": "9cba57e9-7ebd-4df3-8764-c1ca338dec12",
+            "projectId": "HiqKsr6gcpQsog8I",
+            "user": {
+              "updatedAt": "2026-09-20T03:53:35.000Z",
+              "createdAt": "2025-09-01T21:50:06.641Z",
+              "id": "9cba57e9-7ebd-4df3-8764-c1ca338dec12",
+              "email": "revisa.precatorio@gmail.com",
+              "firstName": "Revisa",
+              "lastName": "Precatório",
+              "personalizationAnswers": {
+                "version": "v4",
+                "personalization_survey_submitted_at": "2025-09-01T23:36:13.091Z",
+                "personalization_survey_n8n_version": "1.109.1"
+              },
+              "settings": {
+                "userActivated": true,
+                "easyAIWorkflowOnboarded": true,
+                "firstSuccessfulWorkflowId": "0dviS1IZwY1IxzRs",
+                "userActivatedAt": 1758064342499,
+                "npsSurvey": {
+                  "waitingForResponse": true,
+                  "ignoredCount": 1,
+                  "lastShownAt": 1789854820748
+                }
+              },
+              "disabled": false,
+              "mfaEnabled": false,
+              "lastActiveAt": "2026-09-20",
+              "isPending": false
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "tags": [],
+  "activeVersion": {
+    "updatedAt": "2026-08-28T08:07:27.926Z",
+    "createdAt": "2026-08-28T08:07:27.926Z",
+    "versionId": "187a0e5b-638f-41c9-8a78-1dc4588430d6",
+    "workflowId": "XIx9gn1ifI7jsyoP",
+    "nodes": [
+      {
+        "parameters": {
+          "rule": {
+            "interval": [
+              {
+                "field": "minutes",
+                "minutesInterval": 10
+              }
+            ]
+          }
+        },
+        "id": "schedule-trigger",
+        "name": "Schedule Trigger",
+        "position": [
+          0,
+          0
+        ],
+        "type": "n8n-nodes-base.scheduleTrigger",
+        "typeVersion": 1.3
+      },
+      {
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "SELECT cpf, whatsapp_from, nome_requerente, email, processos FROM consultas_esaj WHERE current_state = 'MANUAL_PROCESS'",
+          "options": {}
+        },
+        "alwaysOutputData": true,
+        "id": "query-consultas-esaj",
+        "name": "Query consultas_esaj",
+        "position": [
+          144,
+          0
+        ],
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.6,
+        "credentials": {
+          "postgres": {
+            "id": "b0F0gRzrpEq6BR3M",
+            "name": "Postgres account"
+          }
+        },
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "mode": "runOnceForEachItem",
+          "jsCode": "const row = $input.item.json;\n\n// Se a query nao retornou dados reais, encerra silenciosamente\nif (!row || !row.nome_requerente) {\n  return null;\n}\n\nconst cpf = row.cpf;\nconst whatsapp_from = row.whatsapp_from;\nconst nome_requerente = row.nome_requerente;\nconst email = row.email || 'não informado';\n\n// Parse do campo processos: pode ser objeto (postgres jsonb) ou string (text)\nlet lista_processos = [];\ntry {\n  let processosObj;\n  if (typeof row.processos === 'string') {\n    processosObj = JSON.parse(row.processos);\n  } else {\n    processosObj = row.processos;\n  }\n  lista_processos = (processosObj.lista || []).map(p => p.numero);\n} catch(e) {\n  lista_processos = ['Não foi possível extrair os números dos processos'];\n}\n\nconst processos_formatados_texto = lista_processos.join('\\n');\nconst processos_formatados_html = lista_processos.map(n => `<li>${n}</li>`).join('');\n\nconst msg_cliente = `Olá, ${nome_requerente}.\n\nIdentificamos que o processamento automático dos documentos do seu precatório não pôde ser concluído integralmente. Nossa equipe fará uma análise complementar e encaminhará o resultado para o e-mail cadastrado em até 7 dias úteis.\n\nVocê não precisa realizar uma nova solicitação ou pagamento.\n\nAgradecemos a compreensão.\n\nRevisa Precatório`;\n\nconst msg_interna_texto = `CPF ${cpf} do cliente ${nome_requerente} não foi processado e requer processamento manual, numero dos processos envolvidos:\\n${processos_formatados_texto}\\n\\ne enviar ao email ${email}`;\n\nconst msg_interna_html = `<p>CPF <strong>${cpf}</strong> do cliente <strong>${nome_requerente}</strong> não foi processado e requer processamento manual.</p><p><strong>Número dos processos envolvidos:</strong></p><ul>${processos_formatados_html}</ul><p>Enviar ao email: <a href=\"mailto:${email}\">${email}</a></p>`;\n\nreturn {\n  json: {\n    cpf,\n    whatsapp_from,\n    nome_requerente,\n    email,\n    msg_cliente,\n    msg_interna_texto,\n    msg_interna_html\n  }\n};"
+        },
+        "id": "code-prepara-mensagens",
+        "name": "Prepara Mensagens",
+        "position": [
+          320,
+          0
+        ],
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2
+      },
+      {
+        "parameters": {
+          "operation": "send",
+          "phoneNumberId": "772929385904854",
+          "recipientPhoneNumber": "={{ $json.whatsapp_from }}",
+          "textBody": "={{ $json.msg_cliente }}",
+          "additionalFields": {}
+        },
+        "id": "whatsapp-cliente",
+        "name": "WhatsApp Cliente",
+        "position": [
+          496,
+          0
+        ],
+        "type": "n8n-nodes-base.whatsApp",
+        "typeVersion": 1.1,
+        "webhookId": "f9c0840a-ba0d-4e98-9ae4-fdf34b075d13",
+        "credentials": {
+          "whatsAppApi": {
+            "id": "ejhZtEKHF0Kh9HeQ",
+            "name": "WhatsApp account"
+          }
+        },
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "fromEmail": "Revisa Precatório <contato@revisaprecatorio.com.br>",
+          "toEmail": "revisa.manual@gmail.com",
+          "subject": "={{ 'Erro processamento CPF ' + $('Prepara Mensagens').item.json.cpf + ' necessita intervenção manual' }}",
+          "html": "={{ $('Prepara Mensagens').item.json.msg_interna_html }}",
+          "options": {
+            "appendAttribution": false
+          }
+        },
+        "id": "email-contato-revisaprecatorio",
+        "name": "Email contato@revisaprecatorio",
+        "position": [
+          672,
+          0
+        ],
+        "type": "n8n-nodes-base.emailSend",
+        "typeVersion": 2.1,
+        "webhookId": "fe522ad1-9d10-4f67-929f-64ac3010d71d",
+        "credentials": {
+          "smtp": {
+            "id": "QhA560IeJvTVywaS",
+            "name": "SMTP revisa"
+          }
+        },
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "UPDATE consultas_esaj SET current_state = 'ALERTA_MANUAL_SENT' WHERE current_state = 'MANUAL_PROCESS'",
+          "options": {}
+        },
+        "id": "update-current-state",
+        "name": "Update current_state ALERTA_MANUAL_SENT",
+        "position": [
+          864,
+          0
+        ],
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.6,
+        "credentials": {
+          "postgres": {
+            "id": "b0F0gRzrpEq6BR3M",
+            "name": "Postgres account"
+          }
+        },
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "INSERT INTO logs (cpf, descricao, processo) VALUES ('BATCH', '🚨 Alerta reporte manual enviado em batch - current_state atualizado para ALERTA_MANUAL_SENT', 'n8n')",
+          "options": {}
+        },
+        "id": "log-alerta-manual",
+        "name": "Log Alerta Manual",
+        "position": [
+          1056,
+          0
+        ],
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.6,
+        "credentials": {
+          "postgres": {
+            "id": "b0F0gRzrpEq6BR3M",
+            "name": "Postgres account"
+          }
+        },
+        "onError": "continueRegularOutput"
+      }
+    ],
+    "connections": {
+      "Email contato@revisaprecatorio": {
+        "main": [
+          [
+            {
+              "node": "Update current_state ALERTA_MANUAL_SENT",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Prepara Mensagens": {
+        "main": [
+          [
+            {
+              "index": 0,
+              "node": "WhatsApp Cliente",
+              "type": "main"
+            }
+          ]
+        ]
+      },
+      "Query consultas_esaj": {
+        "main": [
+          [
+            {
+              "index": 0,
+              "node": "Prepara Mensagens",
+              "type": "main"
+            }
+          ]
+        ]
+      },
+      "Schedule Trigger": {
+        "main": [
+          [
+            {
+              "index": 0,
+              "node": "Query consultas_esaj",
+              "type": "main"
+            }
+          ]
+        ]
+      },
+      "Update current_state ALERTA_MANUAL_SENT": {
+        "main": [
+          [
+            {
+              "index": 0,
+              "node": "Log Alerta Manual",
+              "type": "main"
+            }
+          ]
+        ]
+      },
+      "WhatsApp Cliente": {
+        "main": [
+          [
+            {
+              "index": 0,
+              "node": "Email contato@revisaprecatorio",
+              "type": "main"
+            }
+          ]
+        ]
+      }
+    },
+    "authors": "Revisa Precatório",
+    "name": null,
+    "description": null
+  }
+}

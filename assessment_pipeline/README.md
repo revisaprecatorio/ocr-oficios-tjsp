@@ -1,56 +1,63 @@
 # Revisa Precatório — Documentação da Plataforma
 
-**Pasta:** `assessment_pipeline/` | **Atualizado:** 06/2026
+**Pasta:** `assessment_pipeline/` | **Revisado:** 20/09/2026 contra produção viva (n8n API + PostgreSQL + GitHub)
+
+> **Origem desta revisão:** todos os workflows foram re-baixados do n8n vivo (`n8n_workflows_live/`), o schema foi extraído diretamente do PostgreSQL e os repositórios foram confirmados via API do GitHub. Divergências da revisão anterior (ago/2026) foram corrigidas — ver "Mudanças relevantes" no final.
 
 ---
 
 ## O que é a Revisa Precatório
 
-A **Revisa Precatório** é um serviço B2C que permite a qualquer cidadão descobrir se possui precatórios pendentes no TJSP, o valor atualizado desses créditos e orientações para levantamento. O cliente interage exclusivamente via **WhatsApp** e recebe por email um **laudo de análise** com todos os dados dos seus precatórios.
+A **Revisa Precatório** é um serviço B2C que permite a qualquer cidadão descobrir se possui precatórios pendentes no TJSP, o valor atualizado desses créditos e orientações para levantamento. O cliente interage exclusivamente via **WhatsApp** e recebe por e-mail um **laudo de análise** com todos os dados dos seus precatórios.
 
-**Produto:** Análise automatizada de precatórios do TJSP  
-**Canal de entrada:** WhatsApp (via Meta API + n8n)  
-**Entrega:** Email com laudo HTML personalizado  
-**Pagamento:** Mercado Pago (checkout preferences)
+**Produto:** Análise automatizada de precatórios do TJSP
+**Canal de entrada:** WhatsApp (via Meta API + n8n)
+**Entrega:** E-mail com laudo HTML personalizado (completo ou parcial)
+**Pagamento:** Mercado Pago (checkout preferences, R$ 1,00 no cadastro atual)
 
 ---
 
 ## Arquitetura da Plataforma
 
-O sistema é composto por **4 repositórios** e **7 workflows n8n**, orquestrados por um worker Python rodando em Windows Server:
+O sistema é composto por **repositórios GitHub (`revisaprecatorio`)** e **7 workflows n8n ativos**, orquestrados por um worker Python rodando em Windows Server:
 
 ```
 [Cliente WhatsApp]
         │
         ▼
-[n8n: Chatbot Revisa]          ← captura CPF, verifica email, gera pagamento
+[n8n: Chatbot Revisa]          ← captura CPF, consulta e-SAJ, verifica e-mail, gera pagamento
         │ PAYMENT_APPROVED
         ▼
 [Windows Server VPS]
-  ├── orchestrator_subprocess.py    ← polling do banco, processa 1 job por vez
-  ├── crawler_full.py               ← Selenium → e-SAJ → download PDFs
-  ├── pipeline_completo.sh          ← OCR + ingestão + cálculo
-  │     ├── processador.py          ← extração estruturada (Gemini + GPT-4o-mini)
-  │     ├── ingest_v3_0.py          ← PostgreSQL (35 colunas)
-  │     └── calc-precatorio-tjsp/main.py   ← atualização monetária
+  ├── runtime/executar.bat          ← launcher (kill switch RUNTIME_DISABLED)
+  ├── core/orchestrator_subprocess.py  ← polling do banco, 1 job por vez (SKIP LOCKED)
+  ├── core/crawler_full.py          ← Selenium → e-SAJ (cert. A1 via Web Signer) → PDFs
+  ├── pipeline_completo.sh          ← OCR + ingestão + cálculo (Etapas 1-9 + 9b)
+  │     ├── processar_pipeline.py   ← extração estruturada (Gemini + GPT-4o-mini)
+  │     ├── ingest_all_jsons.py     ← PostgreSQL (upsert)
+  │     ├── calc-precatorio-tjsp/main.py  ← atualização monetária → webhook laudo
+  │     └── Etapa 9b                ← webhook direto quando 100% rejeitado (Cenário F)
   └── Webhook → n8n: Laudo envio email+cpf  ← envia laudo ao cliente
         │
 [n8n: Alertas] (3 workflows, polling a cada 10 min)
-  ├── Alerta_ERROS_GRAVES      ← erros críticos → email + WhatsApp
+  ├── Alerta_ERROS_GRAVES      ← watchdog: erros + jobs travados → WhatsApp cliente + e-mail equipe
   ├── Alerta_Laudo_Parcial     ← laudos parciais → alerta interno
   └── Alerta_Reporte_Manual    ← MANUAL_PROCESS → notificação para equipe
 ```
 
 ---
 
-## Repositórios do Sistema
+## Repositórios do Sistema (GitHub: `github.com/revisaprecatorio`)
 
-| Repositório | Linguagem | Onde roda | Função |
+| Repositório | Último push | Onde roda | Função |
 |---|---|---|---|
-| [`crawler_tjsp`](https://github.com/revisaprecatorio/crawler_tjsp) | Python 80%, PowerShell 16% | Windows Server VPS | Autenticação no e-SAJ via certificado A1, busca de processos por CPF, download de PDFs da Pasta Digital |
-| [`ocr-oficios-tjsp`](https://github.com/revisaprecatorio/ocr-oficios-tjsp) | Python | Windows Server VPS | OCR dos PDFs (extração de 35 campos), ingestão no PostgreSQL, Streamlit backoffice |
-| `calc-precatorio-tjsp` | Python | Windows Server VPS | Atualização monetária dos valores do precatório; insere resultado em `esaj_calc_precatorio_resumo` |
-| n8n (workflows) | JSON / JavaScript | VPS n8n (self-hosted) | Chatbot, pagamento, entrega do laudo, alertas operacionais |
+| [`crawler_tjsp`](https://github.com/revisaprecatorio/crawler_tjsp) | 2026-03-31 | Windows Server VPS | Autenticação e-SAJ via certificado A1 + Web Signer, busca por CPF, download de PDFs da Pasta Digital. Worker em `core/`, launcher em `runtime/executar.bat` |
+| [`ocr-oficios-tjsp`](https://github.com/revisaprecatorio/ocr-oficios-tjsp) | 2026-06-17 | Windows Server VPS | OCR dos PDFs (extração de campos), ingestão no PostgreSQL, `pipeline_completo.sh` (inclui **Etapa 9b**) |
+| [`calc-precatorio-tjsp`](https://github.com/revisaprecatorio/calc-precatorio-tjsp) | 2026-05-07 | Windows Server VPS | Atualização monetária (IPCA-E, juros, EC113/EC136); insere em `esaj_calc_precatorio_resumo` e chama webhook via `webhook_n8n.py` |
+| [`6.UI_backoffice`](https://github.com/revisaprecatorio/6.UI_backoffice) | 2025-12-15 | VPS Linux (Docker :8502) | Streamlit backoffice — **ver pendência: view `vw_backoffice_processos` ausente** |
+| [`n8n-source-code-docs`](https://github.com/revisaprecatorio/n8n-source-code-docs) | 2026-06-11 | — | Backup histórico dos workflows (desatualizado; snapshots atuais em `n8n_workflows_live/`) |
+| `psc_calc_tjsp` | 2025-12-22 | — | ❌ Legado — versão anterior do crawler/orquestrador |
+| `streamlit_consulta_esaj` | 2025-09-22 | — | ❌ Legado — primeira versão do backoffice |
 
 ---
 
@@ -58,49 +65,58 @@ O sistema é composto por **4 repositórios** e **7 workflows n8n**, orquestrado
 
 ```
 1. Cliente envia CPF via WhatsApp
-2. Chatbot Revisa consulta o e-SAJ, obtém lista de processos, pede email
-3. Envia código de verificação por email (expira em 15 min)
+2. Chatbot Revisa consulta o e-SAJ, obtém lista de processos, pede e-mail
+3. Envia código de verificação por e-mail (com aviso LGPD; expira em 15 min)
 4. Cliente confirma dados → Chatbot gera link Mercado Pago
-5. Cliente paga → webhook MP → PAYMENT_APPROVED no banco
-6. orchestrator_subprocess.py detecta job → seta PROCESSING
+5. Cliente paga → webhook MP → PAYMENT_APPROVED no banco + limpeza de dados antigos do CPF
+6. orchestrator_subprocess.py detecta job → seta PROCESSING (FOR UPDATE SKIP LOCKED)
 7. crawler_full.py: autentica no e-SAJ via cert. A1, baixa PDFs para C:\Temp\RevisaDownloads\{cpf}\
 8. pipeline_completo.sh:
-   a. processador.py extrai dados dos PDFs (Gemini → GPT-4o-mini fallback)
-   b. ingest_v3_0.py salva em esaj_detalhe_processos (35 colunas)
+   a. processar_pipeline.py extrai dados dos PDFs (Gemini → GPT-4o-mini fallback)
+   b. ingest_all_jsons.py salva em esaj_detalhe_processos (upsert cpf+processo)
    c. calc-precatorio-tjsp/main.py calcula valores → esaj_calc_precatorio_resumo
-9. Orchestrator chama POST /webhook/reporte-email-cpf
-10. Laudo envio email+cpf: consulta vw_precatorios_full, monta HTML, envia email
-11. Atualiza current_state → FINAL_REPORT_SENT ou PARTIAL_REPORT_SENT
+      e chama POST /webhook/reporte-email-cpf (webhook_n8n.py)
+   d. Etapa 9b: se NENHUM cálculo gerado (100% rejeitado) → chama o webhook direto
+9. Laudo envio email+cpf: verifica completude, monta HTML, envia e-mail
+   → seta FINAL_REPORT_SENT ou PARTIAL_REPORT_SENT
+10. Orchestrator encerra o job → seta REPORT_SENT (estado terminal de-facto)
+11. Alertas (10 min): cobrem erros, jobs travados, laudos parciais e intervenção manual
 ```
 
+> ⚠️ **`REPORT_SENT` é o estado terminal real.** O Laudo workflow seta `FINAL_REPORT_SENT`/`PARTIAL_REPORT_SENT` durante a Etapa 9, mas o orchestrator sobrescreve com `REPORT_SENT` ao concluir o job. Para saber se o laudo foi completo ou parcial, consulte `process_tracking` (`LAUDO_ENVIADO` vs `LAUDO_PARCIAL`), não o `current_state`.
+
 ---
 
-## Workflows n8n
+## Workflows n8n (7 ativos — instância `n8n.srv987902.hstgr.cloud`, 50 no total)
 
-| Workflow | Trigger | Função | Faz parte do pipeline |
+| Workflow | ID | Trigger | Função |
 |---|---|---|---|
-| **Chatbot Revisa** | Webhook WhatsApp | Máquina de estados conversacional; CPF → consulta e-SAJ → pagamento | ✅ Entrada do pipeline |
-| **Mercado Pago Unified** | Webhook MP + Webhook interno | Gera link de pagamento; processa notificações do MP | ✅ Fase 2 |
-| **Laudo envio email+cpf** | Webhook `POST /reporte-email-cpf` | Busca dados em `vw_precatorios_full`, monta laudo HTML, envia email | ✅ Fase final |
-| **Alerta_ERROS_GRAVES** | Schedule (a cada 10 min) | Monitora `MANUAL_PROCESS`, `PIPELINE_ERROR`, `AUTH_ERROR`, `DOWNLOAD_FAILED`; notifica cliente + equipe | ✅ Monitoramento |
-| **Alerta_Laudo_Parcial** | Schedule (a cada 10 min) | Detecta `LAUDO_PARCIAL` sem `PARCIAL_INFORMADO`; notifica equipe | ✅ Monitoramento |
-| **Alerta_Reporte_Manual** | Schedule (a cada 10 min) | Detecta `MANUAL_PROCESS`; notifica equipe para reprocessamento manual | ✅ Monitoramento |
-| **CPF_batch_processing** | Webhook `POST /cpf-batch-processing` | Consulta e-SAJ e insere/atualiza `consultas_esaj` em lote, sem passar pelo WhatsApp | ⬛ Ferramenta auxiliar |
+| **Chatbot Revisa** | `73xnqygBK9tk6aDK` | Webhook WhatsApp `whatsapp-beta-agent` | Máquina de estados conversacional: CPF → e-SAJ → e-mail/código → confirmação → pagamento |
+| **Mercado Pago Unified** | `6COT3ubybyI8QhYT` | Webhooks `/generate-payment-link` + `/mercadopago-notification` | Gera link MP (R$ 1,00); processa notificações approved/rejected/pending |
+| **Laudo envio email+cpf** | `UrxjrcPE2C7WTLa0` | Webhook `POST /reporte-email-cpf` | Verifica completude → laudo completo ao cliente ou parcial à equipe + WhatsApp |
+| **Alerta_ERROS_GRAVES** | `GnL3nOy64DmpjHTD` | Schedule 10 min | **Watchdog**: `PIPELINE_ERROR`, `AUTH_ERROR`, `DOWNLOAD_FAILED`, `CALC_ERROR`, `PAYMENT_APPROVED`>2h, `REPORT_SENT`/`FINAL_REPORT_SENT`>30min sem cálculo → alerta cliente+equipe |
+| **Alerta_Laudo_Parcial** | `nWttny9O5BjKabz2` | Schedule 10 min | `LAUDO_PARCIAL` sem `PARCIAL_INFORMADO` → e-mail interno |
+| **Alerta_Reporte_Manual** | `XIx9gn1ifI7jsyoP` | Schedule 10 min | `MANUAL_PROCESS` → WhatsApp cliente + e-mail equipe → `ALERTA_MANUAL_SENT` |
+| **CPF_batch_processing** | `jMzstMZfztUMz7O6` | Webhook `POST /cpf-batch-processing` | Insere CPF direto como `PAYMENT_APPROVED` (sem WhatsApp/pagamento) — ferramenta interna |
 
-Ver documentação completa em `06_WORKFLOWS_N8N.md`.
+Snapshots JSON atualizados em `n8n_workflows_live/`. Documentação detalhada em `06_WORKFLOWS_N8N.md`.
+
+**Destinatários de alerta:** todos os e-mails internos vão para **`revisa.manual@gmail.com`** (não contato@/persival/rodrigo como em versões antigas).
 
 ---
 
-## Banco de Dados (PostgreSQL — `72.60.62.124:5432/n8n`)
+## Banco de Dados (PostgreSQL — `72.60.62.124:5432/n8n`, schema `public`)
 
-| Tabela | Alimentada por | Função |
-|---|---|---|
-| `consultas_esaj` | Chatbot Revisa, Mercado Pago Unified | Estado do job: ciclo de vida completo de cada solicitação |
-| `process_tracking` | Chatbot, MP, OCR, Laudo workflow | Eventos estruturados por consulta (auditoria completa) |
-| `logs` | orchestrator, crawler, processador | Log textual cronológico da execução |
-| `esaj_detalhe_processos` | ingest_v3_0.py | 35 colunas com dados extraídos dos PDFs (OCR) |
-| `esaj_calc_precatorio_resumo` | calc-precatorio-tjsp | Valores atualizados; sua presença dispara o envio do laudo |
-| `vw_precatorios_full` | — (view) | JOIN entre `esaj_detalhe_processos` e `esaj_calc_precatorio_resumo`; consultada pelo laudo |
+| Tabela/View | Colunas | Alimentada por | Função |
+|---|---|---|---|
+| `consultas_esaj` | 30 | Chatbot, MP Unified, batch, orchestrator | Ciclo de vida completo: estado, pagamento, retries, timestamps de processamento |
+| `process_tracking` | 13 | Chatbot, MP, OCR, Laudo, Alertas | Eventos estruturados por consulta (auditoria) |
+| `logs` | 5 | orchestrator, crawler, pipeline, n8n | Log textual cronológico |
+| `esaj_detalhe_processos` | 66 | ingest_all_jsons.py | Dados extraídos dos PDFs (OCR) + flags rejeição/anomalia |
+| `esaj_calc_precatorio_resumo` | 47 | calc-precatorio-tjsp | Valores atualizados com fatores IPCA-E/juros detalhados |
+| `vw_precatorios_full` | view | — | JOIN OCR + cálculo; consultada pelo Laudo workflow |
+| `view_processados` | view | — | Processos esperados (`consultas_esaj.processos`) vs. calculados |
+| `vw_backoffice_processos` | view | — | Consolidação para o backoffice Streamlit (recriada 20/09/2026) |
 
 ---
 
@@ -108,42 +124,56 @@ Ver documentação completa em `06_WORKFLOWS_N8N.md`.
 
 ```
 IDLE
-  └─► AWAITING_EMAIL         (chatbot pediu email)
+  └─► AWAITING_EMAIL         (chatbot pediu e-mail)
         └─► AWAITING_CODE    (código enviado — expira 15 min)
               └─► AWAITING_CONFIRMATION  (aguarda confirmação de dados)
                     └─► AWAITING_PAYMENT  (link MP gerado — expira 60 min)
                           ├─► PAYMENT_APPROVED
-                          │       └─► PROCESSING
-                          │               ├─► FINAL_REPORT_SENT    ✅ (laudo completo)
-                          │               ├─► PARTIAL_REPORT_SENT  ⚠️ (laudo parcial)
-                          │               ├─► PIPELINE_ERROR       ❌ (OCR/cálculo falharam)
-                          │               ├─► AUTH_ERROR           ❌ (cert. A1 / login e-SAJ)
-                          │               ├─► DOWNLOAD_FAILED      ❌ (PDFs não baixados)
-                          │               ├─► NO_VALID_PROCESS     ℹ️ (sem precatórios)
-                          │               └─► MANUAL_PROCESS       ⚠️ (OCR parcial)
-                          │                       └─► ALERTA_MANUAL_SENT
-                          └─► PAYMENT_REJECTED
+                          │       └─► PROCESSING  (orchestrator, SKIP LOCKED)
+                          │               ├─► FINAL_REPORT_SENT   ← transitório (Laudo, Etapa 9)
+                          │               ├─► PARTIAL_REPORT_SENT ← transitório (Laudo, Etapa 9)
+                          │               ├─► REPORT_SENT         ← TERMINAL DE-FACTO (orchestrator)
+                          │               ├─► PIPELINE_ERROR      ❌
+                          │               ├─► CALC_ERROR          ❌
+                          │               ├─► AUTH_ERROR          ❌
+                          │               ├─► DOWNLOAD_FAILED     ❌
+                          │               ├─► NO_VALID_PROCESS    ℹ️ terminal
+                          │               └─► MANUAL_PROCESS      ⚠️
+                          │                       └─► ALERTA_MANUAL_SENT  (terminal pós-alerta)
+                          └─► PAYMENT_REJECTED  (terminal; "sim" gera novo link)
 ```
 
-> `REPORT_SENT` é transitório: o orchestrator seta, mas o workflow **Laudo envio email+cpf** o substitui por `FINAL_REPORT_SENT` ou `PARTIAL_REPORT_SENT` ao processar.
+> Estados cobertos pelo watchdog `Alerta_ERROS_GRAVES`: `PIPELINE_ERROR`, `AUTH_ERROR`, `DOWNLOAD_FAILED`, `CALC_ERROR`, `PAYMENT_APPROVED` (>2h = worker caído), `REPORT_SENT`/`FINAL_REPORT_SENT` (>30min sem registro de cálculo = laudo fantasma).
 
 ---
 
 ## Cenários Documentados
 
-| Cenário | Descrição | Estado final |
+| Cenário | Descrição | Estado final real |
 |---|---|---|
-| **A** | Sucesso total — todos os PDFs processados, laudo completo enviado | `FINAL_REPORT_SENT` |
-| **B** | PDFs antigos série "700" — OCR falha em parte, laudo parcial enviado | `PARTIAL_REPORT_SENT` |
-| **C1** | CPF do cliente não encontrado em nenhum ofício | `MANUAL_PROCESS` |
-| **C2** | ANEXO II pertence a outro CPF (multi-credor no mesmo ofício) | `MANUAL_PROCESS` |
-| **C3** | Falha total de OCR — todos os PDFs falham | `MANUAL_PROCESS` |
-| **D1** | Auth error — certificado A1 expirado ou login e-SAJ falhou | `AUTH_ERROR` |
-| **D2** | Download failed — PDFs não foram baixados do e-SAJ | `DOWNLOAD_FAILED` |
-| **E** | Cliente sem precatórios registrados no TJSP | `NO_VALID_PROCESS` |
-| **F** | 100% dos processos rejeitados pelo DEPRE — sem cálculo gerado, laudo nunca enviado | `PROCESSING` (falso) |
+| **A** | Sucesso total — todos os processos calculados, laudo completo ao cliente | `REPORT_SENT` (+ `LAUDO_ENVIADO` no tracking) |
+| **B** | Parte dos processos sem detalhe/antigos — laudo parcial à equipe + WhatsApp ao cliente | `REPORT_SENT` (+ `LAUDO_PARCIAL` + `PARCIAL_INFORMADO`) |
+| **C1/C2** | CPF não encontrado no ofício / ANEXO II de outro credor | `REPORT_SENT` (parcial) ou `MANUAL_PROCESS` → `ALERTA_MANUAL_SENT` |
+| **C3** | Falha total de OCR — todos os PDFs falham | `PIPELINE_ERROR` → `ALERTA_MANUAL_SENT` |
+| **D1** | Auth error — certificado A1 / login e-SAJ | `AUTH_ERROR` → `ALERTA_MANUAL_SENT` |
+| **D2** | Download failed — PDFs não baixados | `DOWNLOAD_FAILED` → `ALERTA_MANUAL_SENT` |
+| **E** | Cliente sem precatórios no TJSP | `NO_VALID_PROCESS` |
+| **F** ✅ | 100% processos rejeitados DEPRE — **resolvido**: Etapa 9b chama webhook direto | `REPORT_SENT` (+ laudo de rejeição ao cliente) |
 
 Ver detalhes em `03_CENARIOS_E_TABELAS.md`.
+
+---
+
+## Comunicação LGPD (adicionado set/2026)
+
+| Ponto de contato | Onde | Conteúdo |
+|---|---|---|
+| Laudo completo | `Laudo envio email+cpf` → `Build HTML Content` | Aviso LGPD ao final do DISCLAIMER + link Política de Privacidade |
+| Laudo parcial | `Laudo envio email+cpf` → `Build HTML Parcial` | Mesmo aviso |
+| E-mail de verificação | `Chatbot Revisa` → `Send Verification Email` | Seção "Privacidade e proteção de dados" + link política + contato@ |
+| WhatsApp pós-pagamento | `Mercado Pago Unified` → `Process Payment Status` | Prazo 24h + exceção até 7 dias úteis (2 typos pendentes: `e mail`, `scaneados`) |
+
+Política publicada: `https://www.revisaprecatorio.com.br/politica-de-privacidade/`
 
 ---
 
@@ -151,23 +181,15 @@ Ver detalhes em `03_CENARIOS_E_TABELAS.md`.
 
 | Arquivo | Conteúdo |
 |---|---|
-| `01_ARQUITETURA_GERAL.md` | Componentes, repositórios, schema completo de todas as tabelas |
-| `02_FLUXO_COMPLETO.md` | Passo a passo detalhado de cada fase (Chatbot → Crawler → OCR → Laudo → Alertas) |
-| `03_CENARIOS_E_TABELAS.md` | O que acontece nas tabelas em cada cenário (A a F) |
-| `04_QUERIES_MONITORAMENTO.md` | 19 queries SQL prontas para monitoramento e diagnóstico operacional |
-| `05_DIAGRAMAS_MERMAID.md` | 7 diagramas Mermaid: pipeline completo, máquina de estados, workflows n8n, OCR interno |
-| `06_WORKFLOWS_N8N.md` | Documentação detalhada dos 7 workflows n8n (nós, lógica, integrações) |
-| `07_FERRAMENTAS_AUXILIARES.md` | Streamlit backoffice + CPF_batch_processing (ferramentas fora do pipeline principal) |
-
-### Ordem de leitura recomendada
-
-1. **Este arquivo** — visão geral da plataforma
-2. `01_ARQUITETURA_GERAL.md` — schema de tabelas e infraestrutura
-3. `02_FLUXO_COMPLETO.md` — execução passo a passo
-4. `03_CENARIOS_E_TABELAS.md` — comportamento em cada tipo de falha
-5. `04_QUERIES_MONITORAMENTO.md` — queries para operar o sistema
-6. `06_WORKFLOWS_N8N.md` — detalhe dos workflows n8n
-7. `07_FERRAMENTAS_AUXILIARES.md` — ferramentas de apoio
+| `01_ARQUITETURA_GERAL.md` | Componentes, repositórios, schema real completo das tabelas |
+| `02_FLUXO_COMPLETO.md` | Passo a passo detalhado de cada fase |
+| `03_CENARIOS_E_TABELAS.md` | O que acontece nas tabelas em cada cenário (A–F) |
+| `04_QUERIES_MONITORAMENTO.md` | Queries SQL corrigidas para o schema real (timestamp_evento, detalhes, concluido) |
+| `05_DIAGRAMAS_MERMAID.md` | Diagramas Mermaid atualizados |
+| `06_WORKFLOWS_N8N.md` | Documentação dos 7 workflows ativos (contra JSONs vivos) |
+| `07_FERRAMENTAS_AUXILIARES.md` | Streamlit backoffice + CPF_batch_processing |
+| `n8n_workflows_live/*.json` | Snapshots dos 7 workflows ativos (baixados 20/09/2026) |
+| `scripts/` | PowerShell de diagnóstico da VPS |
 
 ---
 
@@ -175,6 +197,25 @@ Ver detalhes em `03_CENARIOS_E_TABELAS.md`.
 
 | Item | Descrição | Status |
 |---|---|---|
-| **Cenário F** | Implementar Etapa 9b no `pipeline_completo.sh` — laudo direto para processos 100% rejeitados | ⏳ Aguardando validação do `validacao_junho_08/diagnostico_cpf_16914336830.md` |
-| **DetectorSaldoFinal V3.0.0** | Commit `e867264` local — push + git pull na VPS + restart do serviço | ⏳ Aguardando confirmação do repo usado na VPS |
-| **Calc repo** | Confirmar nome e URL do repositório `calc-precatorio-tjsp` | ❓ Não confirmado |
+| ~~`vw_backoffice_processos` ausente~~ | View recriada 20/09/2026 (com `valorizacao_percentual` calculado) — backoffice funcional novamente | ✅ Resolvido |
+| **Typos mensagem MP aprovada** | `e mail` → `e-mail`, `scaneados` → `escaneados` no `Process Payment Status` | 🔴 Aberto (cosmético) |
+| **Certificado e-SAJ antigo** | e-SAJ mostra cert. com validade até 09/09/2026; novo cert (até 08/2027) já está no Store e exportado em `~/.certs/cert_ecpf.pfx`. Origem do cert antigo não localizada (Web Signer/on-demand). Investigação pausada a pedido | ⏸️ Pausado |
+| **Aviso LGPD antes do CPF** | Melhoria de transparência (art. 9º) — aguardando decisão do Flávio (receio de conversão) | ⏸️ Decisão de produto |
+| **Dados sensíveis (art. 11)** | Política não explicita tratamento de saúde/PCD/óbito/sucessores — pergunta pendente para Flávio | ⏸️ Decisão jurídica |
+| **Controles internos LGPD** | Procedimentos para contato@ (localizar/corrigir/excluir por CPF), retenção, acesso à caixa revisa.manual@, incidentes | ⏸️ Governança |
+| **`worker_pm2.bat`/`start_worker.py`** | Apontam para `main.py` inexistente — produção usa `runtime/executar.bat`; remover/migrar referências antigas | 🟡 Cosmético |
+| **Limpeza VPS** | `C:\temp\cert_ecpf.pfx` (cópia da chave privada) — remover se ainda presente | 🟡 Higiene |
+
+---
+
+## Mudanças relevantes desta revisão (20/09/2026 vs. ago/2026)
+
+1. **`REPORT_SENT` documentado como estado terminal real** — antes era "transitório"
+2. **Cenário F resolvido** — Etapa 9b do `pipeline_completo.sh` chama o webhook quando 100% rejeitado
+3. **`Alerta_ERROS_GRAVES` virou watchdog completo** — cobre `CALC_ERROR`, `PAYMENT_APPROVED`>2h, `REPORT_SENT` fantasma
+4. **Schema real corrigido** — `process_tracking` usa `timestamp_evento`/`detalhes`/`concluido` (não `created_at`/`metadata`/`sucesso`); tabelas com 30/66/47 colunas documentadas
+5. **Destinatários de alerta corrigidos** — `revisa.manual@gmail.com` em todos
+6. **LGPD adicionado** — laudos + e-mail de verificação
+7. **`CPF_batch_processing` documentado corretamente** — insere `PAYMENT_APPROVED` direto com `BATCH_*`
+8. **Repos confirmados** — `calc-precatorio-tjsp` existe; 7 repos no total
+9. **`vw_backoffice_processos` recriada** — estava ausente (perdida no wipe); recriada com `valorizacao_percentual` calculado conforme uso do `6.UI_backoffice`

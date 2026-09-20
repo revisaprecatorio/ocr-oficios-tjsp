@@ -34,6 +34,7 @@ env/
 !**/.env.example
 config_db.env
 github_credentials.env
+n8n_api.env
 
 # API Keys (sensitive)
 gemini_api_key.txt
@@ -127,3 +128,6 @@ tests/*_export.csv
 
 # Outro projeto - Chatbot n8n / Integração Mercado Pago
 9_review_chatbot_n8n/
+
+# Excecao: snapshots de workflows n8n (documentacao, nao dados)
+!assessment_pipeline/n8n_workflows_live/*.json
