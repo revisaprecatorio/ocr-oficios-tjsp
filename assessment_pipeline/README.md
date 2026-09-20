@@ -188,6 +188,7 @@ Política publicada: `https://www.revisaprecatorio.com.br/politica-de-privacidad
 | `05_DIAGRAMAS_MERMAID.md` | Diagramas Mermaid atualizados |
 | `06_WORKFLOWS_N8N.md` | Documentação dos 7 workflows ativos (contra JSONs vivos) |
 | `07_FERRAMENTAS_AUXILIARES.md` | Streamlit backoffice + CPF_batch_processing |
+| `08_RUNBOOK_MONITORAMENTO.md` | Runbook do agente de monitoramento agendado (Hermes) — checks, severidades, dedup, formato de alerta |
 | `n8n_workflows_live/*.json` | Snapshots dos 7 workflows ativos (baixados 20/09/2026) |
 | `scripts/` | PowerShell de diagnóstico da VPS |
 
