@@ -1,6 +1,6 @@
 # Diagramas Mermaid — Pipeline Revisa Precatório
 
-**Revisado:** 20/09/2026 — reflete REPORT_SENT terminal, Etapa 9b, watchdog ampliado e destinatários reais.
+**Revisado:** 13/11/2026 — reflete REPORT_SENT terminal, Etapa 9b, watchdog ampliado, destinatários reais e preço atual (R$ 99,90).
 
 ---
 
@@ -11,7 +11,7 @@ flowchart TD
     A([Cliente WhatsApp]) -->|CPF| B[Chatbot Revisa\nn8n]
     B -->|consulta e-SAJ + email + código| C[(consultas_esaj\nAWAITING_PAYMENT)]
     C -->|POST /generate-payment-link| D[Mercado Pago Unified\nn8n]
-    D -->|Link MP R$1,00| A
+    D -->|Link MP R$ 99,90| A
     A -->|Paga| MP[(Mercado Pago)]
     MP -->|webhook /mercadopago-notification| D
     D -->|approved → PAYMENT_APPROVED\n+ limpa dados antigos do CPF| E[(consultas_esaj)]
@@ -27,7 +27,7 @@ flowchart TD
     L --> M[processar_pipeline.py\ndetectors + LLM híbrido]
     M --> N[(esaj_detalhe_processos\n66 colunas)]
     L --> O[calc-precatorio-tjsp/main.py\nIPCA-E + juros + EC113/136]
-    O --> NA[(esaj_calc_precatorio_resumo\n47 colunas)]
+    O --> NA[(esaj_calc_precatorio_resumo\n48 colunas)]
     O -->|POST /reporte-email-cpf\nvia webhook_n8n.py| P[Laudo envio email+cpf\nn8n]
     L -.->|Etapa 9b: count(calc)=0\n→ chama webhook direto| P
 
@@ -102,7 +102,7 @@ stateDiagram-v2
 flowchart LR
     subgraph "Fluxo A — Geração de Link"
         WH1([POST\n/generate-payment-link]) --> V{Validate\ntrigger_payment\n+ email?}
-        V -->|Sim| GL[Generate Payment Link\nMP API — R$ 1,00\nexternal_ref=wa_ts]
+        V -->|Sim| GL[Generate Payment Link\nMP API — R$ 99,90\nexternal_ref=wa_ts]
         V -->|Não| SK[Log Skipped]
         GL --> SL[(Save Payment Link\nAWAITING_PAYMENT)]
         SL --> PT1[(PT: LINK_GERADO)]

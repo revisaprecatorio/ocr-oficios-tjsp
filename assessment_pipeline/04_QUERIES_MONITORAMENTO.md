@@ -483,8 +483,9 @@ WHERE table_schema = 'public' AND table_name = 'vw_backoffice_processos';
 
 ```sql
 -- Localização completa para solicitações enviadas a contato@revisaprecatorio.com.br
-SELECT 'consultas_esaj' AS tabela, id::text AS ref, cpf, email, whatsapp_from,
-       current_state, created_at::text AS quando
+SELECT 'consultas_esaj' AS tabela, id::text AS ref, cpf,
+       COALESCE(email, '') || ' / ' || COALESCE(whatsapp_from, '') AS contato,
+       current_state AS detalhe, created_at::text AS quando
 FROM consultas_esaj WHERE cpf = '<CPF>' OR email ILIKE '%<email>%'
 UNION ALL
 SELECT 'process_tracking', id::text, cpf, whatsapp_phone_number,

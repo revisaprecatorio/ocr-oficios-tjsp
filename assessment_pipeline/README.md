@@ -1,8 +1,8 @@
 # Revisa Precatório — Documentação da Plataforma
 
-**Pasta:** `assessment_pipeline/` | **Revisado:** 20/09/2026 contra produção viva (n8n API + PostgreSQL + GitHub)
+**Pasta:** `assessment_pipeline/` | **Revisado:** 13/11/2026 contra produção viva (n8n API + PostgreSQL + GitHub + código do OCR)
 
-> **Origem desta revisão:** todos os workflows foram re-baixados do n8n vivo (`n8n_workflows_live/`), o schema foi extraído diretamente do PostgreSQL e os repositórios foram confirmados via API do GitHub. Divergências da revisão anterior (ago/2026) foram corrigidas — ver "Mudanças relevantes" no final.
+> **Fonte de verdade do sistema.** Comece por `00_ONBOARDING.md`. Os workflows foram re-baixados do n8n vivo (`n8n_workflows_live/`), o schema e as queries foram validados no PostgreSQL e os repositórios conferidos via API do GitHub. Material antigo fica em `_arquivo/` e não deve ser usado como referência. Ver "Mudanças relevantes" no final.
 
 ---
 
@@ -13,13 +13,13 @@ A **Revisa Precatório** é um serviço B2C que permite a qualquer cidadão desc
 **Produto:** Análise automatizada de precatórios do TJSP
 **Canal de entrada:** WhatsApp (via Meta API + n8n)
 **Entrega:** E-mail com laudo HTML personalizado (completo ou parcial)
-**Pagamento:** Mercado Pago (checkout preferences, R$ 1,00 no cadastro atual)
+**Pagamento:** Mercado Pago (checkout preferences, **R$ 99,90** desde 20/09/2026)
 
 ---
 
 ## Arquitetura da Plataforma
 
-O sistema é composto por **repositórios GitHub (`revisaprecatorio`)** e **7 workflows n8n ativos**, orquestrados por um worker Python rodando em Windows Server:
+O sistema é composto por **repositórios GitHub (`revisaprecatorio`)** e **8 workflows n8n ativos**, orquestrados por um worker Python rodando em Windows Server:
 
 ```
 [Cliente WhatsApp]
@@ -43,6 +43,8 @@ O sistema é composto por **repositórios GitHub (`revisaprecatorio`)** e **7 wo
   ├── Alerta_ERROS_GRAVES      ← watchdog: erros + jobs travados → WhatsApp cliente + e-mail equipe
   ├── Alerta_Laudo_Parcial     ← laudos parciais → alerta interno
   └── Alerta_Reporte_Manual    ← MANUAL_PROCESS → notificação para equipe
+
+[n8n: Relatório Semanal Acumulado] (sexta 10h) ← histórico de consultas por CPF → e-mail interno
 ```
 
 ---
@@ -52,12 +54,15 @@ O sistema é composto por **repositórios GitHub (`revisaprecatorio`)** e **7 wo
 | Repositório | Último push | Onde roda | Função |
 |---|---|---|---|
 | [`crawler_tjsp`](https://github.com/revisaprecatorio/crawler_tjsp) | 2026-03-31 | Windows Server VPS | Autenticação e-SAJ via certificado A1 + Web Signer, busca por CPF, download de PDFs da Pasta Digital. Worker em `core/`, launcher em `runtime/executar.bat` |
-| [`ocr-oficios-tjsp`](https://github.com/revisaprecatorio/ocr-oficios-tjsp) | 2026-06-17 | Windows Server VPS | OCR dos PDFs (extração de campos), ingestão no PostgreSQL, `pipeline_completo.sh` (inclui **Etapa 9b**) |
+| [`ocr-oficios-tjsp`](https://github.com/revisaprecatorio/ocr-oficios-tjsp) | 2026-09-20 | Windows Server VPS | OCR dos PDFs (extração de campos), ingestão no PostgreSQL, `pipeline_completo.sh` (inclui **Etapa 9b**) **+ esta documentação** |
 | [`calc-precatorio-tjsp`](https://github.com/revisaprecatorio/calc-precatorio-tjsp) | 2026-05-07 | Windows Server VPS | Atualização monetária (IPCA-E, juros, EC113/EC136); insere em `esaj_calc_precatorio_resumo` e chama webhook via `webhook_n8n.py` |
-| [`6.UI_backoffice`](https://github.com/revisaprecatorio/6.UI_backoffice) | 2025-12-15 | VPS Linux (Docker :8502) | Streamlit backoffice — **ver pendência: view `vw_backoffice_processos` ausente** |
+| [`6.UI_backoffice`](https://github.com/revisaprecatorio/6.UI_backoffice) | 2025-12-15 | VPS Linux (Docker :8502) | Streamlit backoffice (depende de `vw_backoffice_processos`, recriada 20/09/2026) |
 | [`n8n-source-code-docs`](https://github.com/revisaprecatorio/n8n-source-code-docs) | 2026-06-11 | — | Backup histórico dos workflows (desatualizado; snapshots atuais em `n8n_workflows_live/`) |
 | `psc_calc_tjsp` | 2025-12-22 | — | ❌ Legado — versão anterior do crawler/orquestrador |
 | `streamlit_consulta_esaj` | 2025-09-22 | — | ❌ Legado — primeira versão do backoffice |
+| `website` (privado) | 2025-12-18 | — | Site institucional `revisaprecatorio.com.br` (fora do pipeline) |
+
+> Datas de último push conferidas via API do GitHub em 13/11/2026. O GitHub não garante que o código na VPS seja o mesmo — essa conferência exige acesso à VPS.
 
 ---
 
@@ -87,21 +92,22 @@ O sistema é composto por **repositórios GitHub (`revisaprecatorio`)** e **7 wo
 
 ---
 
-## Workflows n8n (7 ativos — instância `n8n.srv987902.hstgr.cloud`, 50 no total)
+## Workflows n8n (8 ativos — instância `n8n.srv987902.hstgr.cloud`, 51 no total)
 
 | Workflow | ID | Trigger | Função |
 |---|---|---|---|
 | **Chatbot Revisa** | `73xnqygBK9tk6aDK` | Webhook WhatsApp `whatsapp-beta-agent` | Máquina de estados conversacional: CPF → e-SAJ → e-mail/código → confirmação → pagamento |
-| **Mercado Pago Unified** | `6COT3ubybyI8QhYT` | Webhooks `/generate-payment-link` + `/mercadopago-notification` | Gera link MP (R$ 1,00); processa notificações approved/rejected/pending |
+| **Mercado Pago Unified** | `6COT3ubybyI8QhYT` | Webhooks `/generate-payment-link` + `/mercadopago-notification` | Gera link MP (R$ 99,90); processa notificações approved/rejected/pending |
 | **Laudo envio email+cpf** | `UrxjrcPE2C7WTLa0` | Webhook `POST /reporte-email-cpf` | Verifica completude → laudo completo ao cliente ou parcial à equipe + WhatsApp |
 | **Alerta_ERROS_GRAVES** | `GnL3nOy64DmpjHTD` | Schedule 10 min | **Watchdog**: `PIPELINE_ERROR`, `AUTH_ERROR`, `DOWNLOAD_FAILED`, `CALC_ERROR`, `PAYMENT_APPROVED`>2h, `REPORT_SENT`/`FINAL_REPORT_SENT`>30min sem cálculo → alerta cliente+equipe |
 | **Alerta_Laudo_Parcial** | `nWttny9O5BjKabz2` | Schedule 10 min | `LAUDO_PARCIAL` sem `PARCIAL_INFORMADO` → e-mail interno |
 | **Alerta_Reporte_Manual** | `XIx9gn1ifI7jsyoP` | Schedule 10 min | `MANUAL_PROCESS` → WhatsApp cliente + e-mail equipe → `ALERTA_MANUAL_SENT` |
 | **CPF_batch_processing** | `jMzstMZfztUMz7O6` | Webhook `POST /cpf-batch-processing` | Insere CPF direto como `PAYMENT_APPROVED` (sem WhatsApp/pagamento) — ferramenta interna |
+| **Relatório Semanal Acumulado** | `nUCThfJ7zsmYJvoR` | Schedule sexta 10h (`America/Sao_Paulo`) + Manual | Relatório HTML + CSV, uma linha por CPF consultado, histórico acumulado → 4 destinatários internos |
 
-Snapshots JSON atualizados em `n8n_workflows_live/`. Documentação detalhada em `06_WORKFLOWS_N8N.md`.
+Snapshots JSON (13/11/2026) em `n8n_workflows_live/`. Documentação detalhada em `06_WORKFLOWS_N8N.md` e `09_RELATORIO_SEMANAL_N8N.md`.
 
-**Destinatários de alerta:** todos os e-mails internos vão para **`revisa.manual@gmail.com`** (não contato@/persival/rodrigo como em versões antigas).
+**Destinatários de alerta:** todos os e-mails de alerta vão para **`revisa.manual@gmail.com`**. O relatório semanal vai para `persival.balleste@`, `ricazevedo.adv@`, `dr.rodrigoferrao@` e `adv.cappi@` (todos `gmail.com`).
 
 ---
 
@@ -109,11 +115,11 @@ Snapshots JSON atualizados em `n8n_workflows_live/`. Documentação detalhada em
 
 | Tabela/View | Colunas | Alimentada por | Função |
 |---|---|---|---|
-| `consultas_esaj` | 30 | Chatbot, MP Unified, batch, orchestrator | Ciclo de vida completo: estado, pagamento, retries, timestamps de processamento |
+| `consultas_esaj` | 31 | Chatbot, MP Unified, batch, orchestrator | Ciclo de vida completo: estado, pagamento, retries, timestamps de processamento |
 | `process_tracking` | 13 | Chatbot, MP, OCR, Laudo, Alertas | Eventos estruturados por consulta (auditoria) |
 | `logs` | 5 | orchestrator, crawler, pipeline, n8n | Log textual cronológico |
 | `esaj_detalhe_processos` | 66 | ingest_all_jsons.py | Dados extraídos dos PDFs (OCR) + flags rejeição/anomalia |
-| `esaj_calc_precatorio_resumo` | 47 | calc-precatorio-tjsp | Valores atualizados com fatores IPCA-E/juros detalhados |
+| `esaj_calc_precatorio_resumo` | 48 | calc-precatorio-tjsp | Valores atualizados com fatores IPCA-E/juros detalhados |
 | `vw_precatorios_full` | view | — | JOIN OCR + cálculo; consultada pelo Laudo workflow |
 | `view_processados` | view | — | Processos esperados (`consultas_esaj.processos`) vs. calculados |
 | `vw_backoffice_processos` | view | — | Consolidação para o backoffice Streamlit (recriada 20/09/2026) |
@@ -181,16 +187,20 @@ Política publicada: `https://www.revisaprecatorio.com.br/politica-de-privacidad
 
 | Arquivo | Conteúdo |
 |---|---|
+| `00_ONBOARDING.md` | **Ponto de entrada** — ordem de leitura, acessos, glossário, exercícios |
 | `01_ARQUITETURA_GERAL.md` | Componentes, repositórios, schema real completo das tabelas |
 | `02_FLUXO_COMPLETO.md` | Passo a passo detalhado de cada fase |
 | `03_CENARIOS_E_TABELAS.md` | O que acontece nas tabelas em cada cenário (A–F) |
 | `04_QUERIES_MONITORAMENTO.md` | Queries SQL corrigidas para o schema real (timestamp_evento, detalhes, concluido) |
 | `05_DIAGRAMAS_MERMAID.md` | Diagramas Mermaid atualizados |
-| `06_WORKFLOWS_N8N.md` | Documentação dos 7 workflows ativos (contra JSONs vivos) |
+| `06_WORKFLOWS_N8N.md` | Documentação dos 8 workflows ativos (contra JSONs vivos) |
 | `07_FERRAMENTAS_AUXILIARES.md` | Streamlit backoffice + CPF_batch_processing |
 | `08_RUNBOOK_MONITORAMENTO.md` | Runbook do agente de monitoramento agendado (Hermes) — checks, severidades, dedup, formato de alerta |
-| `n8n_workflows_live/*.json` | Snapshots dos 7 workflows ativos (baixados 20/09/2026) |
+| `09_RELATORIO_SEMANAL_N8N.md` | Relatório semanal acumulado (HTML + CSV): agendamento, destinatários, colunas, limites |
+| `10_OCR_E_INGESTAO.md` | OCR e ingestão por dentro: detectores, LLM híbrido, falhas por PDF, regras de upsert |
+| `n8n_workflows_live/*.json` | Snapshots dos 8 workflows ativos (baixados 13/11/2026) |
 | `scripts/` | PowerShell de diagnóstico da VPS |
+| `_arquivo/` | Material histórico (docs e JSONs antigos) — **não usar como referência** |
 
 ---
 
@@ -206,10 +216,22 @@ Política publicada: `https://www.revisaprecatorio.com.br/politica-de-privacidad
 | **Controles internos LGPD** | Procedimentos para contato@ (localizar/corrigir/excluir por CPF), retenção, acesso à caixa revisa.manual@, incidentes | ⏸️ Governança |
 | **`worker_pm2.bat`/`start_worker.py`** | Apontam para `main.py` inexistente — produção usa `runtime/executar.bat`; remover/migrar referências antigas | 🟡 Cosmético |
 | **Limpeza VPS** | `C:\temp\cert_ecpf.pfx` (cópia da chave privada) — remover se ainda presente | 🟡 Higiene |
+| **Relatório semanal marcado como teste** | Assunto `[TESTE] ...` e nó "Enviar relatório de teste" no workflow `nUCThfJ7zsmYJvoR` | 🟡 Cosmético |
+| **`AGENTS.md`/`README.md` da raiz defasados** | Modelo Gemini, TRUNCATE, 35 colunas, contagem de testes — para o pipeline vale `10_OCR_E_INGESTAO.md` | 🟡 Documentação |
 
 ---
 
-## Mudanças relevantes desta revisão (20/09/2026 vs. ago/2026)
+## Mudanças relevantes da revisão de 13/11/2026
+
+1. **Preço corrigido** — Mercado Pago cobra **R$ 99,90** desde 20/09/2026 (docs diziam R$ 1,00)
+2. **8º workflow ativo documentado** — `Relatório Semanal Acumulado` (sexta 10h, 4 destinatários); snapshot JSON adicionado
+3. **Contagens atualizadas** — 51 workflows / 8 ativos; `consultas_esaj` 31 colunas, `esaj_calc_precatorio_resumo` 48
+4. **Novo `10_OCR_E_INGESTAO.md`** — detalhe da Fase 4 a partir do código (o `AGENTS.md` da raiz está defasado: modelo Gemini, TRUNCATE, schema)
+5. **Evento `CONSULTA/TJSP_INOPERANTE`** documentado; **Q27** (LGPD) corrigida — o UNION tinha número de colunas diferente; query do `Alerta_ERROS_GRAVES` no `06` completada (`GROUP BY` real)
+6. **Consolidação** — `docs/workflows/`, `workflows_n8n/` e a `n8n_workflows_live/` da raiz foram movidos para `_arquivo/`
+7. **Validação** — as 38 queries SQL desta pasta rodam contra o banco real; os 8 snapshots são idênticos aos workflows vivos; os 47 arquivos citados existem nos repos do GitHub
+
+## Mudanças relevantes da revisão de 20/09/2026 (vs. ago/2026)
 
 1. **`REPORT_SENT` documentado como estado terminal real** — antes era "transitório"
 2. **Cenário F resolvido** — Etapa 9b do `pipeline_completo.sh` chama o webhook quando 100% rejeitado
@@ -218,5 +240,5 @@ Política publicada: `https://www.revisaprecatorio.com.br/politica-de-privacidad
 5. **Destinatários de alerta corrigidos** — `revisa.manual@gmail.com` em todos
 6. **LGPD adicionado** — laudos + e-mail de verificação
 7. **`CPF_batch_processing` documentado corretamente** — insere `PAYMENT_APPROVED` direto com `BATCH_*`
-8. **Repos confirmados** — `calc-precatorio-tjsp` existe; 7 repos no total
+8. **Repos confirmados** — `calc-precatorio-tjsp` existe; 7 repos públicos (+ `website`, privado)
 9. **`vw_backoffice_processos` recriada** — estava ausente (perdida no wipe); recriada com `valorizacao_percentual` calculado conforme uso do `6.UI_backoffice`

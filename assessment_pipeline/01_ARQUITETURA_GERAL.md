@@ -1,6 +1,6 @@
 # Arquitetura Geral — Revisa Precatório
 
-**Data:** 20/09/2026 | **Versão:** 2.0 — revisado contra produção viva (n8n API + PostgreSQL + GitHub API)
+**Data:** 13/11/2026 | **Versão:** 2.1 — revisado contra produção viva (n8n API + PostgreSQL + GitHub API). Detalhes internos do OCR e da ingestão em `10_OCR_E_INGESTAO.md`.
 
 ---
 
@@ -33,12 +33,12 @@ O pipeline da Revisa transforma uma solicitação de cliente (WhatsApp) em um la
 
 | Componente | Repositório | Caminho no VPS | Função |
 |---|---|---|---|
-| **Chatbot + Pagamento + Laudo + Alertas** | n8n (7 workflows) | `n8n.srv987902.hstgr.cloud` | Conversa, pagamento, entrega do laudo, watchdog |
+| **Chatbot + Pagamento + Laudo + Alertas + Relatório** | n8n (8 workflows ativos) | `n8n.srv987902.hstgr.cloud` | Conversa, pagamento, entrega do laudo, watchdog, relatório semanal |
 | **Crawler TJSP** | [`crawler_tjsp`](https://github.com/revisaprecatorio/crawler_tjsp) | `C:\Users\Administrator\Documents\revisa\crawler_tjsp\` | Download de PDFs do e-SAJ via Selenium + cert. A1 |
 | **OCR Pipeline** | [`ocr-oficios-tjsp`](https://github.com/revisaprecatorio/ocr-oficios-tjsp) | `C:\Users\Administrator\Documents\revisa\ocr-oficios-tjsp\` | Extração de dados dos PDFs + ingestão (`pipeline_completo.sh`) |
 | **Cálculo** | [`calc-precatorio-tjsp`](https://github.com/revisaprecatorio/calc-precatorio-tjsp) | `C:\Users\Administrator\Documents\revisa\calc-precatorio-tjsp\` | Atualização monetária; chama webhook via `webhook_n8n.py` |
 | **Banco de Dados** | PostgreSQL | `72.60.62.124:5432 / n8n` | Estado, logs, dados extraídos, cálculos |
-| **Backoffice** | [`6.UI_backoffice`](https://github.com/revisaprecatorio/6.UI_backoffice) | VPS Linux, Docker `:8502` | Streamlit de monitoramento — **⚠️ depende de `vw_backoffice_processos` (ausente)** |
+| **Backoffice** | [`6.UI_backoffice`](https://github.com/revisaprecatorio/6.UI_backoffice) | VPS Linux, Docker `:8502` | Streamlit de monitoramento — depende de `vw_backoffice_processos` (recriada 20/09/2026) |
 
 ### Crawler TJSP — Detalhes
 
@@ -108,7 +108,7 @@ runtime/executar.bat
 
 ## 3. Tabelas do Banco de Dados — SCHEMA REAL (extraído 20/09/2026)
 
-### `consultas_esaj` — Estado do Job (30 colunas)
+### `consultas_esaj` — Estado do Job (31 colunas)
 
 | Coluna | Tipo | Descrição |
 |---|---|---|
@@ -132,7 +132,7 @@ runtime/executar.bat
 | `mp_preference_id` | varchar | Preferência Mercado Pago |
 | `mp_payment_id` | varchar | ID do pagamento MP (`'BATCH_*'` quando inserido via batch) |
 | `mp_payment_status` | varchar | `approved`/`rejected`/`pending` |
-| `mp_payment_amount` | numeric | Valor (R$ 1,00) |
+| `mp_payment_amount` | numeric | Valor pago (R$ 99,90 desde 20/09/2026; `1.00` nos registros do batch) |
 | `mp_external_reference` | varchar | `{whatsapp_from}_{timestamp}` |
 | `payment_link` | text | Link de checkout |
 | `payment_created_at` / `payment_confirmed_at` | timestamp | Ciclo do pagamento |
@@ -152,7 +152,7 @@ runtime/executar.bat
 | `consulta_id` | bigint | FK lógica → `consultas_esaj.id` |
 | `cpf` | varchar | |
 | `whatsapp_phone_number` | varchar | |
-| `etapa` | varchar | `CONSULTA`, `PAYMENT`, `OCR`, `ENVIO_LAUDO`, `LAUDO_PARCIAL` |
+| `etapa` | varchar | `CONSULTA`, `PAYMENT`, `OCR`, `ENVIO_LAUDO`, `LAUDO_PARCIAL` (eventos em `03`) |
 | `evento` | varchar | Evento específico (ver 03) |
 | `retries` | int | |
 | `concluido` | boolean | Evento concluído com sucesso |
@@ -186,7 +186,7 @@ Schema físico real tem **66 colunas** — inclui as ~35 documentadas do V3.0 **
 
 **Unique:** `(cpf, numero_processo_cnj)` — upsert.
 
-### `esaj_calc_precatorio_resumo` — Resultado do Cálculo (47 colunas)
+### `esaj_calc_precatorio_resumo` — Resultado do Cálculo (48 colunas)
 
 Além de `cpf`, `numero_processo_cnj`, `total_corrigido`, `criado_em`, contém a **trilha completa do cálculo**:
 
