@@ -1,8 +1,8 @@
 # Workflows n8n — Revisa Precatório
 
-**Revisado:** 20/09/2026 | **Fonte:** JSONs baixados da instância viva `n8n.srv987902.hstgr.cloud` via API (`n8n_workflows_live/*.json`)
+**Revisado:** 13/11/2026 | **Fonte:** JSONs baixados da instância viva `n8n.srv987902.hstgr.cloud` via API (`assessment_pipeline/n8n_workflows_live/*.json`)
 
-> A instância tem **50 workflows, 7 ativos**. Os 43 inativos são versões antigas/experimentais (inclui **2× `Alerta_PDF_antigo`** desabilitados: `PMyNPcPlRZMZjCb1`, `Uck9WlB08COLVM1K`). O backup GitHub `n8n-source-code-docs` (jun/2026) é histórico — a fonte de verdade é `n8n_workflows_live/` aqui.
+> A instância tem **51 workflows, 8 ativos**. Os 43 inativos são versões antigas/experimentais (inclui **2× `Alerta_PDF_antigo`** desabilitados: `PMyNPcPlRZMZjCb1`, `Uck9WlB08COLVM1K`). O backup GitHub `n8n-source-code-docs` (jun/2026) e as cópias em `_arquivo/` são históricos — a fonte de verdade é `assessment_pipeline/n8n_workflows_live/`.
 >
 > Para reimportar: **n8n → Import Workflow → Upload JSON**. A API key fica em `../n8n_api.env` (não commitar).
 
@@ -13,12 +13,13 @@
 | # | ID n8n | Workflow | Nós | Trigger | Última atualização |
 |---|---|---|---|---|---|
 | 1 | `73xnqygBK9tk6aDK` | [Chatbot Revisa](#1-chatbot-revisa) | 35 | Webhook WhatsApp | 20/09 (LGPD no e-mail de código) |
-| 2 | `6COT3ubybyI8QhYT` | [Mercado Pago Unified](#2-mercado-pago-unified) | 18 | 2 webhooks | 02/05 |
+| 2 | `6COT3ubybyI8QhYT` | [Mercado Pago Unified](#2-mercado-pago-unified) | 18 | 2 webhooks | 20/09 (preço R$ 99,90) |
 | 3 | `UrxjrcPE2C7WTLa0` | [Laudo envio email+cpf](#3-laudo-envio-emailcpf) | 19 | `POST /reporte-email-cpf` | 19/09 (LGPD nos 2 HTMLs) |
 | 4 | `GnL3nOy64DmpjHTD` | [Alerta_ERROS_GRAVES](#4-alerta_erros_graves) | 7 | Schedule 10 min | 17/09 (watchdog ampliado) |
 | 5 | `nWttny9O5BjKabz2` | [Alerta_Laudo_Parcial](#5-alerta-laudo-parcial) | 6 | Schedule 10 min | 28/08 |
 | 6 | `XIx9gn1ifI7jsyoP` | [Alerta_Reporte_Manual](#6-alerta-reporte-manual) | 7 | Schedule 10 min | 28/08 |
 | 7 | `jMzstMZfztUMz7O6` | [CPF_batch_processing](#7-cpf-batch-processing) | 6 | `POST /cpf-batch-processing` | 18/04 |
+| 8 | `nUCThfJ7zsmYJvoR` | [Relatório Semanal Acumulado](#8-relatório-semanal-acumulado) | 5 | Schedule sexta 10h + Manual | 28/10 (ativado, 4 destinatários) |
 
 ---
 
@@ -68,7 +69,9 @@ Webhook → Process Input (filtra status; extrai texto/from; classifica tipo)
 
 `Generate Link Webhook` → `Validate Trigger Payment` → `Generate Payment Link` (MP API) → `Save Payment Link` → `PT Link Gerado` → `Cleanup Session Record` → `Send Payment Link WA` (falhas → `Log Skipped Payment`).
 
-**Preferência MP criada:** item "Laudo Completo de Precatorios" **R$ 1,00**; `external_reference={whatsapp_from}_{ts}`; `notification_url=.../mercadopago-notification`; back_urls para `revisaprecatorio.com.br/pagamento-{sucesso,falha,pendente}`; `auto_return=approved`.
+**Preferência MP criada:** item "Laudo Completo de Precatorios" **R$ 99,90** (era R$ 1,00 de teste até 20/09/2026); `external_reference={whatsapp_from}_{ts}`; `notification_url=.../mercadopago-notification`; back_urls para `revisaprecatorio.com.br/pagamento-{sucesso,falha,pendente}`; `auto_return=approved`.
+
+**Mensagem do `Send Payment Link WA`:** "💳 *Link de Pagamento* — Para receber seu relatório completo de precatórios, realize o pagamento de *R$ 99,90* através do link abaixo... ⏰ Este link é válido por 24 horas...".
 
 ### Fluxo B — Notificação de Pagamento
 
@@ -144,7 +147,8 @@ WHERE
     AND NOT EXISTS (SELECT 1 FROM esaj_calc_precatorio_resumo r WHERE r.cpf=ce.cpf)
     AND EXISTS (SELECT 1 FROM esaj_detalhe_processos d
                 WHERE d.cpf=ce.cpf AND COALESCE(d.rejeitado,false)=false) )
-GROUP BY ...
+GROUP BY ce.id, ce.cpf, ce.current_state, ce.whatsapp_from,
+         ce.nome_requerente, ce.email, ce.processos
 ```
 
 ### Ação
@@ -199,13 +203,28 @@ ON CONFLICT (whatsapp_from, cpf) DO UPDATE SET ...
 
 ---
 
+## 8. Relatório Semanal Acumulado
+
+**Arquivo:** `n8n_workflows_live/Relatório Semanal Acumulado.json` | 5 nós | **Ativo** desde 28/10/2026
+
+`Disparo semanal — sexta-feira 10h` (Schedule, `weeks`, `triggerAtDay=[5]`, 10:00, timezone do workflow `America/Sao_Paulo`) **ou** `Manual Trigger` → `Relatório acumulado — PostgreSQL` (somente leitura) → `Montar HTML + CSV` → `Enviar relatório de teste` (SMTP revisa).
+
+- **Destinatários:** `persival.balleste@gmail.com`, `ricazevedo.adv@gmail.com`, `dr.rodrigoferrao@gmail.com`, `adv.cappi@gmail.com`
+- **Conteúdo:** histórico **acumulado completo** (não só a semana), uma linha por CPF; CSV anexo
+- **Execuções agendadas:** 30/10 e 06/11/2026 com sucesso
+- ⚠️ O assunto ainda começa com `[TESTE]` e o nó de envio ainda se chama "Enviar relatório de teste"
+
+Detalhes de colunas, cartões e limites em `09_RELATORIO_SEMANAL_N8N.md`.
+
+---
+
 ## Credenciais utilizadas (resumo)
 
 | Credencial | Usada em | Tipo |
 |---|---|---|
 | Postgres (`72.60.62.124:5432/n8n`) | Todos os workflows | PostgreSQL account |
 | Mercado Pago | MP Unified (preferências + consulta pagamento) | HTTP Header / Access Token |
-| SMTP | Chatbot (código), Laudo, Alertas | Email Send |
+| SMTP | Chatbot (código), Laudo, Alertas, Relatório Semanal | Email Send |
 | Meta WhatsApp | Chatbot, Laudo (parcial), Alertas | WhatsApp Business node (`phoneNumberId=772929385904854`) |
 
 ## Convenções de destinatários

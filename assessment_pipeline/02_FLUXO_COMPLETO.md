@@ -1,6 +1,6 @@
 # Fluxo Completo do Pipeline — Passo a Passo
 
-**Revisado:** 20/09/2026 contra workflows vivos (`n8n_workflows_live/`) e código no GitHub.
+**Revisado:** 13/11/2026 contra workflows vivos (`n8n_workflows_live/`) e código no GitHub. O detalhe interno da Fase 4 (detectores, LLM, ingestão) está em `10_OCR_E_INGESTAO.md`.
 
 ---
 
@@ -28,7 +28,7 @@ Máquina de estados que lê `consultas_esaj` por `whatsapp_from` a cada mensagem
 
 **Indisponibilidade e-SAJ:** se a consulta falha → `PT - TJSP Inoperante` (process_tracking) + `Email Alerta TJSP` + `WA Alerta Operacao TJSP` + mensagem ao cliente (`Send TJSP Out`).
 
-**Registros em `process_tracking`:** `CONSULTA/CONSULTA_SOLICITADA`, `CONSULTA/CONSULTA_REALIZADA` (`detalhes.total_processos`).
+**Registros em `process_tracking`:** `CONSULTA/CONSULTA_SOLICITADA`, `CONSULTA/CONSULTA_REALIZADA` (`detalhes.total_processos`), `CONSULTA/TJSP_INOPERANTE` (falha na consulta ao e-SAJ).
 
 > Se `total_processos = 0` → fluxo encerra com mensagem de retorno (sem precatórios).
 
@@ -44,13 +44,13 @@ Chamado pelo Chatbot ao entrar em `AWAITING_PAYMENT`.
 
 1. `Validate Trigger Payment` — exige `trigger_payment=true` + `email`
 2. `Generate Payment Link` — `POST api.mercadopago.com/checkout/preferences`:
-   - item: "Laudo Completo de Precatorios", **R$ 1,00**
+   - item: "Laudo Completo de Precatorios", **R$ 99,90** (era R$ 1,00 de teste até 20/09/2026)
    - `external_reference` = `{whatsapp_from}_{timestamp}`
    - `notification_url` = `.../webhook/mercadopago-notification`
    - `back_urls` = revisaprecatorio.com.br/pagamento-{sucesso,falha,pendente}
 3. `Save Payment Link` — UPDATE `consultas_esaj` (`mp_preference_id`, `payment_link`, `current_state='AWAITING_PAYMENT'`)
 4. `Cleanup Session Record` — remove o registro `cpf='00000000000'`
-5. `Send Payment Link WA` + `PT Link Gerado`
+5. `Send Payment Link WA` ("realize o pagamento de *R$ 99,90*... link válido por 24 horas") + `PT Link Gerado`
 
 ### 2b — Notificação de Pagamento (`POST /mercadopago-notification`)
 
@@ -109,9 +109,9 @@ Script real no GitHub (`ocr-oficios-tjsp/pipeline_completo.sh`). Etapas confirma
 | 1 | Limpeza do staging (`outputs/`) | — |
 | 2 | `processar_pipeline.py` — todos os PDFs do CPF: DetectorOficio + DetectorAnexoII + DetectorSaldoFinal + DetectorHabilitacaoHerdeiros + DetectorTermosJuridicos + LLM híbrido (Gemini → GPT-4o-mini) → JSONs em `outputs/consultas/{cpf}/` | OCR falha num PDF → `OCR_ERRO` em tracking + `MANUAL_PROCESS` (pipeline continua) |
 | 3 | Centraliza JSONs em `outputs/json/` | 0 JSONs → `exit 1` → `PIPELINE_ERROR` |
-| 4 | `ingest_all_jsons.py` — upsert em `esaj_detalhe_processos` filtrado por CPF | — |
+| 4 | `ingest_all_jsons.py --cpf {cpf}` (V7) — INSERT ou UPDATE com `COALESCE` em `esaj_detalhe_processos` por `(cpf, numero_processo_cnj)`. **Não há TRUNCATE** | erro num JSON → rollback só daquele arquivo |
 | 5 | Validação forte: `COUNT > 0` no banco para o CPF | 0 → `exit 1` → `PIPELINE_ERROR` |
-| 6 | `recalcular_idoso.py` — flag `idoso` por `data_nascimento` | — |
+| 6 | `recalcular_idoso.py` — `idoso=TRUE` se `data_nascimento` ≤ hoje − 60 anos (roda na **tabela inteira**, não só no CPF) | — |
 | 7 | Backup JSONs → `outputs/historico_processado/{cpf}/{ts}/` | — |
 | 8 | Arquiva PDFs → `RevisaDownloads_Processados\{cpf}\{data}_{ts}\` | — |
 | 9 | `calc-precatorio-tjsp/main.py` → insere `esaj_calc_precatorio_resumo` + chama webhook `/reporte-email-cpf` (via `webhook_n8n.py`) | exit≠0 → `PIPELINE_ERROR`/`CALC_ERROR` |
@@ -185,7 +185,13 @@ Existem **2 workflows inativos** com esse nome (`PMyNPcPlRZMZjCb1`, `Uck9WlB08CO
 
 ---
 
-## Destinatários reais de comunicação (verificado 20/09/2026)
+## Fase 7 — Relatório semanal (n8n: Relatório Semanal Acumulado, 5 nós)
+
+Fora do fluxo do cliente. Toda **sexta-feira às 10h** (`America/Sao_Paulo`) o workflow lê `process_tracking` + `consultas_esaj` + `esaj_detalhe_processos` (somente leitura) e envia por e-mail um relatório HTML + CSV com **uma linha por CPF consultado** e o histórico acumulado. Detalhes em `09_RELATORIO_SEMANAL_N8N.md`.
+
+---
+
+## Destinatários reais de comunicação (verificado 13/11/2026)
 
 | Mensagem | Destino |
 |---|---|
@@ -195,3 +201,4 @@ Existem **2 workflows inativos** com esse nome (`PMyNPcPlRZMZjCb1`, `Uck9WlB08CO
 | Alertas internos (3 workflows) | `revisa.manual@gmail.com` |
 | WhatsApp alerta ao cliente | `whatsapp_from` da consulta |
 | E-mail verificação | `email` informado no chatbot |
+| Relatório semanal | `persival.balleste@gmail.com`, `ricazevedo.adv@gmail.com`, `dr.rodrigoferrao@gmail.com`, `adv.cappi@gmail.com` |

@@ -131,3 +131,8 @@ tests/*_export.csv
 
 # Excecao: snapshots de workflows n8n (documentacao, nao dados)
 !assessment_pipeline/n8n_workflows_live/*.json
+!assessment_pipeline/_arquivo/**/*.json
+
+# Validacoes locais (nao versionar)
+UAT/
+zz-final-validation/

@@ -43,6 +43,7 @@
 |---|---|---|---|
 | `CONSULTA` | `CONSULTA_SOLICITADA` | Chatbot | Cliente enviou CPF |
 | `CONSULTA` | `CONSULTA_REALIZADA` | Chatbot | e-SAJ consultado; `detalhes.total_processos` |
+| `CONSULTA` | `TJSP_INOPERANTE` | Chatbot (`PT - TJSP Inoperante`) | Consulta pública ao e-SAJ falhou; equipe alertada por e-mail/WhatsApp e cliente avisado (`Send TJSP Out`) |
 | `PAYMENT` | `LINK_GERADO` | MP Unified | Link gerado |
 | `PAYMENT` | `PAYMENT_APPROVED` | MP Unified | Pagamento aprovado |
 | `PAYMENT` | `PAYMENT_REJECTED` | MP Unified | Pagamento rejeitado |

@@ -20,21 +20,26 @@
 |---|---|---|
 | 4 | `03_CENARIOS_E_TABELAS.md` | O que acontece em cada tipo de falha e como identificar nas tabelas |
 | 5 | `04_QUERIES_MONITORAMENTO.md` | As queries do dia a dia — decore a tabela-resumo do final |
-| 6 | `06_WORKFLOWS_N8N.md` | Os 7 workflows ativos, quem chama quem, destinatários |
+| 6 | `06_WORKFLOWS_N8N.md` | Os 8 workflows ativos, quem chama quem, destinatários |
+| 7 | `08_RUNBOOK_MONITORAMENTO.md` | Checks de monitoramento, severidades e formato de alerta |
+| 8 | `09_RELATORIO_SEMANAL_N8N.md` | Relatório semanal de consultas (sexta 10h) e como ler os números |
 
 ### Passada 3 — Fundo técnico (~45 min)
 
 | Ordem | Arquivo | O que você aprende |
 |---|---|---|
-| 7 | `01_ARQUITETURA_GERAL.md` | Schema completo das tabelas, paths da VPS, certificado digital |
-| 8 | `07_FERRAMENTAS_AUXILIARES.md` | Backoffice Streamlit e CPF batch |
-| 9 | `n8n_workflows_live/*.json` | Abrir 1-2 JSONs e comparar com a doc (opcional) |
+| 9 | `01_ARQUITETURA_GERAL.md` | Schema completo das tabelas, paths da VPS, certificado digital |
+| 10 | `10_OCR_E_INGESTAO.md` | OCR por dentro: detectores, LLM híbrido (Gemini 2.5 Flash → GPT-4o-mini), falhas por PDF, upsert |
+| 11 | `07_FERRAMENTAS_AUXILIARES.md` | Backoffice Streamlit e CPF batch |
+| 12 | `n8n_workflows_live/*.json` | Abrir 1-2 JSONs e comparar com a doc (opcional) |
+
+> Ignore `_arquivo/`: é material histórico e contradiz a produção em vários pontos.
 
 ### Complementos fora desta pasta
 
 | Onde | Para quê |
 |---|---|
-| `../AGENTS.md` (raiz do repo) | Detalhes do OCR: detectors, LLM híbrido, schema Pydantic, testes |
+| `../AGENTS.md` (raiz do repo) | Convenções de código do OCR. ⚠️ **Defasado** quanto a modelo LLM, TRUNCATE, schema e testes — para entender o pipeline, vale o `10_OCR_E_INGESTAO.md` |
 | repo `crawler_tjsp/docs/` | Setup de certificado, troubleshooting de autenticação, deploy |
 | repo `calc-precatorio-tjsp/README.md` | Regras de cálculo (IPCA-E, juros, EC113/EC136) |
 
@@ -49,7 +54,7 @@
 | VPS Windows | Acesso RDP/SSH ao servidor do crawler | Persival |
 | GitHub | Colaborador em `github.com/revisaprecatorio/*` | Owner do repo |
 | Meta/WhatsApp | WABA — `phoneNumberId=772929385904854` | Quem administra a Meta Business |
-| Mercado Pago | Conta que recebe os pagamentos | Flávio/financeiro |
+| Mercado Pago | Conta que recebe os pagamentos (laudo a R$ 99,90) | Flávio/financeiro |
 | Caixas de e-mail | `revisa.manual@gmail.com` (alertas + laudos parciais), `contato@revisaprecatorio.com.br` (LGPD) | Equipe |
 
 > ⚠️ Segredos (`n8n_api.env`, `github_credentials.env`, `.env`, senha do `.pfx`) **nunca** vão para o repo nem para conversas — passar por canal seguro.

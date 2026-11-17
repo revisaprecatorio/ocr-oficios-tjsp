@@ -1,0 +1,376 @@
+{
+  "updatedAt": "2026-10-28T21:10:38.218Z",
+  "createdAt": "2026-10-15T16:56:21.415Z",
+  "id": "nUCThfJ7zsmYJvoR",
+  "name": "Relatório Semanal Acumulado",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "c19523b5-341c-4ed5-a95f-500cbed80906",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -640,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH consultation_events AS (\n    SELECT consulta_id, cpf, timestamp_evento,\n           detalhes->>'nome_extraido' AS nome_tjsp,\n           NULLIF(detalhes->>'total_processos', '')::integer AS total_processos\n    FROM process_tracking\n    WHERE etapa = 'CONSULTA'\n      AND evento = 'CONSULTA_REALIZADA'\n      AND consulta_id IS NOT NULL\n      AND cpf <> '00000000000'\n), cpf_stats AS (\n    SELECT cpf,\n           COUNT(*) AS quantidade_consultas_cpf,\n           MIN(timestamp_evento) AS primeira_consulta_cpf,\n           MAX(timestamp_evento) AS ultima_consulta_cpf,\n           (ARRAY_AGG(nome_tjsp ORDER BY timestamp_evento DESC))[1] AS nome_tracking,\n           (ARRAY_AGG(total_processos ORDER BY timestamp_evento DESC))[1] AS total_tracking\n    FROM consultation_events\n    GROUP BY cpf\n), ranked_real_consultas AS (\n    SELECT ce.*,\n           ROW_NUMBER() OVER (\n               PARTITION BY ce.cpf\n               ORDER BY COALESCE(ce.timestamp_consulta, ce.created_at) DESC, ce.id DESC\n           ) AS cpf_rank,\n           ROW_NUMBER() OVER (\n               PARTITION BY ce.whatsapp_from\n               ORDER BY COALESCE(ce.timestamp_consulta, ce.created_at) DESC, ce.id DESC\n           ) AS phone_rank\n    FROM consultas_esaj ce\n    WHERE ce.cpf <> '00000000000'\n), latest_session AS (\n    SELECT DISTINCT ON (whatsapp_from)\n           whatsapp_from, current_state, email, state_updated_at\n    FROM consultas_esaj\n    WHERE cpf = '00000000000'\n    ORDER BY whatsapp_from, state_updated_at DESC NULLS LAST,\n             updated_at DESC NULLS LAST, id DESC\n), payment_stats AS (\n    SELECT cpf,\n           BOOL_OR(evento = 'PAYMENT_APPROVED') AS tracking_paid,\n           MAX(timestamp_evento) FILTER (WHERE evento = 'LINK_GERADO') AS link_gerado_em\n    FROM process_tracking\n    WHERE etapa = 'PAYMENT'\n    GROUP BY cpf\n), base AS (\n    SELECT ce.id AS id_consulta,\n           COALESCE(cs.ultima_consulta_cpf, ce.timestamp_consulta, ce.created_at) AS timestamp_consulta,\n           COALESCE(NULLIF(ce.whatsapp_phone_number, ''), NULLIF(ce.whatsapp_from, '')) AS whatsapp,\n           ce.cpf,\n           COALESCE(NULLIF(ce.nome_requerente, ''), NULLIF(cs.nome_tracking, '')) AS nome_tjsp,\n           COALESCE(ce.total_processos, cs.total_tracking, 0) AS total_processos,\n           ce.processos,\n           COALESCE(NULLIF(ce.email, ''), CASE WHEN ce.phone_rank = 1 THEN NULLIF(ls.email, '') END) AS email,\n           ce.current_state,\n           ce.mp_payment_status,\n           ce.payment_link,\n           ps.link_gerado_em,\n           (COALESCE(ps.tracking_paid, FALSE)\n             OR ce.mp_payment_status = 'approved'\n             OR ce.current_state = 'PAYMENT_APPROVED') AS pago,\n           CASE WHEN ce.phone_rank = 1 THEN ls.current_state END AS estado_sessao_atual,\n           CASE WHEN ce.phone_rank = 1 THEN ls.email END AS email_sessao_atual,\n           COALESCE(cs.quantidade_consultas_cpf, 1) AS quantidade_consultas_cpf,\n           COALESCE(cs.primeira_consulta_cpf, ce.timestamp_consulta, ce.created_at) AS primeira_consulta_cpf,\n           COALESCE(cs.ultima_consulta_cpf, ce.timestamp_consulta, ce.created_at) AS ultima_consulta_cpf\n    FROM ranked_real_consultas ce\n    LEFT JOIN cpf_stats cs ON cs.cpf = ce.cpf\n    LEFT JOIN latest_session ls ON ls.whatsapp_from = ce.whatsapp_from\n    LEFT JOIN payment_stats ps ON ps.cpf = ce.cpf\n    WHERE ce.cpf_rank = 1\n)\nSELECT b.id_consulta AS \"ID consulta\",\n       b.timestamp_consulta AS \"Timestamp consulta\",\n       b.whatsapp AS \"Número WhatsApp\",\n       b.cpf AS \"CPF\",\n       b.nome_tjsp AS \"Nome TJSP\",\n       b.total_processos AS \"Total processos\",\n       proc.processos AS \"Processos / valor principal\",\n       CASE\n         WHEN b.pago THEN 'Pagou'\n         WHEN b.link_gerado_em IS NOT NULL OR b.payment_link IS NOT NULL\n           THEN 'Link gerado; sem pagamento aprovado'\n         WHEN b.estado_sessao_atual = 'AWAITING_CODE'\n              AND NULLIF(b.email_sessao_atual, '') IS NOT NULL\n           THEN 'E-mail informado; código pendente (estado atual)'\n         WHEN b.total_processos = 0 THEN 'Não tinha processos'\n         WHEN b.estado_sessao_atual = 'AWAITING_CONFIRMATION'\n           THEN 'Consultou; aguardando confirmação'\n         ELSE 'Consultou; sem avanço registrado'\n       END AS \"Status classificado\",\n       b.email AS \"E-mail\",\n       b.link_gerado_em AS \"Link gerado em\",\n       GREATEST(0, FLOOR(EXTRACT(EPOCH FROM (NOW() - b.timestamp_consulta)) / 86400))::integer\n         AS \"Dias desde consulta\",\n       CASE\n         WHEN b.pago THEN 'Estado/evento de pagamento aprovado'\n         WHEN b.link_gerado_em IS NOT NULL THEN 'process_tracking PAYMENT/LINK_GERADO'\n         WHEN b.total_processos = 0 THEN 'process_tracking CONSULTA_REALIZADA.total_processos'\n         ELSE 'Estado atual da consulta/sessão; sem evento explícito de recusa'\n       END AS \"Evidência status\",\n       b.quantidade_consultas_cpf AS \"Consultas CPF\",\n       b.primeira_consulta_cpf AS \"Primeira consulta CPF\",\n       b.ultima_consulta_cpf AS \"Última consulta CPF\",\n       CASE WHEN b.quantidade_consultas_cpf > 1\n            THEN 'Consultou mesmo CPF de novo (' || b.quantidade_consultas_cpf || ' consultas)'\n            ELSE 'Não'\n       END AS \"Repetição CPF\"\nFROM base b\nLEFT JOIN LATERAL (\n    SELECT jsonb_agg(\n        jsonb_build_object(\n            'numero', per.numero,\n            'data', per.data_processo,\n            'valor_principal_bruto', per.valor_principal_bruto\n        ) ORDER BY per.numero\n    ) AS processos\n    FROM (\n        SELECT DISTINCT ON (p.item->>'numero')\n               p.item->>'numero' AS numero,\n               p.item->>'data' AS data_processo,\n               edp.valor_principal_bruto\n        FROM jsonb_array_elements(\n            CASE WHEN jsonb_typeof(b.processos->'lista') = 'array'\n                 THEN b.processos->'lista'\n                 ELSE '[]'::jsonb\n            END\n        ) AS p(item)\n        LEFT JOIN esaj_detalhe_processos edp\n          ON edp.cpf = b.cpf\n         AND edp.numero_processo_cnj = p.item->>'numero'\n        WHERE NULLIF(p.item->>'numero', '') IS NOT NULL\n        ORDER BY p.item->>'numero', edp.timestamp_ingestao DESC NULLS LAST\n    ) AS per\n) AS proc ON TRUE\nORDER BY b.timestamp_consulta, b.cpf;",
+        "options": {}
+      },
+      "id": "b2366c1f-2af2-40cc-be0d-38af2371ce20",
+      "name": "Relatório acumulado — PostgreSQL",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -360,
+        100
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "b0F0gRzrpEq6BR3M",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const rows = $input.all().map(item => item.json);\nconst generatedAt = new Date();\nconst dateFmt = new Intl.DateTimeFormat('pt-BR', {timeZone:'America/Sao_Paulo',dateStyle:'short',timeStyle:'short'});\nconst esc = value => String(value ?? '').replace(/[&<>\"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'}[ch]));\nconst fmtDate = value => value ? dateFmt.format(new Date(value)) : '—';\nconst fmtMoney = value => value === null || value === undefined || value === '' ? '—' : new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(Number(value));\nconst parseProcesses = value => {\n  if (typeof value === 'string') { try { value = JSON.parse(value); } catch { return []; } }\n  return Array.isArray(value) ? value : [];\n};\nconst uniqueByCpf = new Map();\nfor (const row of rows) if (!uniqueByCpf.has(String(row['CPF']))) uniqueByCpf.set(String(row['CPF']),row);\nconst consultations = [...uniqueByCpf.values()];\nconst distinctCpfCount = consultations.length;\nconst consultationEvents = consultations.reduce((sum,row)=>sum+Number(row['Consultas CPF']||1),0);\nconst additionalRepeatEvents = Math.max(0,consultationEvents-distinctCpfCount);\nconst repeatedGroups = consultations.filter(row=>Number(row['Consultas CPF']||0)>1).length;\nconst count = status => consultations.filter(row=>row['Status classificado']===status).length;\nconst dates=consultations.map(row=>row['Timestamp consulta']).filter(Boolean).sort();\nconst period=dates.length?`${fmtDate(dates[0])} a ${fmtDate(dates[dates.length-1])}`:'Sem consultas';\nconst processText = row => parseProcesses(row['Processos / valor principal']).map(p=>{\n  const parts=[p.numero];\n  if (p.data) parts.push(p.data);\n  let text=parts.join(' — ');\n  if (p.valor_principal_bruto!==null && p.valor_principal_bruto!==undefined && p.valor_principal_bruto!=='') text += ` — Principal: ${fmtMoney(p.valor_principal_bruto)}`;\n  return text;\n}).join('\\n') || '—';\nconst columns=[\n ['Timestamp consulta','Consulta'],['Número WhatsApp','WhatsApp'],['CPF','CPF'],['Nome TJSP','Nome TJSP'],\n ['Total processos','Qtd. processos'],['Processos / valor principal','Processos / valor principal'],\n ['Status classificado','Status'],['E-mail','E-mail'],['Link gerado em','Link gerado'],\n ['Dias desde consulta','Dias'],['Evidência status','Evidência'],['Consultas CPF','Consultas CPF'],\n ['Primeira consulta CPF','Primeira consulta'],['Última consulta CPF','Última consulta'],['Repetição CPF','Repetição CPF']\n];\nconst statusColor = value=>value==='Pagou'?'#247a3d':value==='Não tinha processos'?'#667085':value.includes('Link gerado')?'#175cd3':value.includes('código pendente')?'#b54708':'#475467';\nconst tableRows=consultations.map(row=>`<tr>${columns.map(([key])=>{\n let value=row[key];\n if(key==='Processos / valor principal') value=processText(row);\n else if(key.includes('Timestamp')||key.includes('consulta CPF')||key==='Link gerado em') value=fmtDate(value);\n else if(value===null||value===undefined||value==='') value='—';\n const style=key==='Status classificado'?`color:${statusColor(String(value))};font-weight:700;`:'';\n const cellStyle=key==='Processos / valor principal'?'white-space:pre-line;min-width:280px;':'';\n return `<td style=\"padding:8px;border-bottom:1px solid #e5e7eb;vertical-align:top;${style}${cellStyle}\">${esc(value)}</td>`;\n}).join('')}</tr>`).join('');\nconst logoUrl='https://i.imgur.com/hqX2yli.jpeg';\nconst title='RELATÓRIO SEMANAL ACUMULADO';\nconst subject=`[TESTE] Relatório semanal acumulado — ${dateFmt.format(generatedAt)}`;\nconst html=`<!doctype html><html lang=\"pt-BR\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"></head><body style=\"margin:0;background:#f3f4f6;font-family:Arial,sans-serif;color:#202124\"><div style=\"max-width:1200px;margin:0 auto;background:#fff;padding:24px\"><table role=\"presentation\" style=\"width:100%;border-bottom:3px solid #004aad;margin-bottom:20px\"><tr><td style=\"width:110px;padding:0 16px 16px 0\"><img src=\"${logoUrl}\" alt=\"Revisa Precatório\" style=\"width:96px;height:auto\"></td><td style=\"padding-bottom:16px\"><div style=\"font-size:22px;font-weight:700;color:#004aad\">${title}</div><div style=\"margin-top:8px;color:#475467\">Histórico disponível no banco: ${esc(period)}</div><div style=\"margin-top:4px;font-size:12px;color:#667085\">Emitido em ${esc(dateFmt.format(generatedAt))} (horário de Brasília)</div></td></tr></table><table role=\"presentation\" style=\"width:100%;border-spacing:8px;margin:0 -8px 12px\"><tr><td style=\"background:#eff6ff;padding:12px\">Consultas realizadas<br><strong style=\"font-size:22px;color:#004aad\">${consultationEvents}</strong></td><td style=\"background:#eff6ff;padding:12px\">Consultas únicas (1ª por CPF)<br><strong style=\"font-size:22px;color:#004aad\">${distinctCpfCount}</strong></td><td style=\"background:#fff7ed;padding:12px\">Reconsultas adicionais<br><strong style=\"font-size:22px;color:#b54708\">${additionalRepeatEvents}</strong></td><td style=\"background:#fff7ed;padding:12px\">CPFs com repetição<br><strong style=\"font-size:22px;color:#b54708\">${repeatedGroups}</strong></td><td style=\"background:#f2f4f7;padding:12px\">CPFs sem processos<br><strong style=\"font-size:22px\">${count('Não tinha processos')}</strong></td><td style=\"background:#effaf3;padding:12px\">Pagos<br><strong style=\"font-size:22px;color:#247a3d\">${count('Pagou')}</strong></td></tr></table><div style=\"font-size:12px;color:#667085;margin:0 0 16px\">Consultas realizadas = consultas únicas + reconsultas adicionais. As consultas sem processos também estão incluídas.</div><h2 style=\"font-size:17px;color:#344054;margin:24px 0 10px\">Consultas e processos</h2><div style=\"font-size:12px;color:#667085;margin:0 0 8px\">Uma linha por CPF. Os processos e valores disponíveis aparecem juntos, um processo por linha na mesma célula.</div><div style=\"overflow-x:auto\"><table style=\"border-collapse:collapse;min-width:1350px;width:100%;font-size:11px;text-align:left\"><thead><tr>${columns.map(([,label])=>`<th style=\"padding:9px;background:#004aad;color:#fff;white-space:nowrap\">${esc(label)}</th>`).join('')}</tr></thead><tbody>${tableRows||`<tr><td colspan=\"${columns.length}\" style=\"padding:16px;text-align:center\">Nenhuma consulta encontrada.</td></tr>`}</tbody></table></div><p style=\"margin:20px 0 0;padding-top:12px;border-top:1px solid #e5e7eb;font-size:11px;color:#667085\">Relatório interno. O total inclui consultas sem processos; ausências de evento não comprovam leitura ou desistência. Em CPF consultado por mais de um WhatsApp, a linha usa a consulta mais recente e o snapshot de processos atualmente armazenado.</p></div></body></html>`;\nconst csvEscape=value=>`\"${String(value??'').replace(/\"/g,'\"\"')}\"`;\nconst csv='\\uFEFF'+[columns.map(([,label])=>csvEscape(label)).join(';'),...consultations.map(row=>columns.map(([key])=>csvEscape(key==='Processos / valor principal'?processText(row):row[key])).join(';'))].join('\\r\\n');\nreturn [{json:{html,subject},binary:{data:{data:Buffer.from(csv,'utf8').toString('base64'),mimeType:'text/csv',fileName:'revisa-relatorio-acumulado.csv',fileExtension:'csv'}}}];"
+      },
+      "id": "e0f2ea0e-3391-41cd-843a-d1172d2ca1ef",
+      "name": "Montar HTML + CSV",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -80,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "Revisa Precatório <contato@revisaprecatorio.com.br>",
+        "toEmail": "persival.balleste@gmail.com, ricazevedo.adv@gmail.com, dr.rodrigoferrao@gmail.com, adv.cappi@gmail.com",
+        "subject": "={{ $json.subject }}",
+        "text": "Este é um envio de teste do Relatório Semanal Acumulado. O relatório HTML está no corpo e o CSV está anexado.",
+        "html": "={{ $json.html }}",
+        "attachments": "data",
+        "options": {}
+      },
+      "id": "1b424417-3df0-4b84-bb1d-4efdd31b63e8",
+      "name": "Enviar relatório de teste",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 1,
+      "position": [
+        200,
+        100
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "QhA560IeJvTVywaS",
+          "name": "SMTP revisa"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "triggerAtDay": [
+                5
+              ],
+              "triggerAtHour": 10,
+              "triggerAtMinute": 0
+            }
+          ]
+        }
+      },
+      "id": "1981bb93-fa4e-4e39-ab0c-574fb30a225f",
+      "name": "Disparo semanal — sexta-feira 10h",
+      "position": [
+        -640,
+        -80
+      ],
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Relatório acumulado — PostgreSQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Relatório acumulado — PostgreSQL": {
+      "main": [
+        [
+          {
+            "node": "Montar HTML + CSV",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Montar HTML + CSV": {
+      "main": [
+        [
+          {
+            "node": "Enviar relatório de teste",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Disparo semanal — sexta-feira 10h": {
+      "main": [
+        [
+          {
+            "node": "Relatório acumulado — PostgreSQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Sao_Paulo",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "staticData": {
+    "node:Disparo semanal — sexta-feira 10h": {
+      "recurrenceRules": []
+    }
+  },
+  "meta": null,
+  "pinData": null,
+  "versionId": "dc69300e-20bb-436c-b2ab-acfc9c59aa45",
+  "activeVersionId": "dc69300e-20bb-436c-b2ab-acfc9c59aa45",
+  "versionCounter": 26,
+  "triggerCount": 1,
+  "shared": [
+    {
+      "updatedAt": "2026-10-15T16:56:21.427Z",
+      "createdAt": "2026-10-15T16:56:21.427Z",
+      "role": "workflow:owner",
+      "workflowId": "nUCThfJ7zsmYJvoR",
+      "projectId": "HiqKsr6gcpQsog8I",
+      "project": {
+        "updatedAt": "2026-05-21T23:09:15.180Z",
+        "createdAt": "2025-09-01T21:50:07.258Z",
+        "id": "HiqKsr6gcpQsog8I",
+        "name": "Revisa Precatório <revisa.precatorio@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "projectRelations": [
+          {
+            "updatedAt": "2025-09-01T21:50:07.259Z",
+            "createdAt": "2025-09-01T21:50:07.259Z",
+            "userId": "9cba57e9-7ebd-4df3-8764-c1ca338dec12",
+            "projectId": "HiqKsr6gcpQsog8I",
+            "user": {
+              "updatedAt": "2026-11-13T04:44:40.000Z",
+              "createdAt": "2025-09-01T21:50:06.641Z",
+              "id": "9cba57e9-7ebd-4df3-8764-c1ca338dec12",
+              "email": "revisa.precatorio@gmail.com",
+              "firstName": "Revisa",
+              "lastName": "Precatório",
+              "personalizationAnswers": {
+                "version": "v4",
+                "personalization_survey_submitted_at": "2025-09-01T23:36:13.091Z",
+                "personalization_survey_n8n_version": "1.109.1"
+              },
+              "settings": {
+                "userActivated": true,
+                "easyAIWorkflowOnboarded": true,
+                "firstSuccessfulWorkflowId": "0dviS1IZwY1IxzRs",
+                "userActivatedAt": 1758064342499,
+                "npsSurvey": {
+                  "waitingForResponse": true,
+                  "ignoredCount": 1,
+                  "lastShownAt": 1789944346395
+                }
+              },
+              "disabled": false,
+              "mfaEnabled": false,
+              "lastActiveAt": "2026-11-13",
+              "isPending": false
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "tags": [],
+  "activeVersion": {
+    "updatedAt": "2026-10-28T21:10:37.429Z",
+    "createdAt": "2026-10-28T21:10:37.429Z",
+    "versionId": "dc69300e-20bb-436c-b2ab-acfc9c59aa45",
+    "workflowId": "nUCThfJ7zsmYJvoR",
+    "nodes": [
+      {
+        "parameters": {},
+        "id": "c19523b5-341c-4ed5-a95f-500cbed80906",
+        "name": "Manual Trigger",
+        "type": "n8n-nodes-base.manualTrigger",
+        "typeVersion": 1,
+        "position": [
+          -640,
+          220
+        ]
+      },
+      {
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "WITH consultation_events AS (\n    SELECT consulta_id, cpf, timestamp_evento,\n           detalhes->>'nome_extraido' AS nome_tjsp,\n           NULLIF(detalhes->>'total_processos', '')::integer AS total_processos\n    FROM process_tracking\n    WHERE etapa = 'CONSULTA'\n      AND evento = 'CONSULTA_REALIZADA'\n      AND consulta_id IS NOT NULL\n      AND cpf <> '00000000000'\n), cpf_stats AS (\n    SELECT cpf,\n           COUNT(*) AS quantidade_consultas_cpf,\n           MIN(timestamp_evento) AS primeira_consulta_cpf,\n           MAX(timestamp_evento) AS ultima_consulta_cpf,\n           (ARRAY_AGG(nome_tjsp ORDER BY timestamp_evento DESC))[1] AS nome_tracking,\n           (ARRAY_AGG(total_processos ORDER BY timestamp_evento DESC))[1] AS total_tracking\n    FROM consultation_events\n    GROUP BY cpf\n), ranked_real_consultas AS (\n    SELECT ce.*,\n           ROW_NUMBER() OVER (\n               PARTITION BY ce.cpf\n               ORDER BY COALESCE(ce.timestamp_consulta, ce.created_at) DESC, ce.id DESC\n           ) AS cpf_rank,\n           ROW_NUMBER() OVER (\n               PARTITION BY ce.whatsapp_from\n               ORDER BY COALESCE(ce.timestamp_consulta, ce.created_at) DESC, ce.id DESC\n           ) AS phone_rank\n    FROM consultas_esaj ce\n    WHERE ce.cpf <> '00000000000'\n), latest_session AS (\n    SELECT DISTINCT ON (whatsapp_from)\n           whatsapp_from, current_state, email, state_updated_at\n    FROM consultas_esaj\n    WHERE cpf = '00000000000'\n    ORDER BY whatsapp_from, state_updated_at DESC NULLS LAST,\n             updated_at DESC NULLS LAST, id DESC\n), payment_stats AS (\n    SELECT cpf,\n           BOOL_OR(evento = 'PAYMENT_APPROVED') AS tracking_paid,\n           MAX(timestamp_evento) FILTER (WHERE evento = 'LINK_GERADO') AS link_gerado_em\n    FROM process_tracking\n    WHERE etapa = 'PAYMENT'\n    GROUP BY cpf\n), base AS (\n    SELECT ce.id AS id_consulta,\n           COALESCE(cs.ultima_consulta_cpf, ce.timestamp_consulta, ce.created_at) AS timestamp_consulta,\n           COALESCE(NULLIF(ce.whatsapp_phone_number, ''), NULLIF(ce.whatsapp_from, '')) AS whatsapp,\n           ce.cpf,\n           COALESCE(NULLIF(ce.nome_requerente, ''), NULLIF(cs.nome_tracking, '')) AS nome_tjsp,\n           COALESCE(ce.total_processos, cs.total_tracking, 0) AS total_processos,\n           ce.processos,\n           COALESCE(NULLIF(ce.email, ''), CASE WHEN ce.phone_rank = 1 THEN NULLIF(ls.email, '') END) AS email,\n           ce.current_state,\n           ce.mp_payment_status,\n           ce.payment_link,\n           ps.link_gerado_em,\n           (COALESCE(ps.tracking_paid, FALSE)\n             OR ce.mp_payment_status = 'approved'\n             OR ce.current_state = 'PAYMENT_APPROVED') AS pago,\n           CASE WHEN ce.phone_rank = 1 THEN ls.current_state END AS estado_sessao_atual,\n           CASE WHEN ce.phone_rank = 1 THEN ls.email END AS email_sessao_atual,\n           COALESCE(cs.quantidade_consultas_cpf, 1) AS quantidade_consultas_cpf,\n           COALESCE(cs.primeira_consulta_cpf, ce.timestamp_consulta, ce.created_at) AS primeira_consulta_cpf,\n           COALESCE(cs.ultima_consulta_cpf, ce.timestamp_consulta, ce.created_at) AS ultima_consulta_cpf\n    FROM ranked_real_consultas ce\n    LEFT JOIN cpf_stats cs ON cs.cpf = ce.cpf\n    LEFT JOIN latest_session ls ON ls.whatsapp_from = ce.whatsapp_from\n    LEFT JOIN payment_stats ps ON ps.cpf = ce.cpf\n    WHERE ce.cpf_rank = 1\n)\nSELECT b.id_consulta AS \"ID consulta\",\n       b.timestamp_consulta AS \"Timestamp consulta\",\n       b.whatsapp AS \"Número WhatsApp\",\n       b.cpf AS \"CPF\",\n       b.nome_tjsp AS \"Nome TJSP\",\n       b.total_processos AS \"Total processos\",\n       proc.processos AS \"Processos / valor principal\",\n       CASE\n         WHEN b.pago THEN 'Pagou'\n         WHEN b.link_gerado_em IS NOT NULL OR b.payment_link IS NOT NULL\n           THEN 'Link gerado; sem pagamento aprovado'\n         WHEN b.estado_sessao_atual = 'AWAITING_CODE'\n              AND NULLIF(b.email_sessao_atual, '') IS NOT NULL\n           THEN 'E-mail informado; código pendente (estado atual)'\n         WHEN b.total_processos = 0 THEN 'Não tinha processos'\n         WHEN b.estado_sessao_atual = 'AWAITING_CONFIRMATION'\n           THEN 'Consultou; aguardando confirmação'\n         ELSE 'Consultou; sem avanço registrado'\n       END AS \"Status classificado\",\n       b.email AS \"E-mail\",\n       b.link_gerado_em AS \"Link gerado em\",\n       GREATEST(0, FLOOR(EXTRACT(EPOCH FROM (NOW() - b.timestamp_consulta)) / 86400))::integer\n         AS \"Dias desde consulta\",\n       CASE\n         WHEN b.pago THEN 'Estado/evento de pagamento aprovado'\n         WHEN b.link_gerado_em IS NOT NULL THEN 'process_tracking PAYMENT/LINK_GERADO'\n         WHEN b.total_processos = 0 THEN 'process_tracking CONSULTA_REALIZADA.total_processos'\n         ELSE 'Estado atual da consulta/sessão; sem evento explícito de recusa'\n       END AS \"Evidência status\",\n       b.quantidade_consultas_cpf AS \"Consultas CPF\",\n       b.primeira_consulta_cpf AS \"Primeira consulta CPF\",\n       b.ultima_consulta_cpf AS \"Última consulta CPF\",\n       CASE WHEN b.quantidade_consultas_cpf > 1\n            THEN 'Consultou mesmo CPF de novo (' || b.quantidade_consultas_cpf || ' consultas)'\n            ELSE 'Não'\n       END AS \"Repetição CPF\"\nFROM base b\nLEFT JOIN LATERAL (\n    SELECT jsonb_agg(\n        jsonb_build_object(\n            'numero', per.numero,\n            'data', per.data_processo,\n            'valor_principal_bruto', per.valor_principal_bruto\n        ) ORDER BY per.numero\n    ) AS processos\n    FROM (\n        SELECT DISTINCT ON (p.item->>'numero')\n               p.item->>'numero' AS numero,\n               p.item->>'data' AS data_processo,\n               edp.valor_principal_bruto\n        FROM jsonb_array_elements(\n            CASE WHEN jsonb_typeof(b.processos->'lista') = 'array'\n                 THEN b.processos->'lista'\n                 ELSE '[]'::jsonb\n            END\n        ) AS p(item)\n        LEFT JOIN esaj_detalhe_processos edp\n          ON edp.cpf = b.cpf\n         AND edp.numero_processo_cnj = p.item->>'numero'\n        WHERE NULLIF(p.item->>'numero', '') IS NOT NULL\n        ORDER BY p.item->>'numero', edp.timestamp_ingestao DESC NULLS LAST\n    ) AS per\n) AS proc ON TRUE\nORDER BY b.timestamp_consulta, b.cpf;",
+          "options": {}
+        },
+        "id": "b2366c1f-2af2-40cc-be0d-38af2371ce20",
+        "name": "Relatório acumulado — PostgreSQL",
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.5,
+        "position": [
+          -360,
+          100
+        ],
+        "credentials": {
+          "postgres": {
+            "id": "b0F0gRzrpEq6BR3M",
+            "name": "Postgres account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "mode": "runOnceForAllItems",
+          "jsCode": "const rows = $input.all().map(item => item.json);\nconst generatedAt = new Date();\nconst dateFmt = new Intl.DateTimeFormat('pt-BR', {timeZone:'America/Sao_Paulo',dateStyle:'short',timeStyle:'short'});\nconst esc = value => String(value ?? '').replace(/[&<>\"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'}[ch]));\nconst fmtDate = value => value ? dateFmt.format(new Date(value)) : '—';\nconst fmtMoney = value => value === null || value === undefined || value === '' ? '—' : new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(Number(value));\nconst parseProcesses = value => {\n  if (typeof value === 'string') { try { value = JSON.parse(value); } catch { return []; } }\n  return Array.isArray(value) ? value : [];\n};\nconst uniqueByCpf = new Map();\nfor (const row of rows) if (!uniqueByCpf.has(String(row['CPF']))) uniqueByCpf.set(String(row['CPF']),row);\nconst consultations = [...uniqueByCpf.values()];\nconst distinctCpfCount = consultations.length;\nconst consultationEvents = consultations.reduce((sum,row)=>sum+Number(row['Consultas CPF']||1),0);\nconst additionalRepeatEvents = Math.max(0,consultationEvents-distinctCpfCount);\nconst repeatedGroups = consultations.filter(row=>Number(row['Consultas CPF']||0)>1).length;\nconst count = status => consultations.filter(row=>row['Status classificado']===status).length;\nconst dates=consultations.map(row=>row['Timestamp consulta']).filter(Boolean).sort();\nconst period=dates.length?`${fmtDate(dates[0])} a ${fmtDate(dates[dates.length-1])}`:'Sem consultas';\nconst processText = row => parseProcesses(row['Processos / valor principal']).map(p=>{\n  const parts=[p.numero];\n  if (p.data) parts.push(p.data);\n  let text=parts.join(' — ');\n  if (p.valor_principal_bruto!==null && p.valor_principal_bruto!==undefined && p.valor_principal_bruto!=='') text += ` — Principal: ${fmtMoney(p.valor_principal_bruto)}`;\n  return text;\n}).join('\\n') || '—';\nconst columns=[\n ['Timestamp consulta','Consulta'],['Número WhatsApp','WhatsApp'],['CPF','CPF'],['Nome TJSP','Nome TJSP'],\n ['Total processos','Qtd. processos'],['Processos / valor principal','Processos / valor principal'],\n ['Status classificado','Status'],['E-mail','E-mail'],['Link gerado em','Link gerado'],\n ['Dias desde consulta','Dias'],['Evidência status','Evidência'],['Consultas CPF','Consultas CPF'],\n ['Primeira consulta CPF','Primeira consulta'],['Última consulta CPF','Última consulta'],['Repetição CPF','Repetição CPF']\n];\nconst statusColor = value=>value==='Pagou'?'#247a3d':value==='Não tinha processos'?'#667085':value.includes('Link gerado')?'#175cd3':value.includes('código pendente')?'#b54708':'#475467';\nconst tableRows=consultations.map(row=>`<tr>${columns.map(([key])=>{\n let value=row[key];\n if(key==='Processos / valor principal') value=processText(row);\n else if(key.includes('Timestamp')||key.includes('consulta CPF')||key==='Link gerado em') value=fmtDate(value);\n else if(value===null||value===undefined||value==='') value='—';\n const style=key==='Status classificado'?`color:${statusColor(String(value))};font-weight:700;`:'';\n const cellStyle=key==='Processos / valor principal'?'white-space:pre-line;min-width:280px;':'';\n return `<td style=\"padding:8px;border-bottom:1px solid #e5e7eb;vertical-align:top;${style}${cellStyle}\">${esc(value)}</td>`;\n}).join('')}</tr>`).join('');\nconst logoUrl='https://i.imgur.com/hqX2yli.jpeg';\nconst title='RELATÓRIO SEMANAL ACUMULADO';\nconst subject=`[TESTE] Relatório semanal acumulado — ${dateFmt.format(generatedAt)}`;\nconst html=`<!doctype html><html lang=\"pt-BR\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"></head><body style=\"margin:0;background:#f3f4f6;font-family:Arial,sans-serif;color:#202124\"><div style=\"max-width:1200px;margin:0 auto;background:#fff;padding:24px\"><table role=\"presentation\" style=\"width:100%;border-bottom:3px solid #004aad;margin-bottom:20px\"><tr><td style=\"width:110px;padding:0 16px 16px 0\"><img src=\"${logoUrl}\" alt=\"Revisa Precatório\" style=\"width:96px;height:auto\"></td><td style=\"padding-bottom:16px\"><div style=\"font-size:22px;font-weight:700;color:#004aad\">${title}</div><div style=\"margin-top:8px;color:#475467\">Histórico disponível no banco: ${esc(period)}</div><div style=\"margin-top:4px;font-size:12px;color:#667085\">Emitido em ${esc(dateFmt.format(generatedAt))} (horário de Brasília)</div></td></tr></table><table role=\"presentation\" style=\"width:100%;border-spacing:8px;margin:0 -8px 12px\"><tr><td style=\"background:#eff6ff;padding:12px\">Consultas realizadas<br><strong style=\"font-size:22px;color:#004aad\">${consultationEvents}</strong></td><td style=\"background:#eff6ff;padding:12px\">Consultas únicas (1ª por CPF)<br><strong style=\"font-size:22px;color:#004aad\">${distinctCpfCount}</strong></td><td style=\"background:#fff7ed;padding:12px\">Reconsultas adicionais<br><strong style=\"font-size:22px;color:#b54708\">${additionalRepeatEvents}</strong></td><td style=\"background:#fff7ed;padding:12px\">CPFs com repetição<br><strong style=\"font-size:22px;color:#b54708\">${repeatedGroups}</strong></td><td style=\"background:#f2f4f7;padding:12px\">CPFs sem processos<br><strong style=\"font-size:22px\">${count('Não tinha processos')}</strong></td><td style=\"background:#effaf3;padding:12px\">Pagos<br><strong style=\"font-size:22px;color:#247a3d\">${count('Pagou')}</strong></td></tr></table><div style=\"font-size:12px;color:#667085;margin:0 0 16px\">Consultas realizadas = consultas únicas + reconsultas adicionais. As consultas sem processos também estão incluídas.</div><h2 style=\"font-size:17px;color:#344054;margin:24px 0 10px\">Consultas e processos</h2><div style=\"font-size:12px;color:#667085;margin:0 0 8px\">Uma linha por CPF. Os processos e valores disponíveis aparecem juntos, um processo por linha na mesma célula.</div><div style=\"overflow-x:auto\"><table style=\"border-collapse:collapse;min-width:1350px;width:100%;font-size:11px;text-align:left\"><thead><tr>${columns.map(([,label])=>`<th style=\"padding:9px;background:#004aad;color:#fff;white-space:nowrap\">${esc(label)}</th>`).join('')}</tr></thead><tbody>${tableRows||`<tr><td colspan=\"${columns.length}\" style=\"padding:16px;text-align:center\">Nenhuma consulta encontrada.</td></tr>`}</tbody></table></div><p style=\"margin:20px 0 0;padding-top:12px;border-top:1px solid #e5e7eb;font-size:11px;color:#667085\">Relatório interno. O total inclui consultas sem processos; ausências de evento não comprovam leitura ou desistência. Em CPF consultado por mais de um WhatsApp, a linha usa a consulta mais recente e o snapshot de processos atualmente armazenado.</p></div></body></html>`;\nconst csvEscape=value=>`\"${String(value??'').replace(/\"/g,'\"\"')}\"`;\nconst csv='\\uFEFF'+[columns.map(([,label])=>csvEscape(label)).join(';'),...consultations.map(row=>columns.map(([key])=>csvEscape(key==='Processos / valor principal'?processText(row):row[key])).join(';'))].join('\\r\\n');\nreturn [{json:{html,subject},binary:{data:{data:Buffer.from(csv,'utf8').toString('base64'),mimeType:'text/csv',fileName:'revisa-relatorio-acumulado.csv',fileExtension:'csv'}}}];"
+        },
+        "id": "e0f2ea0e-3391-41cd-843a-d1172d2ca1ef",
+        "name": "Montar HTML + CSV",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -80,
+          100
+        ]
+      },
+      {
+        "parameters": {
+          "fromEmail": "Revisa Precatório <contato@revisaprecatorio.com.br>",
+          "toEmail": "persival.balleste@gmail.com, ricazevedo.adv@gmail.com, dr.rodrigoferrao@gmail.com, adv.cappi@gmail.com",
+          "subject": "={{ $json.subject }}",
+          "text": "Este é um envio de teste do Relatório Semanal Acumulado. O relatório HTML está no corpo e o CSV está anexado.",
+          "html": "={{ $json.html }}",
+          "attachments": "data",
+          "options": {}
+        },
+        "id": "1b424417-3df0-4b84-bb1d-4efdd31b63e8",
+        "name": "Enviar relatório de teste",
+        "type": "n8n-nodes-base.emailSend",
+        "typeVersion": 1,
+        "position": [
+          200,
+          100
+        ],
+        "credentials": {
+          "smtp": {
+            "id": "QhA560IeJvTVywaS",
+            "name": "SMTP revisa"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "rule": {
+            "interval": [
+              {
+                "field": "weeks",
+                "triggerAtDay": [
+                  5
+                ],
+                "triggerAtHour": 10,
+                "triggerAtMinute": 0
+              }
+            ]
+          }
+        },
+        "id": "1981bb93-fa4e-4e39-ab0c-574fb30a225f",
+        "name": "Disparo semanal — sexta-feira 10h",
+        "position": [
+          -640,
+          -80
+        ],
+        "type": "n8n-nodes-base.scheduleTrigger",
+        "typeVersion": 1.3
+      }
+    ],
+    "connections": {
+      "Manual Trigger": {
+        "main": [
+          [
+            {
+              "node": "Relatório acumulado — PostgreSQL",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Relatório acumulado — PostgreSQL": {
+        "main": [
+          [
+            {
+              "node": "Montar HTML + CSV",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Montar HTML + CSV": {
+        "main": [
+          [
+            {
+              "node": "Enviar relatório de teste",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Disparo semanal — sexta-feira 10h": {
+        "main": [
+          [
+            {
+              "node": "Relatório acumulado — PostgreSQL",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "authors": "Revisa Precatório",
+    "name": null,
+    "description": null
+  }
+}

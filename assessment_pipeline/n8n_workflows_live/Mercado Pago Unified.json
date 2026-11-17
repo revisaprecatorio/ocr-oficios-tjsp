@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-05-02T19:59:08.000Z",
+  "updatedAt": "2026-09-20T22:52:36.000Z",
   "createdAt": "2025-12-10T04:19:25.009Z",
   "id": "6COT3ubybyI8QhYT",
   "name": "Mercado Pago Unified",
@@ -232,7 +232,7 @@
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"items\": [{\"title\": \"Laudo Completo de Precatorios\", \"quantity\": 1, \"currency_id\": \"BRL\", \"unit_price\": 1.00}],\n  \"payer\": {\"email\": \"{{ $('Generate Link Webhook').item.json.body.email }}\"},\n  \"external_reference\": \"{{ $('Generate Link Webhook').item.json.body.whatsapp_from }}_{{ Date.now() }}\",\n  \"notification_url\": \"https://n8n.srv987902.hstgr.cloud/webhook/mercadopago-notification\",\n  \"back_urls\": {\n    \"success\": \"https://revisaprecatorio.com.br/pagamento-sucesso\",\n    \"failure\": \"https://revisaprecatorio.com.br/pagamento-falha\",\n    \"pending\": \"https://revisaprecatorio.com.br/pagamento-pendente\"\n  },\n  \"auto_return\": \"approved\"\n}",
+        "jsonBody": "={\n  \"items\": [{\"title\": \"Laudo Completo de Precatorios\", \"quantity\": 1, \"currency_id\": \"BRL\", \"unit_price\": 99.90}],\n  \"payer\": {\"email\": \"{{ $('Generate Link Webhook').item.json.body.email }}\"},\n  \"external_reference\": \"{{ $('Generate Link Webhook').item.json.body.whatsapp_from }}_{{ Date.now() }}\",\n  \"notification_url\": \"https://n8n.srv987902.hstgr.cloud/webhook/mercadopago-notification\",\n  \"back_urls\": {\n    \"success\": \"https://revisaprecatorio.com.br/pagamento-sucesso\",\n    \"failure\": \"https://revisaprecatorio.com.br/pagamento-falha\",\n    \"pending\": \"https://revisaprecatorio.com.br/pagamento-pendente\"\n  },\n  \"auto_return\": \"approved\"\n}\n",
         "options": {}
       },
       "id": "generate-link",
@@ -276,7 +276,7 @@
         "operation": "send",
         "phoneNumberId": "772929385904854",
         "recipientPhoneNumber": "={{ $('Generate Link Webhook').item.json.body.whatsapp_from }}",
-        "textBody": "=💳 *Link de Pagamento*\n\nPara receber seu relatório completo de precatórios, realize o pagamento de *R$ 1,00* (teste) através do link abaixo:\n\n🔗 {{ $('Generate Payment Link').item.json.init_point }}\n\n⏰ Este link é válido por 24 horas. Após o pagamento, você receberá o laudo no email cadastrado.\n\nDigite *menu* para voltar ao início.",
+        "textBody": "=💳 *Link de Pagamento*\n\nPara receber seu relatório completo de precatórios, realize o pagamento de *R$ 99,90* através do link abaixo:\n\n🔗 {{ $('Generate Payment Link').item.json.init_point }}\n\n⏰ Este link é válido por 24 horas. Após o pagamento, você receberá o laudo no email cadastrado.\n\nDigite *menu* para voltar ao início.",
         "additionalFields": {}
       },
       "id": "send-link-wa",
@@ -575,9 +575,9 @@
     "templateCredsSetupCompleted": true
   },
   "pinData": {},
-  "versionId": "93c9112d-8556-43a6-a88a-c5f282a8837e",
-  "activeVersionId": "93c9112d-8556-43a6-a88a-c5f282a8837e",
-  "versionCounter": 137,
+  "versionId": "9e9b36e0-8880-4c35-acad-f4e6e3c226c8",
+  "activeVersionId": "9e9b36e0-8880-4c35-acad-f4e6e3c226c8",
+  "versionCounter": 144,
   "triggerCount": 2,
   "shared": [
     {
@@ -601,7 +601,7 @@
             "userId": "9cba57e9-7ebd-4df3-8764-c1ca338dec12",
             "projectId": "HiqKsr6gcpQsog8I",
             "user": {
-              "updatedAt": "2026-09-20T03:53:35.000Z",
+              "updatedAt": "2026-11-13T04:44:40.000Z",
               "createdAt": "2025-09-01T21:50:06.641Z",
               "id": "9cba57e9-7ebd-4df3-8764-c1ca338dec12",
               "email": "revisa.precatorio@gmail.com",
@@ -620,12 +620,12 @@
                 "npsSurvey": {
                   "waitingForResponse": true,
                   "ignoredCount": 1,
-                  "lastShownAt": 1789854820748
+                  "lastShownAt": 1789944346395
                 }
               },
               "disabled": false,
               "mfaEnabled": false,
-              "lastActiveAt": "2026-09-20",
+              "lastActiveAt": "2026-11-13",
               "isPending": false
             }
           }
@@ -635,9 +635,9 @@
   ],
   "tags": [],
   "activeVersion": {
-    "updatedAt": "2026-05-02T19:59:08.412Z",
-    "createdAt": "2026-05-02T19:59:08.412Z",
-    "versionId": "93c9112d-8556-43a6-a88a-c5f282a8837e",
+    "updatedAt": "2026-09-20T22:52:36.324Z",
+    "createdAt": "2026-09-20T22:52:36.324Z",
+    "versionId": "9e9b36e0-8880-4c35-acad-f4e6e3c226c8",
     "workflowId": "6COT3ubybyI8QhYT",
     "nodes": [
       {
@@ -865,7 +865,7 @@
           "genericAuthType": "httpHeaderAuth",
           "sendBody": true,
           "specifyBody": "json",
-          "jsonBody": "={\n  \"items\": [{\"title\": \"Laudo Completo de Precatorios\", \"quantity\": 1, \"currency_id\": \"BRL\", \"unit_price\": 1.00}],\n  \"payer\": {\"email\": \"{{ $('Generate Link Webhook').item.json.body.email }}\"},\n  \"external_reference\": \"{{ $('Generate Link Webhook').item.json.body.whatsapp_from }}_{{ Date.now() }}\",\n  \"notification_url\": \"https://n8n.srv987902.hstgr.cloud/webhook/mercadopago-notification\",\n  \"back_urls\": {\n    \"success\": \"https://revisaprecatorio.com.br/pagamento-sucesso\",\n    \"failure\": \"https://revisaprecatorio.com.br/pagamento-falha\",\n    \"pending\": \"https://revisaprecatorio.com.br/pagamento-pendente\"\n  },\n  \"auto_return\": \"approved\"\n}",
+          "jsonBody": "={\n  \"items\": [{\"title\": \"Laudo Completo de Precatorios\", \"quantity\": 1, \"currency_id\": \"BRL\", \"unit_price\": 99.90}],\n  \"payer\": {\"email\": \"{{ $('Generate Link Webhook').item.json.body.email }}\"},\n  \"external_reference\": \"{{ $('Generate Link Webhook').item.json.body.whatsapp_from }}_{{ Date.now() }}\",\n  \"notification_url\": \"https://n8n.srv987902.hstgr.cloud/webhook/mercadopago-notification\",\n  \"back_urls\": {\n    \"success\": \"https://revisaprecatorio.com.br/pagamento-sucesso\",\n    \"failure\": \"https://revisaprecatorio.com.br/pagamento-falha\",\n    \"pending\": \"https://revisaprecatorio.com.br/pagamento-pendente\"\n  },\n  \"auto_return\": \"approved\"\n}\n",
           "options": {}
         },
         "id": "generate-link",
@@ -909,7 +909,7 @@
           "operation": "send",
           "phoneNumberId": "772929385904854",
           "recipientPhoneNumber": "={{ $('Generate Link Webhook').item.json.body.whatsapp_from }}",
-          "textBody": "=💳 *Link de Pagamento*\n\nPara receber seu relatório completo de precatórios, realize o pagamento de *R$ 1,00* (teste) através do link abaixo:\n\n🔗 {{ $('Generate Payment Link').item.json.init_point }}\n\n⏰ Este link é válido por 24 horas. Após o pagamento, você receberá o laudo no email cadastrado.\n\nDigite *menu* para voltar ao início.",
+          "textBody": "=💳 *Link de Pagamento*\n\nPara receber seu relatório completo de precatórios, realize o pagamento de *R$ 99,90* através do link abaixo:\n\n🔗 {{ $('Generate Payment Link').item.json.init_point }}\n\n⏰ Este link é válido por 24 horas. Após o pagamento, você receberá o laudo no email cadastrado.\n\nDigite *menu* para voltar ao início.",
           "additionalFields": {}
         },
         "id": "send-link-wa",
@@ -1194,7 +1194,7 @@
         ]
       }
     },
-    "authors": "revisa precatorio",
+    "authors": "Revisa Precatório",
     "name": null,
     "description": null
   }
